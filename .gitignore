@@ -3,3 +3,4 @@ node_modules/
 .wrangler/
 wrangler.jsonc
 .secrets/
+.playwright-mcp/
