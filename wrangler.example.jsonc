@@ -1,0 +1,35 @@
+{
+  "name": "husky-drop",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/d/*", "/admin"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID",
+      "remote": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LIVE_TRACKER",
+        "class_name": "LiveTracker"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-live-tracker",
+      "new_sqlite_classes": ["LiveTracker"]
+    }
+  ],
+  "vars": {
+    "DRIVE_PARENT_ID": "REPLACE_WITH_OPTIONAL_PARENT_FOLDER_ID"
+  },
+  "routes": [{ "pattern": "dropbox.example.com", "custom_domain": true }]
+}
