@@ -590,6 +590,12 @@ input.invalid {
   padding-right: 4px;
 }
 
+.detail-summary .live-list {
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+
 .upload-list.compact {
   max-height: none;
   overflow: visible;

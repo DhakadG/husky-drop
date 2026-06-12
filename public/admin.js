@@ -64,10 +64,7 @@ async function refreshAll() {
   renderLive();
   renderEvents();
   renderLinks(overview.links || []);
-  if (currentDetailSlug) {
-    if (openSettings.has(currentDetailSlug)) renderDetailLive(currentDetailSlug);
-    else refreshDetail(currentDetailSlug, false);
-  }
+  if (currentDetailSlug) renderDetailLive(currentDetailSlug);
 }
 
 function connectLive() {
@@ -133,7 +130,7 @@ function liveRow(s) {
       <div class="trail"><i style="width:${s.pct || 0}%"></i></div>
       <ul>${files}${more}</ul>
       <div class="row-actions">
-        <button class="mini" data-open-detail="${escAttr(s.slug)}">open</button>
+        <button class="mini" data-open-folder="${escAttr(s.slug)}">${icon("folder")}open</button>
         <button class="mini danger" data-close-session="${escAttr(s.id)}" data-close-slug="${escAttr(s.slug)}">dismiss</button>
       </div>
     </article>`;
@@ -147,12 +144,31 @@ function handleAdminAction(e) {
   }
   const detail = e.target.closest("[data-open-detail]");
   if (detail) refreshDetail(detail.dataset.openDetail, true);
+  const folder = e.target.closest("[data-open-folder]");
+  if (folder) {
+    openDriveFolder(folder.dataset.openFolder);
+    return;
+  }
+  const refresh = e.target.closest("[data-refresh-detail]");
+  if (refresh) {
+    refreshDetail(refresh.dataset.refreshDetail, false);
+    return;
+  }
   const history = e.target.closest("[data-toggle-history]");
   if (history) {
     const slug = history.dataset.toggleHistory;
     if (expandedUploads.has(slug)) expandedUploads.delete(slug);
     else expandedUploads.add(slug);
     refreshDetail(slug, false);
+  }
+}
+
+function openDriveFolder(slug) {
+  const link = overview?.links?.find((l) => l.slug === slug);
+  if (link?.folderId) {
+    window.open(`https://drive.google.com/drive/folders/${encodeURIComponent(link.folderId)}`, "_blank");
+  } else {
+    refreshDetail(slug, true);
   }
 }
 
@@ -298,6 +314,7 @@ function renderDetail(d) {
         </div>
         <div class="history-tools">
           <span class="muted">${uploads.length} files · ${fmtBytes(d.totalBytes)}</span>
+          <button class="mini" data-refresh-detail="${escAttr(l.slug)}">${icon("refresh")}refresh</button>
           ${
             uploads.length > 8
               ? `<button class="mini" data-toggle-history="${escAttr(l.slug)}">${icon("list")}${showAll ? "compact" : "show all"}</button>`
@@ -428,6 +445,8 @@ function icon(name) {
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
     save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
     sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>',
+    folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+    refresh: '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5M3 12A9 9 0 0 1 18.5 5.8L21 8M21 3v5h-5"/>',
   };
   return `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ""}</svg>`;
 }

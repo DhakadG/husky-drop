@@ -803,6 +803,7 @@ async function logComplete(request, env) {
     metadata: meta,
     expirationTtl: 365 * 86400,
   });
+  await addRecentUpload(env, linkId, meta);
   await bumpStats(env, link.slug, { files: 1, bytes: meta.s });
   await logEvent(env, {
     type: "file",
@@ -989,6 +990,7 @@ async function removeLinkFromIndex(env, slug) {
 }
 
 async function getUploads(env, slug) {
+  const recent = await getRecentUploads(env, slug);
   const uploads = [];
   let cursor;
   do {
@@ -996,13 +998,51 @@ async function getUploads(env, slug) {
     try {
       page = await env.KV.list({ prefix: `up:${slug}:`, cursor });
     } catch {
-      return [];
+      return recent.length ? recent : await driveUploadsForLink(env, slug);
     }
     for (const k of page.keys) if (k.metadata) uploads.push(k.metadata);
     cursor = page.list_complete ? null : page.cursor;
   } while (cursor);
   uploads.sort((a, b) => b.at - a.at);
-  return uploads;
+  return uploads.length ? uploads : recent;
+}
+
+async function getRecentUploads(env, slug) {
+  const rows = (await env.KV.get(`recent:${slug}`, "json")) || [];
+  return rows.sort((a, b) => b.at - a.at);
+}
+
+async function addRecentUpload(env, slug, meta) {
+  const rows = await getRecentUploads(env, slug);
+  const next = [meta, ...rows.filter((u) => u.f !== meta.f)].slice(0, 200);
+  await env.KV.put(`recent:${slug}`, JSON.stringify(next));
+}
+
+async function driveUploadsForLink(env, slug) {
+  if (!env.GOOGLE_CLIENT_ID) return [];
+  const tok = await accessToken(env);
+  const q = `trashed=false and appProperties has { key='dropLink' and value='${driveQueryEscape(slug)}' }`;
+  const url =
+    "https://www.googleapis.com/drive/v3/files?" +
+    new URLSearchParams({
+      q,
+      fields: "files(id,name,size,mimeType,createdTime,modifiedTime,appProperties)",
+      orderBy: "modifiedTime desc",
+      pageSize: "200",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+  const r = await fetch(url, { headers: { authorization: `Bearer ${tok}` } });
+  if (!r.ok) return [];
+  const d = await r.json();
+  return (d.files || []).map((f) => ({
+    n: cleanText(f.name || "file", 160),
+    s: Number(f.size) || 0,
+    m: cleanText(f.mimeType || "", 80),
+    u: cleanText(f.appProperties?.uploader || "anonymous", 60),
+    f: cleanText(f.id || "", 120),
+    at: Date.parse(f.modifiedTime || f.createdTime) || Date.now(),
+  }));
 }
 
 async function bumpStats(env, slug, delta) {
