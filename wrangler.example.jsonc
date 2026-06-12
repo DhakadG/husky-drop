@@ -29,7 +29,8 @@
     }
   ],
   "vars": {
-    "DRIVE_PARENT_ID": "REPLACE_WITH_OPTIONAL_PARENT_FOLDER_ID"
+    "DRIVE_PARENT_ID": "REPLACE_WITH_OPTIONAL_PARENT_FOLDER_ID",
+    "LINK_SLUGS": "comma,separated,existing,slugs"
   },
   "routes": [{ "pattern": "dropbox.example.com", "custom_domain": true }]
 }

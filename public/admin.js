@@ -6,6 +6,7 @@ let liveActive = [];
 let liveSocket = null;
 let currentDetailSlug = "";
 const expandedUploads = new Set();
+const openSettings = new Set();
 
 init();
 
@@ -63,7 +64,10 @@ async function refreshAll() {
   renderLive();
   renderEvents();
   renderLinks(overview.links || []);
-  if (currentDetailSlug) refreshDetail(currentDetailSlug, false);
+  if (currentDetailSlug) {
+    if (openSettings.has(currentDetailSlug)) renderDetailLive(currentDetailSlug);
+    else refreshDetail(currentDetailSlug, false);
+  }
 }
 
 function connectLive() {
@@ -268,10 +272,14 @@ function renderDetail(d) {
   const uploads = d.uploads || [];
   const showAll = expandedUploads.has(l.slug);
   const visibleUploads = showAll ? uploads : uploads.slice(0, 8);
+  const settingsOpen = openSettings.has(l.slug);
   $("detail-view").innerHTML = `
-    <section class="panel">
+    <section class="panel detail-summary">
       <div class="section-title">
-        <h2>${esc(l.label)}</h2>
+        <div>
+          <p class="eyebrow">link detail</p>
+          <h2>${esc(l.label)}</h2>
+        </div>
         <span class="muted">/d/${esc(l.slug)}</span>
       </div>
       <div class="stat-grid small">
@@ -282,14 +290,17 @@ function renderDetail(d) {
       </div>
       <div id="detail-live" class="live-list"></div>
     </section>
-    <section class="panel">
+    <section class="panel detail-history">
       <div class="section-title">
-        <h2>Upload history</h2>
+        <div>
+          <p class="eyebrow">verified files</p>
+          <h2>Upload history</h2>
+        </div>
         <div class="history-tools">
           <span class="muted">${uploads.length} files · ${fmtBytes(d.totalBytes)}</span>
           ${
             uploads.length > 8
-              ? `<button class="mini" data-toggle-history="${escAttr(l.slug)}">${showAll ? "compact" : "show all"}</button>`
+              ? `<button class="mini" data-toggle-history="${escAttr(l.slug)}">${icon("list")}${showAll ? "compact" : "show all"}</button>`
               : ""
           }
         </div>
@@ -303,36 +314,61 @@ function renderDetail(d) {
           : ""
       }
     </section>
-    <details class="panel settings-fold">
+    <details class="panel settings-fold" ${settingsOpen ? "open" : ""}>
       <summary>
-        <h2>Edit settings</h2>
+        <div>
+          <p class="eyebrow">configuration</p>
+          <h2>${icon("sliders")}Edit settings</h2>
+        </div>
         <span class="muted">password, expiry, upload tuning, notifications, branding</span>
       </summary>
-      <div class="grid-3">
-        <div class="field"><label>Parallel files</label><select id="d-conc">${opts([1,2,3,4], l.settings.concurrency)}</select></div>
-        <div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8,16,32], l.settings.chunkMB, " MB")}</select></div>
-        <label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Per-uploader folders</label>
+      <div class="settings-grid">
+        <div class="settings-card">
+          <h3>Transfer</h3>
+          <div class="grid-3">
+            <div class="field"><label>Parallel files</label><select id="d-conc">${opts([1,2,3,4], l.settings.concurrency)}</select></div>
+            <div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8,16,32], l.settings.chunkMB, " MB")}</select></div>
+            <label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Per-uploader folders</label>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>Access</h3>
+          <div class="grid-2">
+            <div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" /></div>
+            <div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="0" /></div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>Branding</h3>
+          <div class="grid-2">
+            <div class="field"><label>Logo URL</label><input id="d-logo" type="url" value="${escAttr(l.theme.logoUrl)}" /></div>
+            <div class="field"><label>Background image URL</label><input id="d-bg" type="url" value="${escAttr(l.theme.backgroundUrl)}" /></div>
+            <div class="field"><label>Accent</label><input id="d-accent" type="color" value="${escAttr(l.theme.accentColor)}" /></div>
+            <div class="field"><label>Background</label><input id="d-bgcolor" type="color" value="${escAttr(l.theme.backgroundColor)}" /></div>
+            <div class="field wide"><label>Welcome</label><input id="d-welcome" type="text" value="${escAttr(l.theme.welcome)}" /></div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>Notifications</h3>
+          <div class="check-row">
+            <label class="check"><input id="d-notify" type="checkbox" ${l.notify.enabled ? "checked" : ""} /> Email enabled</label>
+            <label class="check"><input id="d-notify-start" type="checkbox" ${l.notify.start ? "checked" : ""} /> Start</label>
+            <label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Complete</label>
+          </div>
+        </div>
       </div>
-      <div class="grid-2">
-        <div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" /></div>
-        <div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="0" /></div>
-        <div class="field"><label>Logo URL</label><input id="d-logo" type="url" value="${escAttr(l.theme.logoUrl)}" /></div>
-        <div class="field"><label>Background image URL</label><input id="d-bg" type="url" value="${escAttr(l.theme.backgroundUrl)}" /></div>
-        <div class="field"><label>Accent</label><input id="d-accent" type="color" value="${escAttr(l.theme.accentColor)}" /></div>
-        <div class="field"><label>Background</label><input id="d-bgcolor" type="color" value="${escAttr(l.theme.backgroundColor)}" /></div>
-        <div class="field wide"><label>Welcome</label><input id="d-welcome" type="text" value="${escAttr(l.theme.welcome)}" /></div>
+      <div class="settings-actions">
+        <button class="btn" id="save-detail">${icon("save")}Save settings</button>
+        <button class="btn ghost" id="clear-pin">${icon("lock")}Clear password</button>
       </div>
-      <div class="check-row">
-        <label class="check"><input id="d-notify" type="checkbox" ${l.notify.enabled ? "checked" : ""} /> Email enabled</label>
-        <label class="check"><input id="d-notify-start" type="checkbox" ${l.notify.start ? "checked" : ""} /> Start</label>
-        <label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Complete</label>
-      </div>
-      <button class="btn" id="save-detail">Save settings</button>
-      <button class="btn ghost" id="clear-pin">Clear password</button>
       <div class="msg-err" id="detail-msg"></div>
     </details>`;
   $("save-detail").addEventListener("click", () => saveDetail(l.slug, false));
   $("clear-pin").addEventListener("click", () => saveDetail(l.slug, true));
+  document.querySelector(".settings-fold")?.addEventListener("toggle", (event) => {
+    if (event.currentTarget.open) openSettings.add(l.slug);
+    else openSettings.delete(l.slug);
+  });
   document.querySelectorAll("[data-preview]").forEach((b) => {
     b.addEventListener("click", () => previewFile(b.dataset.preview, b));
   });
@@ -384,6 +420,16 @@ function uploadRow(u) {
       <div>${fmtBytes(u.s)}<br><span>${new Date(u.at).toLocaleString()}</span></div>
       <button class="mini" data-preview="${escAttr(u.f)}" ${u.f ? "" : "disabled"}>preview</button>
     </div>`;
+}
+
+function icon(name) {
+  const paths = {
+    list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+    sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>',
+  };
+  return `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ""}</svg>`;
 }
 
 async function previewFile(fileId, button) {

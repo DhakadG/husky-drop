@@ -417,14 +417,22 @@ async function resolveUploaderFolderDirect(env, link, uploader) {
 async function driveThumb(env, fileId) {
   const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
   if (!id) return json({ error: "missing file id" }, 400);
+  const meta = await driveFileMeta(env, id);
+  if (!meta) return json({ error: "thumbnail lookup failed" }, 502);
+  return json(meta);
+}
+
+async function driveFileMeta(env, fileId) {
+  const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!id) return null;
   const tok = await accessToken(env);
   const url = `https://www.googleapis.com/drive/v3/files/${id}?` + new URLSearchParams({
-    fields: "id,name,mimeType,thumbnailLink,webViewLink,iconLink",
+    fields: "id,name,size,mimeType,parents,appProperties,thumbnailLink,webViewLink,iconLink",
     supportsAllDrives: "true",
   });
   const r = await fetch(url, { headers: { authorization: `Bearer ${tok}` } });
-  if (!r.ok) return json({ error: "thumbnail lookup failed" }, 502);
-  return json(await r.json());
+  if (!r.ok) return null;
+  return r.json();
 }
 
 async function sha256(text) {
@@ -768,9 +776,20 @@ async function recordSessionStart(env, link, uploader, sessionId) {
 async function logComplete(request, env) {
   const b = await request.json().catch(() => ({}));
   const { linkId, filename, size, mimeType, uploader, fileId } = b;
-  if (!linkId || !filename) return json({ error: "linkId and filename required" }, 400);
+  if (!linkId || !filename || !fileId) return json({ error: "linkId, filename and fileId required" }, 400);
   const link = await env.KV.get(`link:${linkId}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
+  if (env.GOOGLE_CLIENT_ID) {
+    const driveFile = await driveFileMeta(env, fileId);
+    if (!driveFile?.id) return json({ error: "Drive file could not be verified" }, 502);
+    if (driveFile.appProperties?.dropLink && driveFile.appProperties.dropLink !== linkId) {
+      return json({ error: "Drive file belongs to a different drop link" }, 400);
+    }
+    const driveSize = Number(driveFile.size);
+    if (Number.isFinite(driveSize) && driveSize !== Number(size)) {
+      return json({ error: "Drive file size mismatch" }, 409);
+    }
+  }
 
   const meta = {
     n: cleanText(filename, 160),
@@ -844,6 +863,7 @@ async function createLink(request, env) {
   if (link.expiresAt) opts.expirationTtl = Math.ceil((link.expiresAt - Date.now()) / 1000) + 30 * 86400;
   await env.KV.put(`link:${slug}`, JSON.stringify(link), opts);
   await env.KV.put(`stats:${slug}`, JSON.stringify(normalizeStats()), opts);
+  await addLinkToIndex(env, slug);
   await logEvent(env, { type: "linknew", slug, label: link.label });
   return json({ ok: true, slug, folderId, url: `/d/${slug}` });
 }
@@ -876,6 +896,7 @@ async function patchLink(request, env, slug) {
 
 async function deleteLink(env, slug) {
   await env.KV.delete(`link:${slug}`);
+  await removeLinkFromIndex(env, slug);
   await logEvent(env, { type: "linkdel", slug });
   return json({ ok: true });
 }
@@ -919,11 +940,21 @@ async function adminOverview(env) {
     totals,
     links: rows,
     active: await liveSnapshot(env),
-    events: await recentEvents(env),
+    events: await recentEvents(env).catch(() => []),
   });
 }
 
 async function getAllLinks(env) {
+  const slugs = await getLinkIndex(env);
+  if (slugs.length) {
+    const links = [];
+    for (const slug of slugs) {
+      const link = await env.KV.get(`link:${slug}`, "json");
+      if (link) links.push(link);
+    }
+    return links;
+  }
+
   const links = [];
   let cursor;
   do {
@@ -937,11 +968,36 @@ async function getAllLinks(env) {
   return links;
 }
 
+async function getLinkIndex(env) {
+  const configured = (env.LINK_SLUGS || "")
+    .split(",")
+    .map((s) => slugify(s))
+    .filter(Boolean);
+  const stored = (await env.KV.get("links:index", "json")) || [];
+  return [...new Set([...configured, ...stored.map(slugify).filter(Boolean)])];
+}
+
+async function addLinkToIndex(env, slug) {
+  const slugs = await getLinkIndex(env);
+  if (!slugs.includes(slug)) slugs.push(slug);
+  await env.KV.put("links:index", JSON.stringify(slugs));
+}
+
+async function removeLinkFromIndex(env, slug) {
+  const slugs = (await getLinkIndex(env)).filter((s) => s !== slug);
+  await env.KV.put("links:index", JSON.stringify(slugs));
+}
+
 async function getUploads(env, slug) {
   const uploads = [];
   let cursor;
   do {
-    const page = await env.KV.list({ prefix: `up:${slug}:`, cursor });
+    let page;
+    try {
+      page = await env.KV.list({ prefix: `up:${slug}:`, cursor });
+    } catch {
+      return [];
+    }
     for (const k of page.keys) if (k.metadata) uploads.push(k.metadata);
     cursor = page.list_complete ? null : page.cursor;
   } while (cursor);

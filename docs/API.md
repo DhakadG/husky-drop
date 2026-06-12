@@ -208,3 +208,5 @@ Secrets:
 Vars:
 
 - optional `DRIVE_PARENT_ID`
+- optional `LINK_SLUGS` — comma-separated existing slugs for admin overview
+  recovery/fast-path when KV list quota is exhausted.

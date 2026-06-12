@@ -239,11 +239,14 @@ function paintTotal() {
   $("totalbar").style.width = `${pct}%`;
   const done = queue.filter((q) => q.state === "done").length;
   const errors = queue.filter((q) => q.state === "error").length;
+  const warnings = queue.filter((q) => q.state === "warning").length;
   $("detail").textContent =
     active > 0
       ? `${done}/${queue.length} files in - ${fmtBytes(sent)} of ${fmtBytes(total)}`
-      : errors
+    : errors
       ? `${done} done, ${errors} failed - tap failed files to retry`
+      : warnings
+      ? `${done} done, ${warnings} need dashboard verification`
       : done === queue.length && queue.length
       ? `all ${done} files are in Drive`
       : "waiting";
@@ -252,6 +255,8 @@ function paintTotal() {
     lastQueueNotice = stateKey;
     if (errors) {
       toast(`${errors} file${errors === 1 ? "" : "s"} need attention`, "Tap a failed row to retry it.", "err");
+    } else if (warnings) {
+      toast("Upload needs verification", "Drive received files, but dashboard logging needs attention.", "warn");
     } else if (done === queue.length) {
       toast("Upload complete", `${done} file${done === 1 ? "" : "s"} saved to Drive.`, "ok");
     }
@@ -316,8 +321,8 @@ async function uploadFile(item) {
 
     item.state = "done";
     item.sent = item.file.size;
-    paint(item, `${fmtBytes(item.file.size)} done`, "ok");
-    fetch("/api/complete", {
+    paint(item, "saving record");
+    const complete = await fetch("/api/complete", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -328,7 +333,15 @@ async function uploadFile(item) {
         uploader: $("who").value.trim(),
         fileId: item.fileId || "",
       }),
-    }).catch(() => {});
+    }).catch(() => null);
+    if (!complete?.ok) {
+      item.logFailed = true;
+      item.state = "warning";
+      paint(item, "Drive saved, dashboard log delayed", "warn");
+      toast("Drive upload finished", `${item.file.name} saved, but dashboard logging failed.`, "warn");
+    } else {
+      paint(item, `${fmtBytes(item.file.size)} done`, "ok");
+    }
   } catch (err) {
     item.state = "error";
     toast("Upload paused", `${item.file.name}: ${err.message.slice(0, 80)}`, "err");
