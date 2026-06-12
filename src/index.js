@@ -544,6 +544,7 @@ function adminLink(link, stats = {}) {
 }
 
 function normalizeStats(stats = {}) {
+  stats = stats || {};
   return {
     opens: Number(stats.opens) || 0,
     sessions: Number(stats.sessions) || 0,
