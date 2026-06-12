@@ -5,6 +5,7 @@ let overview = null;
 let liveActive = [];
 let liveSocket = null;
 let currentDetailSlug = "";
+const expandedUploads = new Set();
 
 init();
 
@@ -16,6 +17,7 @@ async function init() {
   });
   $("refresh").addEventListener("click", refreshAll);
   $("create").addEventListener("click", createLink);
+  document.addEventListener("click", handleAdminAction);
   if (token && (await ping())) unlock();
 }
 
@@ -109,18 +111,58 @@ function renderLive() {
 
 function liveRow(s) {
   const files = (s.files || [])
-    .slice(0, 4)
+    .slice(0, 3)
     .map((f) => `<li>${esc(f.name)} <span>${fmtBytes(f.sent)} / ${fmtBytes(f.size)}</span></li>`)
     .join("");
+  const more = (s.files || []).length > 3 ? `<li class="more">+${(s.files || []).length - 3} more files</li>` : "";
+  const age = Math.max(0, Math.round((Date.now() - Number(s.lastSeen || Date.now())) / 1000));
+  const state = s.state === "stale" ? "abandoned" : s.state === "done" ? "complete" : "uploading";
   return `
-    <article class="live-row">
+    <article class="live-row ${escAttr(s.state || "uploading")}">
       <div class="live-top">
-        <b>${esc(s.uploader)}</b>
-        <span>${esc(s.slug)} · ${s.pct || 0}%</span>
+        <div>
+          <b>${esc(s.uploader)}</b>
+          <div class="muted">${esc(s.slug)} · ${s.pct || 0}% · ${age}s ago</div>
+        </div>
+        <span class="state-pill">${esc(state)}</span>
       </div>
       <div class="trail"><i style="width:${s.pct || 0}%"></i></div>
-      <ul>${files}</ul>
+      <ul>${files}${more}</ul>
+      <div class="row-actions">
+        <button class="mini" data-open-detail="${escAttr(s.slug)}">open</button>
+        <button class="mini danger" data-close-session="${escAttr(s.id)}" data-close-slug="${escAttr(s.slug)}">dismiss</button>
+      </div>
     </article>`;
+}
+
+function handleAdminAction(e) {
+  const close = e.target.closest("[data-close-session]");
+  if (close) {
+    closeLiveSession(close.dataset.closeSession, close.dataset.closeSlug);
+    return;
+  }
+  const detail = e.target.closest("[data-open-detail]");
+  if (detail) refreshDetail(detail.dataset.openDetail, true);
+  const history = e.target.closest("[data-toggle-history]");
+  if (history) {
+    const slug = history.dataset.toggleHistory;
+    if (expandedUploads.has(slug)) expandedUploads.delete(slug);
+    else expandedUploads.add(slug);
+    refreshDetail(slug, false);
+  }
+}
+
+async function closeLiveSession(id, slug) {
+  if (!id && !slug) return;
+  await fetch("/api/admin/live/close", {
+    method: "POST",
+    headers: { ...auth(), "content-type": "application/json" },
+    body: JSON.stringify({ id, slug }),
+  });
+  liveActive = liveActive.filter((s) => s.id !== id && (!slug || s.slug !== slug || id));
+  renderLive();
+  if (currentDetailSlug) renderDetailLive(currentDetailSlug);
+  refreshAll();
 }
 
 function renderEvents() {
@@ -224,6 +266,8 @@ async function refreshDetail(slug, switchTab) {
 function renderDetail(d) {
   const l = d.link;
   const uploads = d.uploads || [];
+  const showAll = expandedUploads.has(l.slug);
+  const visibleUploads = showAll ? uploads : uploads.slice(0, 8);
   $("detail-view").innerHTML = `
     <section class="panel">
       <div class="section-title">
@@ -239,7 +283,31 @@ function renderDetail(d) {
       <div id="detail-live" class="live-list"></div>
     </section>
     <section class="panel">
-      <div class="section-title"><h2>Edit settings</h2></div>
+      <div class="section-title">
+        <h2>Upload history</h2>
+        <div class="history-tools">
+          <span class="muted">${uploads.length} files · ${fmtBytes(d.totalBytes)}</span>
+          ${
+            uploads.length > 8
+              ? `<button class="mini" data-toggle-history="${escAttr(l.slug)}">${showAll ? "compact" : "show all"}</button>`
+              : ""
+          }
+        </div>
+      </div>
+      <div class="upload-list ${showAll ? "scrollable" : "compact"}">
+        ${uploads.length ? visibleUploads.map(uploadRow).join("") : `<div class="empty">No files yet.</div>`}
+      </div>
+      ${
+        !showAll && uploads.length > visibleUploads.length
+          ? `<div class="list-note">Showing latest ${visibleUploads.length}. Use show all for the full history.</div>`
+          : ""
+      }
+    </section>
+    <details class="panel settings-fold">
+      <summary>
+        <h2>Edit settings</h2>
+        <span class="muted">password, expiry, upload tuning, notifications, branding</span>
+      </summary>
       <div class="grid-3">
         <div class="field"><label>Parallel files</label><select id="d-conc">${opts([1,2,3,4], l.settings.concurrency)}</select></div>
         <div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8,16,32], l.settings.chunkMB, " MB")}</select></div>
@@ -262,13 +330,7 @@ function renderDetail(d) {
       <button class="btn" id="save-detail">Save settings</button>
       <button class="btn ghost" id="clear-pin">Clear password</button>
       <div class="msg-err" id="detail-msg"></div>
-    </section>
-    <section class="panel">
-      <div class="section-title"><h2>Upload history</h2><span class="muted">${uploads.length} files · ${fmtBytes(d.totalBytes)}</span></div>
-      <div class="upload-list">
-        ${uploads.length ? uploads.map(uploadRow).join("") : `<div class="empty">No files yet.</div>`}
-      </div>
-    </section>`;
+    </details>`;
   $("save-detail").addEventListener("click", () => saveDetail(l.slug, false));
   $("clear-pin").addEventListener("click", () => saveDetail(l.slug, true));
   document.querySelectorAll("[data-preview]").forEach((b) => {

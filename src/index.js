@@ -68,6 +68,24 @@ export class LiveTracker {
       });
     }
 
+    if (request.method === "POST" && url.pathname === "/close") {
+      const body = await request.json().catch(() => ({}));
+      const id = cleanText(body.id || "", 100);
+      const slug = cleanText(body.slug || "", 60);
+      let closed = 0;
+      if (id && this.sessions.delete(id)) closed++;
+      if (!id && slug) {
+        for (const [sessionId, session] of this.sessions) {
+          if (session.slug === slug) {
+            this.sessions.delete(sessionId);
+            closed++;
+          }
+        }
+      }
+      if (closed) this.broadcast();
+      return new Response(JSON.stringify({ ok: true, closed }), { headers: JSON_HEADERS });
+    }
+
     if (request.method === "POST" && url.pathname === "/progress") {
       const body = await request.json().catch(() => ({}));
       const session = normalizeLiveSession(body);
@@ -191,6 +209,7 @@ async function api(request, env, url) {
     if (m === "GET" && p === "/api/admin/overview") return adminOverview(env);
     if (m === "GET" && p === "/api/admin/links") return listLinks(env);
     if (m === "POST" && p === "/api/admin/links") return createLink(request, env);
+    if (m === "POST" && p === "/api/admin/live/close") return closeLiveSession(request, env);
     if (m === "GET" && p.startsWith("/api/admin/link/")) {
       return linkDetail(env, p.slice("/api/admin/link/".length));
     }
@@ -251,6 +270,21 @@ async function liveProgress(env, session) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(session),
   });
+}
+
+async function closeLiveSession(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const id = cleanText(body.id || "", 100);
+  const slug = cleanText(body.slug || "", 60);
+  if (!id && !slug) return json({ error: "id or slug required" }, 400);
+  const res = await liveStub(env).fetch("https://live.internal/close", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, slug }),
+  });
+  const result = await res.json().catch(() => ({ ok: false, closed: 0 }));
+  if (result.closed) await logEvent(env, { type: "sessionclose", slug, message: id });
+  return json(result);
 }
 
 async function accessToken(env) {

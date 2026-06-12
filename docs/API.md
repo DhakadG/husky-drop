@@ -143,6 +143,15 @@ Returns:
 
 `active` comes from the Durable Object snapshot. Durable history remains in KV.
 
+### `POST /api/admin/live/close`
+
+Body: `{id?, slug?}`. Returns `{ok, closed}`.
+
+Dismisses stuck or abandoned live transfers from the admin dashboard. `id`
+closes one session; `slug` without `id` closes every live session for that
+link. This only clears live dashboard state; completed Drive files stay in
+Drive.
+
 ### `GET /api/admin/link/:slug`
 
 Returns `{link, uploads, count, totalBytes, active}`.
