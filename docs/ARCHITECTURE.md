@@ -50,9 +50,15 @@ Drive owns the resumable upload session.
 
 - Active upload sessions by session ID.
 - Connected admin WebSockets.
+- In-memory locks for per-uploader Drive folder creation.
+- In-memory first-seen guards for upload session start events.
 - Last update timestamps.
 
 Sessions are pruned after 2 minutes without updates.
+Folder locks prevent parallel file-session requests from creating duplicate
+uploader folders when the same person uploads multiple files at once. The KV
+`started:*` guard remains as durable backup, but the Durable Object handles
+same-moment parallel requests before KV consistency can race.
 
 ## Upload Tuning
 

@@ -57,6 +57,8 @@ export class LiveTracker {
     this.env = env;
     this.sessions = new Map();
     this.adminSockets = new Set();
+    this.folderLocks = new Map();
+    this.started = new Set();
   }
 
   async fetch(request) {
@@ -84,6 +86,43 @@ export class LiveTracker {
       }
       if (closed) this.broadcast();
       return new Response(JSON.stringify({ ok: true, closed }), { headers: JSON_HEADERS });
+    }
+
+    if (request.method === "POST" && url.pathname === "/folder") {
+      const body = await request.json().catch(() => ({}));
+      const link = body.link || {};
+      const uploader = cleanText(body.uploader || "anonymous", 60) || "anonymous";
+      if (!link.slug || !link.folderId) {
+        return new Response(JSON.stringify({ error: "link required" }), {
+          status: 400,
+          headers: JSON_HEADERS,
+        });
+      }
+      const key = `${link.slug}:${sanitizeFolderName(uploader).toLowerCase()}`;
+      if (!this.folderLocks.has(key)) {
+        this.folderLocks.set(
+          key,
+          resolveUploaderFolderDirect(this.env, link, uploader).finally(() => this.folderLocks.delete(key))
+        );
+      }
+      const folderId = await this.folderLocks.get(key);
+      return new Response(JSON.stringify({ folderId }), { headers: JSON_HEADERS });
+    }
+
+    if (request.method === "POST" && url.pathname === "/session-start") {
+      const body = await request.json().catch(() => ({}));
+      const link = body.link || {};
+      const id = cleanText(body.sessionId || "", 80);
+      if (!link.slug || !id) {
+        return new Response(JSON.stringify({ first: false }), { headers: JSON_HEADERS });
+      }
+      const key = `${link.slug}:${id}`;
+      if (this.started.has(key)) {
+        return new Response(JSON.stringify({ first: false }), { headers: JSON_HEADERS });
+      }
+      this.started.add(key);
+      this.env.KV.put(`started:${key}`, "1", { expirationTtl: 24 * 3600 }).catch(() => {});
+      return new Response(JSON.stringify({ first: true }), { headers: JSON_HEADERS });
     }
 
     if (request.method === "POST" && url.pathname === "/progress") {
@@ -351,6 +390,19 @@ async function driveFindFolder(env, name, parentId) {
 }
 
 async function resolveUploaderFolder(env, link, uploader) {
+  if (!link.settings?.perUploaderFolders) return link.folderId;
+  if (!env.LIVE_TRACKER) return resolveUploaderFolderDirect(env, link, uploader);
+  const res = await liveStub(env).fetch("https://live.internal/folder", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ link, uploader }),
+  });
+  if (!res.ok) throw new Error("folder resolver failed");
+  const d = await res.json();
+  return d.folderId || link.folderId;
+}
+
+async function resolveUploaderFolderDirect(env, link, uploader) {
   if (!link.settings?.perUploaderFolders) return link.folderId;
   const safeName = sanitizeFolderName(uploader || "anonymous");
   const cacheKey = `folder:${link.slug}:${await sha256(safeName.toLowerCase())}`;
@@ -691,7 +743,17 @@ async function recordSessionStart(env, link, uploader, sessionId) {
   const id = cleanText(sessionId || "", 80) || `${Date.now()}-${randomSlug(5)}`;
   const guardKey = `started:${link.slug}:${id}`;
   if (await env.KV.get(guardKey)) return;
-  await env.KV.put(guardKey, "1", { expirationTtl: 24 * 3600 });
+  if (env.LIVE_TRACKER) {
+    const res = await liveStub(env).fetch("https://live.internal/session-start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ link, uploader, sessionId: id }),
+    });
+    const d = await res.json().catch(() => ({ first: true }));
+    if (!d.first) return;
+  } else {
+    await env.KV.put(guardKey, "1", { expirationTtl: 24 * 3600 });
+  }
   await bumpStats(env, link.slug, { sessions: 1 });
   await logEvent(env, { type: "start", slug: link.slug, label: link.label, uploader });
   const notify = normalizeNotify(link.notify);

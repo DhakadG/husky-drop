@@ -11,6 +11,7 @@ let active = 0;
 let wakeLock = null;
 let liveSocket = null;
 let lastLiveSend = 0;
+let lastQueueNotice = "";
 
 const queue = [];
 const MAX_RETRIES = 8;
@@ -161,6 +162,7 @@ function setupPromo() {
 function pickerGate() {
   const name = $("who").value.trim();
   if (!name) {
+    toast("Add your name first", "This keeps the Drive folder and admin history organized.", "warn");
     $("who").focus();
     $("who").classList.add("invalid");
     setTimeout(() => $("who").classList.remove("invalid"), 1200);
@@ -178,6 +180,8 @@ function chip(text, cls = "") {
 }
 
 function addFiles(files) {
+  const incoming = [...files];
+  if (!incoming.length) return;
   for (const file of files) {
     const item = {
       file,
@@ -191,6 +195,12 @@ function addFiles(files) {
     item.el = renderRow(item);
     queue.push(item);
   }
+  lastQueueNotice = "";
+  toast(
+    `${incoming.length} file${incoming.length === 1 ? "" : "s"} added`,
+    "Keep this page open until the queue finishes.",
+    "ok"
+  );
   $("transfer-panel").classList.remove("hidden");
   connectLive();
   pump();
@@ -237,6 +247,15 @@ function paintTotal() {
       : done === queue.length && queue.length
       ? `all ${done} files are in Drive`
       : "waiting";
+  const stateKey = `${done}:${errors}:${queue.length}:${active}`;
+  if (queue.length && active === 0 && stateKey !== lastQueueNotice) {
+    lastQueueNotice = stateKey;
+    if (errors) {
+      toast(`${errors} file${errors === 1 ? "" : "s"} need attention`, "Tap a failed row to retry it.", "err");
+    } else if (done === queue.length) {
+      toast("Upload complete", `${done} file${done === 1 ? "" : "s"} saved to Drive.`, "ok");
+    }
+  }
   sendLive(false);
 }
 
@@ -287,6 +306,7 @@ async function uploadFile(item) {
       } catch (err) {
         if (++item.retries > MAX_RETRIES) throw err;
         const wait = Math.min(30000, 1000 * 2 ** item.retries);
+        toast("Network hiccup", `${item.file.name} will retry in ${Math.round(wait / 1000)}s.`, "warn");
         paint(item, `retrying in ${Math.round(wait / 1000)}s`, "err");
         await sleep(wait);
         offset = await probeOffset(item).catch(() => offset);
@@ -311,12 +331,14 @@ async function uploadFile(item) {
     }).catch(() => {});
   } catch (err) {
     item.state = "error";
+    toast("Upload paused", `${item.file.name}: ${err.message.slice(0, 80)}`, "err");
     paint(item, err.message.slice(0, 80), "err");
     item.el.style.cursor = "pointer";
     item.el.onclick = () => {
       item.el.onclick = null;
       item.el.style.cursor = "";
       item.state = "queued";
+      toast("Retry queued", item.file.name, "ok");
       paint(item, "queued");
       pump();
     };
@@ -381,9 +403,13 @@ function connectLive() {
     liveSocket = new WebSocket(`${protocol}//${location.host}/api/live/upload/${encodeURIComponent(slug)}`);
     liveSocket.onopen = () => {
       $("ws-state").textContent = "live progress";
+      toast("Live progress connected", "The admin dashboard can see this transfer.", "ok");
       sendLive(true);
     };
-    liveSocket.onclose = () => ($("ws-state").textContent = "progress offline");
+    liveSocket.onclose = () => {
+      $("ws-state").textContent = "progress offline";
+      if (active > 0) toast("Live progress offline", "Upload can continue; dashboard updates may pause.", "warn");
+    };
   } catch {
     $("ws-state").textContent = "progress offline";
   }
@@ -439,6 +465,22 @@ function startCountdown(el, seconds) {
     el.textContent = left > 0 ? `Too many attempts. Try again in ${left}s.` : "Try again now.";
     if (left <= 0) clearInterval(timer);
   }, 1000);
+}
+
+function toast(title, message = "", tone = "") {
+  const stack = $("toasts");
+  if (!stack) return;
+  const item = document.createElement("div");
+  item.className = `toast ${tone}`;
+  item.innerHTML = `<b></b>${message ? `<span></span>` : ""}`;
+  item.querySelector("b").textContent = title;
+  if (message) item.querySelector("span").textContent = message;
+  stack.appendChild(item);
+  requestAnimationFrame(() => item.classList.add("show"));
+  setTimeout(() => {
+    item.classList.remove("show");
+    setTimeout(() => item.remove(), 260);
+  }, 4200);
 }
 
 function fmtBytes(b) {

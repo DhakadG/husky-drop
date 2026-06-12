@@ -47,6 +47,54 @@ body::before {
 
 a { color: inherit; }
 
+.toast-stack {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 28px));
+  pointer-events: none;
+}
+
+.toast {
+  transform: translateY(12px);
+  opacity: 0;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 13px;
+  background: rgb(21 27 34 / 0.96);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.28);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.toast b,
+.toast span {
+  display: block;
+}
+
+.toast b {
+  font: 700 14px var(--font-display);
+}
+
+.toast span {
+  margin-top: 3px;
+  color: var(--bone-dim);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.toast.ok { border-left-color: var(--green); }
+.toast.warn { border-left-color: var(--accent-2); }
+.toast.err { border-left-color: var(--red); }
+
 .home-shell,
 .drop-shell,
 .admin-shell {
@@ -289,15 +337,19 @@ input.invalid {
 .dropzone {
   border: 1.5px dashed var(--line);
   border-radius: 8px;
-  background: var(--ink-2);
+  background:
+    radial-gradient(circle at 50% 0%, rgb(242 163 60 / 0.16), transparent 18rem),
+    var(--ink-2);
   padding: 44px 18px;
   text-align: center;
   cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
 }
 
 .dropzone:hover,
 .dropzone.drag {
   border-color: var(--accent);
+  transform: translateY(-1px);
 }
 
 .dropzone .big {
@@ -371,14 +423,29 @@ input.invalid {
 
 .trail.total { height: 5px; margin: 16px 0; }
 
-.filelist { display: grid; gap: 4px; }
-.file-row { padding: 13px 0; border-bottom: 1px solid var(--ink-3); }
+.filelist { display: grid; gap: 8px; }
+.file-row {
+  border: 1px solid var(--ink-3);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgb(16 20 24 / 0.56);
+}
 .file-top { display: flex; justify-content: space-between; gap: 12px; }
 .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-stat { color: var(--bone-dim); font: 12px var(--font-mono); white-space: nowrap; }
 .file-stat.ok { color: var(--green); }
 .file-stat.err { color: var(--red); }
+.file-row.uploading {
+  border-color: rgb(242 163 60 / 0.48);
+}
 .file-row.done .trail > i { background: var(--green); }
+.file-row.done {
+  border-color: rgb(131 214 156 / 0.38);
+}
+.file-row.error {
+  border-color: rgb(235 124 111 / 0.58);
+  cursor: pointer;
+}
 .file-row.error .trail > i { background: var(--red); }
 
 .tabs {
