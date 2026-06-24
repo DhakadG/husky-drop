@@ -916,10 +916,45 @@ input.invalid { border-color: var(--red); box-shadow: 0 0 0 4px rgba(240, 85, 10
   animation: none;
 }
 .event-row:hover { background: rgba(255, 255, 255, 0.5); border-radius: var(--r-sm); }
+.event-row.expandable { cursor: pointer; }
+.event-row.expanded { background: rgba(255, 255, 255, 0.65); border-bottom-color: transparent; }
+
 .event-row code,
 table.links code {
   color: var(--accent);
   font: 12px var(--font-mono);
+}
+
+.event-row code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.event-row code.start { color: var(--accent); }
+.event-row code.file { color: var(--green); }
+.event-row code.lock, .event-row code.global-lock { color: var(--red); }
+.event-row code.sessionclose { color: var(--amber); }
+
+.event-row-details {
+  grid-column: 1 / -1;
+  display: none;
+  padding: 10px 14px;
+  margin: 4px -12px -12px;
+  background: var(--glass-3);
+  border-top: 1px dashed color-mix(in oklab, var(--line) 60%, transparent);
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+.event-row.expanded .event-row-details {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.detail-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .event-row time,
 .upload-row span { color: var(--muted); font-size: 12px; }

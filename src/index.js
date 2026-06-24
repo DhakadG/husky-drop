@@ -444,7 +444,7 @@ async function closeLiveSession(request, env) {
     body: JSON.stringify({ id, slug }),
   });
   const result = await res.json().catch(() => ({ ok: false, closed: 0 }));
-  if (result.closed) await logEvent(env, { type: "sessionclose", slug, message: id });
+  if (result.closed) await logEvent(env, { type: "sessionclose", slug, message: id }, request);
   return json(result);
 }
 
@@ -646,7 +646,7 @@ async function recordGlobalPinFailure(env, link) {
     next.attempts = 0;
     next.windowStart = now;
     next.lockedUntil = now + retryAfter * 1000;
-    await logEvent(env, { type: "global-lock", slug: link.slug, label: link.label, message: "Global PIN damping started" });
+    await logEvent(env, { type: "global-lock", slug: link.slug, label: link.label, message: "Global PIN damping started" }, request);
   }
   await env.KV.put(key, JSON.stringify(next), { expirationTtl: 2 * 3600 });
   return retryAfter;
@@ -663,7 +663,7 @@ async function recordPinFailure(env, slug, request) {
     next.attempts = 0;
     next.level = level + 1;
     next.lockedUntil = Date.now() + retryAfter * 1000;
-    await logEvent(env, { type: "lock", slug, message: "PIN lockout started" });
+    await logEvent(env, { type: "lock", slug, message: "PIN lockout started" }, request);
   }
   await env.KV.put(key, JSON.stringify(next), { expirationTtl: 24 * 3600 });
   return retryAfter;
@@ -794,7 +794,7 @@ async function logOpened(request, env) {
   if (!link) return json({ error: "link not found" }, 404);
   if (linkState(link) === "expired") return json({ error: "this link has expired" }, 410);
   await bumpStats(env, link.slug, { opens: 1 });
-  await logEvent(env, { type: "open", slug: link.slug, label: link.label });
+  await logEvent(env, { type: "open", slug: link.slug, label: link.label }, request);
   return json({ ok: true });
 }
 
@@ -888,7 +888,7 @@ async function recordSessionStart(env, link, uploader, sessionId) {
     await env.KV.put(guardKey, "1", { expirationTtl: 24 * 3600 });
   }
   await bumpStats(env, link.slug, { sessions: 1 });
-  await logEvent(env, { type: "start", slug: link.slug, label: link.label, uploader });
+  await logEvent(env, { type: "start", slug: link.slug, label: link.label, uploader }, request);
   const notify = normalizeNotify(link.notify);
   if (notify.enabled && notify.start) {
     await sendNotify(env, {
@@ -977,7 +977,7 @@ async function createLink(request, env) {
   await env.KV.put(`link:${slug}`, JSON.stringify(link), opts);
   await env.KV.put(`stats:${slug}`, JSON.stringify(normalizeStats()), opts);
   await addLinkToIndex(env, slug);
-  await logEvent(env, { type: "linknew", slug, label: link.label });
+  await logEvent(env, { type: "linknew", slug, label: link.label }, request);
   return json({ ok: true, slug, folderId, url: `/d/${slug}` });
 }
 
@@ -1003,14 +1003,14 @@ async function patchLink(request, env, slug) {
   if ("theme" in b) link.theme = normalizeTheme({ ...link.theme, ...b.theme });
   if ("notify" in b) link.notify = normalizeNotify({ ...link.notify, ...b.notify });
   await env.KV.put(`link:${slug}`, JSON.stringify(link));
-  await logEvent(env, { type: "linkedit", slug, label: link.label });
+  await logEvent(env, { type: "linkedit", slug, label: link.label }, request);
   return json(adminLink(link, await env.KV.get(`stats:${slug}`, "json")));
 }
 
 async function deleteLink(env, slug) {
   await env.KV.delete(`link:${slug}`);
   await removeLinkFromIndex(env, slug);
-  await logEvent(env, { type: "linkdel", slug });
+  await logEvent(env, { type: "linkdel", slug }, request);
   return json({ ok: true });
 }
 
@@ -1130,7 +1130,7 @@ async function recordCompletion(env, link, meta) {
     uploader: meta.u,
     file: meta.n,
     bytes: meta.s,
-  });
+  }, request);
 }
 
 // Upload history is served from the maintained `recent:` list (no per-file KV
@@ -1197,7 +1197,7 @@ async function bumpStats(env, slug, delta) {
   return stats;
 }
 
-async function logEvent(env, event) {
+async function logEvent(env, event, request) {
   const ts = Date.now();
   const reverse = String(9_999_999_999_999 - ts).padStart(13, "0");
   const record = {
@@ -1209,10 +1209,30 @@ async function logEvent(env, event) {
     f: cleanText(event.file || "", 160),
     b: Number(event.bytes) || 0,
     m: cleanText(event.message || "", 160),
+    c: extractClientInfo(request)
   };
   await env.KV.put(`ev:${reverse}:${randomSlug(5)}`, JSON.stringify(record), {
     expirationTtl: 90 * 86400,
   });
+}
+
+function extractClientInfo(request) {
+  if (!request || !request.headers) return null;
+  const ua = request.headers.get("user-agent") || "";
+  let os = "Unknown";
+  let icon = "monitor";
+  if (/android/i.test(ua)) { os = "Android"; icon = "smartphone"; }
+  else if (/iphone|ipad|ipod/i.test(ua)) { os = "iOS"; icon = "smartphone"; }
+  else if (/mac os x/i.test(ua)) { os = "macOS"; icon = "laptop"; }
+  else if (/windows/i.test(ua)) { os = "Windows"; icon = "monitor"; }
+  else if (/linux/i.test(ua)) { os = "Linux"; icon = "terminal"; }
+  
+  const cf = request.cf || {};
+  let loc = "";
+  if (cf.city && cf.country) loc = `${cf.city}, ${cf.country}`;
+  else if (cf.country) loc = cf.country;
+
+  return { o: os, l: loc, i: icon };
 }
 
 async function recentEvents(env, limit = 60) {

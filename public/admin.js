@@ -380,10 +380,36 @@ function makeEventRow() {
 }
 
 function updateEventRow(el, e) {
+  const c = e.c || {};
+  const hasDetails = c.o || c.l || e.m;
+  
+  if (hasDetails) {
+    el.classList.add("expandable");
+    el.onclick = () => el.classList.toggle("expanded");
+  } else {
+    el.classList.remove("expandable", "expanded");
+    el.onclick = null;
+  }
+
+  let typeIcon = "list";
+  if (e.t === "start") typeIcon = "play";
+  if (e.t === "file") typeIcon = "file";
+  if (e.t === "open") typeIcon = "eye";
+  if (e.t === "lock" || e.t === "global-lock") typeIcon = "lock";
+  if (e.t === "sessionclose") typeIcon = "shield-alert";
+
   el.innerHTML = `
-    <code>${esc(e.t)}</code>
+    <code class="${escAttr(e.t)}">${icon(typeIcon)}${esc(e.t)}</code>
     <span>${esc(e.l || e.s || "")}${e.u ? " · " + esc(e.u) : ""}${e.f ? " · " + esc(e.f) : ""}</span>
-    <time>${new Date(e.at).toLocaleString()}</time>`;
+    <time>${new Date(e.at).toLocaleString()}</time>
+    ${hasDetails ? `
+      <div class="event-row-details">
+        ${e.m ? `<div class="detail-item">${icon("list")}${esc(e.m)}</div>` : ""}
+        ${c.o ? `<div class="detail-item">${icon(c.i || "laptop")}${esc(c.o)}</div>` : ""}
+        ${c.l ? `<div class="detail-item">${icon("globe")}${esc(c.l)}</div>` : ""}
+      </div>
+    ` : ""}
+  `;
 }
 
 function renderLinks(links) {
@@ -649,6 +675,15 @@ function icon(name) {
     sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>',
     folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
     refresh: '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5M3 12A9 9 0 0 1 18.5 5.8L21 8M21 3v5h-5"/>',
+    smartphone: '<rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><path d="M12 18h.01"/>',
+    laptop: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><path d="M2 20h20"/>',
+    monitor: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><path d="M8 21h8M12 17v4"/>',
+    terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    play: '<polygon points="5 3 19 12 5 21 5 3"/>',
+    eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+    file: '<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>',
+    "shield-alert": '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
   };
   return `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ""}</svg>`;
 }
