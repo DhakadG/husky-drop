@@ -50,10 +50,7 @@
 
 * { box-sizing: border-box; }
 
-@keyframes panelIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+
 @keyframes floatBlob {
   0%, 100% { transform: translate(0, 0) scale(1); }
   50% { transform: translate(22px, -26px) scale(1.08); }
@@ -336,12 +333,7 @@ h2 { font-size: 22px; font-weight: 700; }
   box-shadow: var(--shadow-card);
 }
 .panel { padding: clamp(20px, 3vw, 28px); }
-.panel,
-.stat-card,
-.live-row,
-.event-row,
-.upload-row,
-.settings-card { animation: panelIn 200ms ease both; }
+
 
 /* ---------- Feature band (home) ---------- */
 .feature-band {
