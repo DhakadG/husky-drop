@@ -300,7 +300,7 @@ h2 { font-size: 24px; }
 
 #detail-view {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .detail-summary,
@@ -543,8 +543,8 @@ input.invalid {
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .stat-grid.small { grid-template-columns: repeat(4, 1fr); }
@@ -567,7 +567,8 @@ input.invalid {
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1.15fr 0.85fr;
-  gap: 12px;
+  gap: 16px;
+  align-items: start;
 }
 
 .live-list,
@@ -684,6 +685,71 @@ input.invalid {
   margin-top: 10px;
 }
 
+.live-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 4px 0 14px;
+}
+
+.live-metric {
+  border: 1px solid var(--ink-3);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: rgb(16 20 24 / 0.5);
+}
+
+.live-metric span {
+  display: block;
+  color: var(--bone-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.live-metric b {
+  font: 700 20px var(--font-display);
+}
+
+.live-metric.hot {
+  border-color: rgb(242 163 60 / 0.45);
+}
+
+.live-metric.hot b {
+  color: var(--accent);
+}
+
+.live-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.live-meta .tag {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font: 12px var(--font-mono);
+  color: var(--bone-dim);
+}
+
+.live-meta .tag.rate {
+  color: var(--accent);
+  border-color: rgb(242 163 60 / 0.4);
+}
+
+.live-meta .tag.eta {
+  color: var(--accent-2);
+}
+
+@media (max-width: 720px) {
+  .live-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 .event-row,
 .upload-row {
   display: grid;
@@ -786,6 +852,82 @@ table.links td {
   padding: 14px;
 }
 
+/* ---- Action toolbars, per-row actions, flicker-free scroll areas ---- */
+
+/* Reserve the scrollbar gutter so an auto-refresh that crosses the scroll
+   threshold never shifts layout or flashes a scrollbar in and out. Combined
+   with keyed DOM reuse in admin.js, the live lists update in place. */
+.live-list,
+.event-list,
+.upload-list.scrollable {
+  scrollbar-gutter: stable;
+}
+
+.section-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.section-subtitle {
+  margin: 18px 0 8px;
+  color: var(--bone-dim);
+  font: 600 11px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.transfer-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.transfer-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.file-actions {
+  display: none;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.file-row.has-actions .file-actions {
+  display: flex;
+}
+
+.row-btn {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--bone);
+  background: var(--ink-2);
+  font: 600 12px var(--font-body);
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, color 160ms ease;
+}
+
+.row-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+.row-btn.danger:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.live-meta .tag.err {
+  color: var(--red);
+  border-color: rgb(235 124 111 / 0.5);
+}
+
 @media (max-width: 860px) {
   .feature-band,
   .grid-main,
@@ -796,6 +938,16 @@ table.links td {
   .grid-3,
   .check-row {
     grid-template-columns: 1fr;
+  }
+
+  .transfer-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .transfer-side {
+    align-items: flex-start;
+    width: 100%;
   }
 
   .hero { padding-top: 44px; }

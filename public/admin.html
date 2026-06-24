@@ -42,8 +42,12 @@
         <section class="panel">
           <div class="section-title">
             <h2>Live transfers</h2>
-            <span class="muted">Durable Object stream</span>
+            <div class="section-tools">
+              <span class="muted">Durable Object stream</span>
+              <button class="mini" id="live-refresh" type="button">refresh</button>
+            </div>
           </div>
+          <div id="live-metrics" class="live-metrics"></div>
           <div id="live-list" class="live-list"></div>
         </section>
         <section class="panel">
@@ -84,8 +88,8 @@
 
         <div class="section-sub">Transfer settings</div>
         <div class="grid-3">
-          <div class="field"><label for="f-conc">Parallel files</label><select id="f-conc"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
-          <div class="field"><label for="f-chunk">Chunk size</label><select id="f-chunk"><option value="8">8 MB</option><option value="16">16 MB</option><option value="32">32 MB</option></select></div>
+          <div class="field"><label for="f-conc">Parallel files</label><select id="f-conc"><option>1</option><option>2</option><option>3</option><option selected>4</option></select></div>
+          <div class="field"><label for="f-chunk">Chunk size</label><select id="f-chunk"><option value="8">8 MB</option><option value="16">16 MB</option><option value="32" selected>32 MB</option></select></div>
           <label class="check"><input id="f-folders" type="checkbox" /> Create subfolders per uploader</label>
         </div>
 

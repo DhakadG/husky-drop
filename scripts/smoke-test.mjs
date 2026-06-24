@@ -197,6 +197,24 @@ async function main() {
   );
   assert.equal(res.status, 200, "complete endpoint logs upload metadata");
 
+  // Re-sending the same completion (a retry / "sync") must not double-count.
+  res = await worker.fetch(
+    request("/api/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        linkId: "inbox",
+        filename: "IMG.HEIC",
+        size: 200,
+        mimeType: "image/heic",
+        uploader: "Riya",
+        fileId: "drive-file-1",
+      }),
+    }),
+    env
+  );
+  assert.equal(res.status, 200, "duplicate completion is accepted");
+
   res = await worker.fetch(request("/api/admin/overview", { headers: { authorization: "Bearer test-admin" } }), env);
   assert.equal(res.status, 200, "admin overview is available");
   const overview = await res.json();

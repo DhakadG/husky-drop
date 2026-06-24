@@ -80,11 +80,28 @@ wrangler secret put NOTIFY_TO
 wrangler secret put NOTIFY_FROM
 ```
 
-Deploy:
+## Deploying Changes (always two steps)
+
+Every change ships in this order — see **`docs/DEPLOY.md`** for the full guide:
+
+1. **Push to GitHub** (history / source of truth)
+2. **Deploy to Cloudflare** with Wrangler (makes it live)
 
 ```powershell
-wrangler deploy
+# 1. validate
+npm test
+
+# 2. push to GitHub (origin/main → github.com/DhakadG/husky-drop)
+git add -A
+git commit -m "describe the change"
+git push origin main
+
+# 3. deploy to Cloudflare (live at dropbox.losthusky.qzz.io)
+npm run deploy
 ```
+
+`wrangler deploy` does **not** update GitHub, and `git push` does **not** update
+the live site. Do both, in this order, every time.
 
 ## Local Dev
 

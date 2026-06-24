@@ -9,6 +9,10 @@ const MAX_EXPIRY_DAYS = 30;
 const LOCK_ATTEMPTS = 5;
 const LOCK_BASE_SECONDS = 60;
 const LOCK_MAX_SECONDS = 3600;
+// Completions are accumulated in the Durable Object and flushed to KV in
+// batches so 600 finished files cost a handful of KV writes, not ~2400.
+const COMPLETION_FLUSH_MS = 4000;
+const RECENT_CAP = 200;
 
 const SECURITY_HEADERS = {
   "content-security-policy": [
@@ -59,6 +63,7 @@ export class LiveTracker {
     this.adminSockets = new Set();
     this.folderLocks = new Map();
     this.started = new Set();
+    this.pending = new Map();
   }
 
   async fetch(request) {
@@ -127,10 +132,19 @@ export class LiveTracker {
 
     if (request.method === "POST" && url.pathname === "/progress") {
       const body = await request.json().catch(() => ({}));
-      const session = normalizeLiveSession(body);
-      this.sessions.set(session.id, session);
+      this.recordSession(body);
       this.broadcast();
       return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
+    }
+
+    if (request.method === "POST" && url.pathname === "/complete") {
+      const body = await request.json().catch(() => ({}));
+      const slug = cleanText(body.slug || "", 60);
+      if (!slug || !body.meta) {
+        return new Response(JSON.stringify({ ok: false }), { headers: JSON_HEADERS });
+      }
+      await this.accumulateCompletion(slug, cleanText(body.label || "", 100), body.meta);
+      return new Response(JSON.stringify({ ok: true, queued: true }), { headers: JSON_HEADERS });
     }
 
     if (request.headers.get("upgrade") !== "websocket") {
@@ -157,9 +171,8 @@ export class LiveTracker {
           return;
         }
         if (msg.type !== "progress") return;
-        const session = normalizeLiveSession({ ...msg, slug });
+        const session = this.recordSession({ ...msg, slug });
         server.sessionId = session.id;
-        this.sessions.set(session.id, session);
         this.broadcast();
       });
       server.addEventListener("close", () => {
@@ -183,6 +196,115 @@ export class LiveTracker {
     for (const [id, session] of this.sessions) {
       if (session.lastSeen < cutoff) this.sessions.delete(id);
     }
+  }
+
+  // Normalize a live update and derive a smoothed throughput + ETA from the
+  // delta against the previous snapshot. Works for both the WebSocket path and
+  // the /api/progress fallback, and needs no KV writes.
+  recordSession(input) {
+    const session = normalizeLiveSession(input);
+    const prev = this.sessions.get(session.id);
+    if (prev && session.lastSeen > prev.lastSeen && session.sent >= prev.sent) {
+      const dt = (session.lastSeen - prev.lastSeen) / 1000;
+      const inst = dt > 0 ? (session.sent - prev.sent) / dt : 0;
+      session.speed = prev.speed ? prev.speed * 0.5 + inst * 0.5 : inst || session.speed;
+    }
+    const remaining = Math.max(0, session.total - session.sent);
+    session.eta =
+      session.state !== "done" && session.speed > 0 ? Math.round(remaining / session.speed) : 0;
+    this.sessions.set(session.id, session);
+    return session;
+  }
+
+  // Buffer completed-file metadata in memory and schedule a single batched KV
+  // flush, instead of writing stats/recent/event KV keys per file. Completions
+  // are de-duped by file id within the batch so a retried completion (e.g. the
+  // user hitting "sync" on a "log delayed" file) never gets queued twice.
+  async accumulateCompletion(slug, label, rawMeta) {
+    const meta = normalizeUploadMeta(rawMeta);
+    let pend = this.pending.get(slug);
+    if (!pend) {
+      pend = { recents: [], seen: new Set(), label, lastUploader: "", lastFile: "" };
+      this.pending.set(slug, pend);
+    }
+    const id = meta.f || `${meta.n}:${meta.at}`;
+    if (!pend.seen.has(id)) {
+      pend.seen.add(id);
+      pend.recents.push(meta);
+      if (pend.recents.length > RECENT_CAP + 50) pend.recents.shift();
+    }
+    pend.label = label || pend.label;
+    pend.lastUploader = meta.u || pend.lastUploader;
+    pend.lastFile = meta.n || pend.lastFile;
+    const existing = await this.state.storage.getAlarm();
+    if (!existing) await this.state.storage.setAlarm(Date.now() + COMPLETION_FLUSH_MS);
+  }
+
+  async alarm() {
+    const pending = this.pending;
+    this.pending = new Map();
+    const failed = [];
+    for (const [slug, pend] of pending) {
+      try {
+        await this.flushCompletions(slug, pend);
+      } catch (err) {
+        console.error("completion flush failed", err.message);
+        failed.push([slug, pend]);
+      }
+    }
+    for (const [slug, pend] of failed) {
+      const cur = this.pending.get(slug);
+      if (cur) {
+        for (const m of pend.recents) {
+          const id = m.f || `${m.n}:${m.at}`;
+          if (cur.seen.has(id)) continue;
+          cur.seen.add(id);
+          cur.recents.push(m);
+        }
+        cur.label = pend.label || cur.label;
+        cur.lastUploader = pend.lastUploader || cur.lastUploader;
+        cur.lastFile = pend.lastFile || cur.lastFile;
+      } else {
+        this.pending.set(slug, pend);
+      }
+    }
+    if (this.pending.size) await this.state.storage.setAlarm(Date.now() + COMPLETION_FLUSH_MS);
+  }
+
+  async flushCompletions(slug, pend) {
+    const existing = (await this.env.KV.get(`recent:${slug}`, "json")) || [];
+    const existingIds = new Set(existing.map((m) => m.f || `${m.n}:${m.at}`));
+
+    // Stats counters only ever move for files we have never recorded, so a
+    // retried/re-synced completion refreshes the history without inflating
+    // the totals. Drive remains the source of truth for the full archive.
+    let newFiles = 0;
+    let newBytes = 0;
+    for (const m of pend.recents) {
+      const id = m.f || `${m.n}:${m.at}`;
+      if (existingIds.has(id)) continue;
+      existingIds.add(id);
+      newFiles++;
+      newBytes += m.s;
+    }
+
+    await this.env.KV.put(`recent:${slug}`, JSON.stringify(mergeRecent(existing, pend.recents)));
+    if (newFiles === 0) return;
+
+    const stats = normalizeStats(await this.env.KV.get(`stats:${slug}`, "json"));
+    stats.files += newFiles;
+    stats.bytes += newBytes;
+    await this.env.KV.put(`stats:${slug}`, JSON.stringify(stats));
+
+    await logEvent(this.env, {
+      type: "file",
+      slug,
+      label: pend.label,
+      uploader: pend.lastUploader,
+      file: newFiles === 1 ? pend.lastFile : `${newFiles} files`,
+      bytes: newBytes,
+      message: newFiles === 1 ? "" : `${newFiles} files saved`,
+    });
   }
 
   snapshot() {
@@ -250,7 +372,7 @@ async function api(request, env, url) {
     if (m === "POST" && p === "/api/admin/links") return createLink(request, env);
     if (m === "POST" && p === "/api/admin/live/close") return closeLiveSession(request, env);
     if (m === "GET" && p.startsWith("/api/admin/link/")) {
-      return linkDetail(env, p.slice("/api/admin/link/".length));
+      return linkDetail(env, p.slice("/api/admin/link/".length), url);
     }
     if (m === "PATCH" && p.startsWith("/api/admin/links/")) {
       return patchLink(request, env, p.slice("/api/admin/links/".length));
@@ -259,7 +381,7 @@ async function api(request, env, url) {
       return deleteLink(env, p.slice("/api/admin/links/".length));
     }
     if (m === "GET" && p.startsWith("/api/admin/uploads/")) {
-      return listUploads(env, p.slice("/api/admin/uploads/".length));
+      return listUploads(env, p.slice("/api/admin/uploads/".length), url);
     }
     if (m === "GET" && p.startsWith("/api/admin/thumb/")) {
       return driveThumb(env, p.slice("/api/admin/thumb/".length));
@@ -573,8 +695,11 @@ async function gatePin(request, env, link, pin) {
 }
 
 function normalizeSettings(input = {}) {
-  const concurrency = clamp(Number(input.concurrency) || 2, 1, 4);
-  const chunkMB = [8, 16, 32].includes(Number(input.chunkMB)) ? Number(input.chunkMB) : 8;
+  // Fast defaults (4 parallel files, 32 MB chunks) apply whenever a link has no
+  // explicit tuning, so new links and the env-configured links are fast out of
+  // the box. Admins can still pick any supported value in the link editor.
+  const concurrency = clamp(Number(input.concurrency) || 4, 1, 4);
+  const chunkMB = [8, 16, 32].includes(Number(input.chunkMB)) ? Number(input.chunkMB) : 32;
   const maxTransferBytes = clamp(Number(input.maxTransferBytes) || MAX_DEFAULT_BYTES, 1, MAX_DEFAULT_BYTES);
   return {
     concurrency,
@@ -799,20 +924,7 @@ async function logComplete(request, env) {
     f: cleanText(fileId || "", 120),
     at: Date.now(),
   };
-  await env.KV.put(`up:${linkId}:${Date.now()}:${randomSlug(4)}`, "1", {
-    metadata: meta,
-    expirationTtl: 365 * 86400,
-  });
-  await addRecentUpload(env, linkId, meta);
-  await bumpStats(env, link.slug, { files: 1, bytes: meta.s });
-  await logEvent(env, {
-    type: "file",
-    slug: link.slug,
-    label: link.label,
-    uploader: meta.u,
-    file: meta.n,
-    bytes: meta.s,
-  });
+  await recordCompletion(env, link, meta);
   const notify = normalizeNotify(link.notify);
   if (notify.enabled && notify.complete) {
     await sendNotify(env, {
@@ -902,16 +1014,18 @@ async function deleteLink(env, slug) {
   return json({ ok: true });
 }
 
-async function listUploads(env, slug) {
-  const uploads = await getUploads(env, slug);
+async function listUploads(env, slug, url) {
+  const fresh = url?.searchParams.get("fresh") === "1";
+  const uploads = await getUploads(env, slug, fresh);
   const totalBytes = uploads.reduce((t, u) => t + (u.s || 0), 0);
   return json({ uploads, count: uploads.length, totalBytes });
 }
 
-async function linkDetail(env, slug) {
+async function linkDetail(env, slug, url) {
   const link = await env.KV.get(`link:${slug}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
-  const uploads = await getUploads(env, slug);
+  const fresh = url?.searchParams.get("fresh") === "1";
+  const uploads = await getUploads(env, slug, fresh);
   const active = (await liveSnapshot(env)).filter((s) => s.slug === slug);
   const totalBytes = uploads.reduce((t, u) => t + (u.s || 0), 0);
   return json({
@@ -989,22 +1103,52 @@ async function removeLinkFromIndex(env, slug) {
   await env.KV.put("links:index", JSON.stringify(slugs));
 }
 
-async function getUploads(env, slug) {
-  const recent = await getRecentUploads(env, slug);
-  const uploads = [];
-  let cursor;
-  do {
-    let page;
-    try {
-      page = await env.KV.list({ prefix: `up:${slug}:`, cursor });
-    } catch {
-      return recent.length ? recent : await driveUploadsForLink(env, slug);
+// Records a finished file. With a Durable Object bound, the write is batched
+// there (see flushCompletions) so a big transfer costs a few KV writes total.
+// Without one (e.g. unit tests) it falls back to immediate inline writes.
+async function recordCompletion(env, link, meta) {
+  if (env.LIVE_TRACKER) {
+    await liveStub(env)
+      .fetch("https://live.internal/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slug: link.slug, label: link.label, meta }),
+      })
+      .catch((err) => console.error("completion relay failed", err.message));
+    return;
+  }
+  const recent = await getRecentUploads(env, link.slug);
+  const id = meta.f || `${meta.n}:${meta.at}`;
+  const already = recent.some((u) => (u.f || `${u.n}:${u.at}`) === id);
+  await addRecentUpload(env, link.slug, meta);
+  if (already) return;
+  await bumpStats(env, link.slug, { files: 1, bytes: meta.s });
+  await logEvent(env, {
+    type: "file",
+    slug: link.slug,
+    label: link.label,
+    uploader: meta.u,
+    file: meta.n,
+    bytes: meta.s,
+  });
+}
+
+// Upload history is served from the maintained `recent:` list (no per-file KV
+// keys); Google Drive is the durable source for the full archive beyond it.
+// `fresh` forces a Drive re-list and rewrites the cached recent list, which is
+// how the admin "sync" button reconciles files that finished in Drive but whose
+// dashboard log was delayed.
+async function getUploads(env, slug, fresh = false) {
+  if (fresh) {
+    const drive = await driveUploadsForLink(env, slug);
+    if (drive.length) {
+      await env.KV.put(`recent:${slug}`, JSON.stringify(drive.slice(0, RECENT_CAP)));
+      return drive;
     }
-    for (const k of page.keys) if (k.metadata) uploads.push(k.metadata);
-    cursor = page.list_complete ? null : page.cursor;
-  } while (cursor);
-  uploads.sort((a, b) => b.at - a.at);
-  return uploads.length ? uploads : recent;
+  }
+  const recent = await getRecentUploads(env, slug);
+  if (recent.length) return recent;
+  return await driveUploadsForLink(env, slug);
 }
 
 async function getRecentUploads(env, slug) {
@@ -1014,7 +1158,7 @@ async function getRecentUploads(env, slug) {
 
 async function addRecentUpload(env, slug, meta) {
   const rows = await getRecentUploads(env, slug);
-  const next = [meta, ...rows.filter((u) => u.f !== meta.f)].slice(0, 200);
+  const next = [meta, ...rows.filter((u) => u.f !== meta.f)].slice(0, RECENT_CAP);
   await env.KV.put(`recent:${slug}`, JSON.stringify(next));
 }
 
@@ -1114,6 +1258,7 @@ function normalizeLiveSession(input) {
     : [];
   const total = Number(input.total) || files.reduce((t, f) => t + f.size, 0);
   const sent = Number(input.sent) || files.reduce((t, f) => t + f.sent, 0);
+  const count = Number(input.count) || files.length;
   return {
     id: cleanText(input.sessionId || input.id || crypto.randomUUID(), 100),
     slug: cleanText(input.slug || "", 60),
@@ -1122,10 +1267,33 @@ function normalizeLiveSession(input) {
     sent,
     total,
     pct: total ? Math.min(100, Math.floor((sent / total) * 100)) : 0,
+    count,
+    done: clamp(Number(input.done) || 0, 0, count || Number.MAX_SAFE_INTEGER),
+    error: Math.max(0, Number(input.error) || 0),
+    speed: Math.max(0, Number(input.speed) || 0),
+    eta: 0,
     files,
     state: cleanText(input.state || "uploading", 20),
     lastSeen: Date.now(),
   };
+}
+
+function normalizeUploadMeta(meta = {}) {
+  return {
+    n: cleanText(meta.n || "file", 160),
+    s: Number(meta.s) || 0,
+    m: cleanText(meta.m || "", 80),
+    u: cleanText(meta.u || "anonymous", 60),
+    f: cleanText(meta.f || "", 120),
+    at: Number(meta.at) || Date.now(),
+  };
+}
+
+function mergeRecent(existing, incoming) {
+  const byId = new Map();
+  for (const m of existing) byId.set(m.f || `${m.n}:${m.at}`, m);
+  for (const m of incoming) byId.set(m.f || `${m.n}:${m.at}`, m);
+  return [...byId.values()].sort((a, b) => b.at - a.at).slice(0, RECENT_CAP);
 }
 
 function clamp(n, min, max) {
