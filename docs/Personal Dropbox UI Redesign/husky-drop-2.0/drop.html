@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex" />
+<title>LostHusky's DropBox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body class="drop-page">
+<div class="ambient"></div>
+<div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="true"></div>
+<main class="drop-shell">
+  <header class="topbar">
+    <a class="brand" href="/"><i class="brand-mark"></i>losthusky<span>/</span>drop</a>
+    <div class="status-pill" id="ws-state">secure drop</div>
+  </header>
+
+  <section id="loading" class="panel center-panel">
+    <p class="eyebrow">loading link</p>
+    <h1>Finding this drop...</h1>
+  </section>
+
+  <section id="gone" class="panel center-panel hidden">
+    <p class="eyebrow">closed</p>
+    <h1>This link is not available.</h1>
+    <p class="muted">It expired, was deleted, or the URL is incomplete.</p>
+  </section>
+
+  <section id="pin-gate" class="panel center-panel hidden">
+    <p class="eyebrow">protected link</p>
+    <h1 id="pin-label">Password required</h1>
+    <div class="field">
+      <label for="pin">Password / PIN</label>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter the shared code" />
+    </div>
+    <button class="btn" id="pin-go">Open drop</button>
+    <div class="msg-err" id="pin-err"></div>
+  </section>
+
+  <section id="main" class="hidden">
+    <div class="drop-hero panel">
+      <div>
+        <img id="link-logo" class="link-logo hidden" alt="" />
+        <p class="eyebrow">receive files</p>
+        <h1 id="label">Trip drop</h1>
+        <p id="welcome" class="hero-copy">Send original photos and videos here.</p>
+        <div class="meta-row" id="meta"></div>
+      </div>
+    </div>
+
+    <div class="grid-main">
+      <section class="panel">
+        <div class="field">
+          <label for="who">Your name</label>
+          <input id="who" type="text" autocomplete="name" placeholder="e.g. Riya" maxlength="60" />
+        </div>
+
+        <div class="dropzone" id="zone" role="button" tabindex="0" aria-label="Add photos and videos">
+          <div class="big">Tap to add photos and videos</div>
+          <div class="sub">Original size, HEIC, MOV, folders, and large files are fine.</div>
+        </div>
+        <input id="picker" type="file" multiple class="hidden" />
+
+        <div class="security-grid" aria-label="Security notes">
+          <div>
+            <b>Password gate</b>
+            <span>Protected links verify before upload sessions are created.</span>
+          </div>
+          <div>
+            <b>Direct encrypted route</b>
+            <span>Uploads move over HTTPS straight to Google Drive.</span>
+          </div>
+          <div>
+            <b>Admin live progress</b>
+            <span>Upload progress streams through a live relay, not KV heartbeats.</span>
+          </div>
+          <div>
+            <b>Keep this page open</b>
+            <span>iPhones pause long uploads when the browser is closed.</span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel promo hidden" id="promo">
+        <p class="eyebrow">message</p>
+        <h2 id="promo-title"></h2>
+        <p id="promo-text"></p>
+        <div id="promo-video" class="promo-video hidden"></div>
+        <a id="promo-cta" class="btn ghost hidden" target="_blank" rel="noreferrer">Open</a>
+      </aside>
+    </div>
+
+    <section class="panel transfer-panel hidden" id="transfer-panel">
+      <div class="transfer-head">
+        <div>
+          <p class="eyebrow">transfer queue</p>
+          <h2><span id="pct">0</span>% complete</h2>
+        </div>
+        <div class="transfer-side">
+          <div class="muted" id="detail">waiting</div>
+          <div class="transfer-actions">
+            <button class="mini hidden" id="retry-all" type="button">retry failed</button>
+            <button class="mini danger hidden" id="cancel-all" type="button">cancel all</button>
+          </div>
+        </div>
+      </div>
+      <div class="trail total"><i id="totalbar"></i></div>
+      <div class="filelist" id="list"></div>
+    </section>
+  </section>
+</main>
+<script src="/drop.js"></script>
+</body>
+</html>
