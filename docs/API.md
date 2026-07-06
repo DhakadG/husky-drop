@@ -139,4 +139,112 @@ snapshot to the Durable Object. It does not store progress snapshots in KV.
 Body:
 
 ```json
-{ "linkId": "trip", "filename": "IMG.MOV", "size": 2000, "mimeType": "video/quicktime", "uploader": "Riya",
+{ "linkId": "trip", "filename": "IMG.MOV", "size": 2000, "mimeType": "video/quicktime", "uploader": "Riya", "fileId": "drive-file-id" }
+```
+
+Writes upload history, file event, and counters.
+
+### `POST /api/opened`
+
+Body:
+
+```json
+{ "linkId": "trip" }
+```
+
+Page-open tracking. The client de-dupes per browser session.
+
+## Admin
+
+All admin endpoints require:
+
+```text
+Authorization: Bearer <ADMIN_TOKEN>
+```
+
+### `GET /api/admin/live?token=<ADMIN_TOKEN>`
+
+Admin WebSocket endpoint for live upload progress snapshots.
+
+### `GET /api/admin/overview`
+
+Returns:
+
+```json
+{
+  "totals": { "links": 1, "opens": 2, "sessions": 3, "files": 4, "bytes": 5 },
+  "links": [],
+  "active": [],
+  "events": []
+}
+```
+
+`active` comes from the Durable Object snapshot. Durable history remains in KV.
+
+### `POST /api/admin/live/close`
+
+Body: `{id?, slug?}`. Returns `{ok, closed}`.
+
+Dismisses stuck or abandoned live transfers from the admin dashboard. `id`
+closes one session; `slug` without `id` closes every live session for that
+link. This only clears live dashboard state; completed Drive files stay in
+Drive.
+
+### `GET /api/admin/link/:slug`
+
+Returns `{link, uploads, count, totalBytes, active}`.
+
+### `POST /api/admin/links`
+
+Body:
+
+```json
+{
+  "label": "Spiti Trip",
+  "slug": "spiti-26",
+  "pin": "1234",
+  "expiresDays": 14,
+  "folderId": "",
+  "folderName": "",
+  "settings": { "concurrency": 2, "chunkMB": 8, "perUploaderFolders": true },
+  "notify": { "enabled": true, "start": true, "complete": false },
+  "theme": { "logoUrl": "", "backgroundUrl": "", "accentColor": "#f2a33c" }
+}
+```
+
+Blank folder means auto-create under `DRIVE_PARENT_ID` if configured.
+
+### `PATCH /api/admin/links/:slug`
+
+Accepts any subset of `label`, `pin` (`""` clears), `expiresDays`,
+`settings`, `notify`, and `theme`. Returns the updated admin-shaped link.
+
+### `DELETE /api/admin/links/:slug`
+
+Deletes the link record. Drive files remain.
+
+### `GET /api/admin/uploads/:slug`
+
+Returns `{uploads, count, totalBytes}`.
+
+### `GET /api/admin/thumb/:fileId`
+
+Returns Drive file preview metadata for admin-side preview/open actions.
+
+## Environment
+
+Secrets:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REFRESH_TOKEN`
+- `ADMIN_TOKEN`
+- optional `RESEND_API_KEY`
+- optional `NOTIFY_TO`
+- optional `NOTIFY_FROM`
+
+Vars:
+
+- optional `DRIVE_PARENT_ID`
+- optional `LINK_SLUGS` — comma-separated existing slugs for admin overview
+  recovery/fast-path when KV list quota is exhausted.

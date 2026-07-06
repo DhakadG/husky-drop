@@ -61,4 +61,29 @@ distributed guessing where every IP stays below its own limit.
 - Abuse containment: per-link budgets (`maxTotalBytes` / `maxTotalFiles` /
   `maxSessions`) auto-pause a link when crossed, and any link can be manually
   paused without deleting it. Upload sessions are refused when Drive free
-  space (minus a 5 GB rese
+  space (minus a 5 GB reserve) cannot fit the file.
+- Share links: gallery mode keeps folders private; file downloads require
+  HMAC-signed tokens bound to scope+slug+fileId with a 15-minute expiry
+  (signed with `SHARE_SIGNING_KEY`, falling back to a key derived from
+  `ADMIN_TOKEN`). Redirect mode grants Drive `anyone` reader permissions that
+  are revoked on pause, delete, and (lazily) on expiry.
+- Client error reports (`/api/client-error`) are rate limited 5/min/IP.
+- Secrets live in Worker secrets or `.dev.vars`; both are excluded from GitHub.
+- `wrangler.jsonc` is local-only. `wrangler.example.jsonc` is the committed
+  placeholder.
+- Session URIs are single-file Google resumable upload URLs; leaking one does
+  not leak Drive credentials.
+- Filenames, folder names, dashboard strings, and theme fields are sanitized and
+  length-capped.
+- Upload spam still exists if a trusted PIN holder uploads junk. Budgets cap
+  the damage; delete or pause that link.
+
+## Not Implemented
+
+- Anti-virus scanning.
+- End-to-end client-side encryption.
+- Turnstile (planned as an option for PIN-less links).
+- `drive.file` scope reduction (spike planned; see audit docs).
+
+Add those before making public claims beyond password protection, HTTPS
+transport, and Google Drive encryption at rest.

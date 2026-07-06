@@ -33,4 +33,9 @@
     // Leave empty to create them in My Drive root.
     "DRIVE_PARENT_ID": "REDACTED_DRIVE_PARENT_ID",
     "LINK_SLUGS": "kareri-lake-trek",
-    // Cloudflare Web Analytics: the Worker injects the beacon snippet 
+    // Cloudflare Web Analytics beacon token; the Worker injects the snippet
+    // into every HTML page when set. Public by design, not a secret.
+    "CF_BEACON_TOKEN": "5e7e086782714160804ea9afc63dedc8"
+  },
+  "routes": [{ "pattern": "dropbox.losthusky.qzz.io", "custom_domain": true }]
+}

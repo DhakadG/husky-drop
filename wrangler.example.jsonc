@@ -31,4 +31,8 @@
   "vars": {
     "DRIVE_PARENT_ID": "REPLACE_WITH_OPTIONAL_PARENT_FOLDER_ID",
     "LINK_SLUGS": "comma,separated,existing,slugs",
-    // Optional: Cloudflare Web Analytics beacon token (Worker inj
+    // Optional: Cloudflare Web Analytics beacon token (Worker injects it).
+    "CF_BEACON_TOKEN": ""
+  },
+  "routes": [{ "pattern": "dropbox.example.com", "custom_domain": true }]
+}

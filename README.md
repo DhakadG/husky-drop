@@ -103,4 +103,63 @@ wrangler secret put NOTIFY_FROM
 
 ## Deploying Changes (always two steps)
 
-Every change s
+Every change ships in this order — see **`docs/DEPLOY.md`** for the full guide:
+
+1. **Push to GitHub** (history / source of truth)
+2. **Deploy to Cloudflare** with Wrangler (makes it live)
+
+```powershell
+# 1. validate
+npm test
+
+# 2. push to GitHub (origin/main → github.com/DhakadG/husky-drop)
+git add -A
+git commit -m "describe the change"
+git push origin main
+
+# 3. deploy to Cloudflare (live at dropbox.losthusky.qzz.io)
+npm run deploy
+```
+
+`wrangler deploy` does **not** update GitHub, and `git push` does **not** update
+the live site. Do both, in this order, every time.
+
+## Local Dev
+
+```powershell
+npm install
+npm test
+wrangler dev
+```
+
+For local Google calls, add `.dev.vars`:
+
+```text
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REFRESH_TOKEN=...
+ADMIN_TOKEN=dev-token
+RESEND_API_KEY=...
+NOTIFY_TO=you@example.com
+NOTIFY_FROM=LostHusky's DropBox <dropbox@example.com>
+```
+
+## GitHub Redaction
+
+The real `wrangler.jsonc` is ignored because it contains account-specific IDs.
+Commit `wrangler.example.jsonc` instead. Never commit:
+
+- `.dev.vars`
+- `.wrangler/`
+- OAuth refresh tokens
+- Cloudflare API tokens
+- real notification sender/recipient secrets
+
+Suggested repo command:
+
+```powershell
+git init
+git add .
+git commit -m "feat: build losthusky dropbox"
+gh repo create DhakadG/husky-drop --private --source=. --remote=origin --push
+```
