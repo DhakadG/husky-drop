@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex" />
+<title>Shared files - LostHusky's DropBox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body class="drop-page">
+<div class="ambient"></div>
+<div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="true"></div>
+<main class="drop-shell">
+  <header class="topbar">
+    <a class="brand" href="/"><i class="brand-mark"></i>losthusky<span>/</span>drop</a>
+    <div class="status-pill" id="ws-state">shared folder</div>
+  </header>
+
+  <section id="loading" class="panel center-panel">
+    <p class="eyebrow">loading share</p>
+    <h1>Opening this share...</h1>
+  </section>
+
+  <section id="gone" class="panel center-panel hidden">
+    <p class="eyebrow">closed</p>
+    <h1>This share is not available.</h1>
+    <p class="muted">It expired, was paused, or the URL is incomplete.</p>
+  </section>
+
+  <section id="pin-gate" class="panel center-panel hidden">
+    <p class="eyebrow">protected share</p>
+    <h1 id="pin-label">Password required</h1>
+    <div class="field">
+      <label for="pin">Password / PIN</label>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter the shared code" />
+    </div>
+    <button class="btn" id="pin-go">Open share</button>
+    <div class="msg-err" id="pin-err"></div>
+  </section>
+
+  <section id="redirect-panel" class="panel center-panel hidden">
+    <p class="eyebrow">shared folders</p>
+    <h1 id="redirect-label">Opening Google Drive...</h1>
+    <p class="muted">If nothing happens, use the buttons below.</p>
+    <div id="redirect-links" class="transfer-actions"></div>
+  </section>
+
+  <section id="main" class="hidden">
+    <div class="drop-hero panel">
+      <div>
+        <img id="link-logo" class="link-logo hidden" alt="" />
+        <p class="eyebrow">shared with you</p>
+        <h1 id="label">Shared files</h1>
+        <p id="welcome" class="hero-copy">Browse and download the files below.</p>
+        <div class="meta-row" id="meta"></div>
+      </div>
+    </div>
+
+    <section class="panel">
+      <div class="gallery-toolbar">
+        <button class="mini" id="select-all" type="button">select all</button>
+        <button class="mini" id="select-none" type="button">clear</button>
+        <button class="btn hidden" id="zip-btn" type="button">Download selected as zip</button>
+        <span class="muted" id="sel-info"></span>
+      </div>
+      <div id="folders"></div>
+    </section>
+  </section>
+</main>
+<script src="/vendor/microzip.js"></script>
+<script src="/share.js"></script>
+</body>
+</html>

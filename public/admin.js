@@ -1,11 +1,12 @@
 const $ = (id) => document.getElementById(id);
 
-let token = localStorage.getItem("lhdb_admin") || "";
 let overview = null;
 let liveActive = [];
 let liveSocket = null;
 let liveReconnectDelay = 1000;
 let currentDetailSlug = "";
+let seriesMetric = "bytes";
+let seriesRows = [];
 const expandedUploads = new Set();
 const openSettings = new Set();
 
@@ -20,17 +21,23 @@ async function init() {
   $("refresh").addEventListener("click", refreshAll);
   $("live-refresh")?.addEventListener("click", refreshAll);
   $("create").addEventListener("click", createLink);
+  $("share-create")?.addEventListener("click", createShare);
+  $("logout")?.addEventListener("click", logout);
   document.addEventListener("click", handleAdminAction);
-  if (token && (await ping())) unlock();
-}
-
-function auth() {
-  return { authorization: `Bearer ${token}` };
+  document.querySelectorAll("[data-metric]").forEach((b) => {
+    b.addEventListener("click", () => {
+      seriesMetric = b.dataset.metric;
+      document.querySelectorAll("[data-metric]").forEach((x) => x.classList.toggle("active", x === b));
+      renderChart();
+    });
+  });
+  // A previous session cookie may still be valid.
+  if (await ping()) unlock();
 }
 
 async function ping() {
   try {
-    const r = await fetch("/api/admin/overview", { headers: auth() });
+    const r = await fetch("/api/admin/overview");
     return r.ok;
   } catch {
     return false;
@@ -38,13 +45,25 @@ async function ping() {
 }
 
 async function tryToken() {
-  token = $("tok").value.trim();
-  if (await ping()) {
-    localStorage.setItem("lhdb_admin", token);
+  $("tok-err").textContent = "";
+  const r = await fetch("/api/admin/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: $("tok").value.trim() }),
+  });
+  if (r.ok) {
+    $("tok").value = "";
     unlock();
-  } else {
-    $("tok-err").textContent = "Wrong token.";
+    return;
   }
+  const d = await r.json().catch(() => ({}));
+  $("tok-err").textContent =
+    r.status === 429 ? `Too many attempts. Wait ${d.retryAfter || 60}s.` : d.error || "Wrong token.";
+}
+
+async function logout() {
+  await fetch("/api/admin/logout", { method: "POST" }).catch(() => {});
+  location.reload();
 }
 
 function unlock() {
@@ -52,8 +71,10 @@ function unlock() {
   $("panel").classList.remove("hidden");
   connectLive();
   refreshAll();
+  refreshChart();
   setInterval(refreshAll, 15000);
   setInterval(tickLive, 1000);
+  setInterval(refreshChart, 5 * 60000);
 }
 
 function tickLive() {
@@ -69,7 +90,12 @@ function showTab(name) {
 
 async function refreshAll() {
   try {
-    const r = await fetch("/api/admin/overview", { headers: auth() });
+    const r = await fetch("/api/admin/overview");
+    if (r.status === 401) {
+      $("panel").classList.add("hidden");
+      $("auth").classList.remove("hidden");
+      return;
+    }
     if (!r.ok) return;
     overview = await r.json();
     if (!liveActive.length) liveActive = overview.active || [];
@@ -77,7 +103,18 @@ async function refreshAll() {
     renderLive();
     renderEvents();
     renderLinks(overview.links || []);
+    renderShares(overview.shares || []);
     if (currentDetailSlug) renderDetailLive(currentDetailSlug);
+  } catch {}
+}
+
+async function refreshChart() {
+  try {
+    const r = await fetch("/api/admin/timeseries?days=30");
+    if (!r.ok) return;
+    const d = await r.json();
+    seriesRows = d.rows || [];
+    renderChart();
   } catch {}
 }
 
@@ -85,15 +122,14 @@ function connectLive() {
   if (liveSocket && liveSocket.readyState <= 1) return;
   try {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    liveSocket = new WebSocket(`${protocol}//${location.host}/api/admin/live?token=${encodeURIComponent(token)}`);
+    // Auth rides on the HttpOnly session cookie - no token in the URL.
+    liveSocket = new WebSocket(`${protocol}//${location.host}/api/admin/live`);
     liveSocket.onopen = () => {
       liveReconnectDelay = 1000;
       $("live-state").textContent = "live";
     };
     liveSocket.onclose = () => {
       $("live-state").textContent = "offline";
-      // The dashboard is long-lived; always try to reconnect with backoff so a
-      // dropped socket never silently freezes the live view.
       setTimeout(connectLive, liveReconnectDelay);
       liveReconnectDelay = Math.min(15000, liveReconnectDelay * 2);
     };
@@ -120,8 +156,7 @@ function connectLive() {
   }
 }
 
-// ---- Keyed reconciliation: reuse DOM nodes across refreshes so nothing fades
-// out and back in, and scrollable lists never collapse (no scrollbar flicker).
+// ---- Keyed reconciliation helpers (reuse DOM nodes across refreshes) ----
 
 function reconcile(container, items, keyOf, createEl, updateEl) {
   const map = container._rows || (container._rows = new Map());
@@ -164,8 +199,6 @@ function setEmpty(container, isEmpty, text) {
   }
 }
 
-// Fixed-count card grids (stats, live metrics): create once, then only patch the
-// value text that actually changed. Zero re-creation means zero flicker.
 function upsertCards(container, pairs, cls) {
   const map = container._cards || (container._cards = new Map());
   const seen = new Set();
@@ -201,17 +234,42 @@ function upsertCards(container, pairs, cls) {
 
 function renderStats() {
   const t = overview?.totals || {};
-  upsertCards(
-    $("stats"),
-    [
-      ["Links", t.links || 0],
-      ["Opens", t.opens || 0],
-      ["Sessions", t.sessions || 0],
-      ["Files", t.files || 0],
-      ["Bytes", fmtBytes(t.bytes || 0)],
-    ],
-    "stat-card"
-  );
+  const q = overview?.quota;
+  const cards = [
+    ["Links", t.links || 0],
+    ["Opens", t.opens || 0],
+    ["Sessions", t.sessions || 0],
+    ["Files", t.files || 0],
+    ["Received", fmtBytes(t.bytes || 0)],
+  ];
+  if (q && q.free != null) cards.push(["Drive free", fmtBytes(q.free)]);
+  upsertCards($("stats"), cards, "stat-card");
+}
+
+// ---- 30-day activity chart (inline SVG, no dependencies) ----
+
+function renderChart() {
+  const host = $("chart");
+  if (!host) return;
+  const rows = seriesRows;
+  if (!rows.length) {
+    host.innerHTML = `<div class="empty">No activity recorded yet. The chart fills in as uploads happen.</div>`;
+    return;
+  }
+  const w = 640;
+  const h = 140;
+  const pad = 4;
+  const points = rows.map((r) => ({ day: r.day, v: Number(r[seriesMetric]) || 0 }));
+  const max = Math.max(...points.map((p) => p.v), 1);
+  const bw = Math.max(2, Math.floor((w - pad * 2) / points.length) - 2);
+  let bars = "";
+  points.forEach((p, i) => {
+    const x = pad + i * ((w - pad * 2) / points.length);
+    const bh = Math.max(p.v > 0 ? 2 : 0, ((h - 20) * p.v) / max);
+    const label = seriesMetric === "bytes" ? fmtBytes(p.v) : p.v;
+    bars += `<rect x="${x.toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${bw}" height="${bh.toFixed(1)}" rx="1.5"><title>${esc(p.day)}: ${esc(String(label))}</title></rect>`;
+  });
+  host.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="30 day ${escAttr(seriesMetric)}">${bars}</svg>`;
 }
 
 function renderLive() {
@@ -234,8 +292,8 @@ function renderMetrics(sessions) {
     [
       ["Active uploaders", sessions.length],
       ["Files in flight", files],
-      ["Throughput", speed ? `${fmtBytes(speed)}/s` : "—"],
-      ["ETA · all done", speed ? fmtTime(eta) : "—"],
+      ["Throughput", speed ? `${fmtBytes(speed)}/s` : "-"],
+      ["ETA - all done", speed ? fmtTime(eta) : "-"],
     ],
     "live-metric"
   );
@@ -272,7 +330,7 @@ function liveRowInner(s) {
     <div class="live-top">
       <div>
         <b>${esc(s.uploader)}</b>
-        <div class="muted">${esc(s.slug)} · ${s.pct || 0}% · ${fmtBytes(s.sent || 0)} of ${fmtBytes(s.total || 0)} · ${age}s ago</div>
+        <div class="muted">${esc(s.slug)} - ${s.pct || 0}% - ${fmtBytes(s.sent || 0)} of ${fmtBytes(s.total || 0)} - ${age}s ago</div>
       </div>
       <span class="state-pill">${esc(state)}</span>
     </div>
@@ -288,47 +346,67 @@ function liveRowInner(s) {
 
 function handleAdminAction(e) {
   const close = e.target.closest("[data-close-session]");
-  if (close) {
-    closeLiveSession(close.dataset.closeSession, close.dataset.closeSlug);
-    return;
-  }
+  if (close) return closeLiveSession(close.dataset.closeSession, close.dataset.closeSlug);
   const detail = e.target.closest("[data-open-detail]");
-  if (detail) {
-    refreshDetail(detail.dataset.openDetail, true);
-    return;
-  }
+  if (detail) return refreshDetail(detail.dataset.openDetail, true);
   const folder = e.target.closest("[data-open-folder]");
-  if (folder) {
-    openDriveFolder(folder.dataset.openFolder);
-    return;
-  }
+  if (folder) return openDriveFolder(folder.dataset.openFolder);
   const copy = e.target.closest("[data-copy-link]");
   if (copy) {
-    navigator.clipboard?.writeText(`${location.origin}/d/${copy.dataset.copyLink}`).catch(() => {});
+    navigator.clipboard?.writeText(`${location.origin}${copy.dataset.copyLink}`).catch(() => {});
     flash(copy, "copied");
     return;
   }
+  const qr = e.target.closest("[data-qr-link]");
+  if (qr) return showQr(`${location.origin}${qr.dataset.qrLink}`, qr.dataset.qrLabel || "");
+  const shareBtn = e.target.closest("[data-share-link]");
+  if (shareBtn) {
+    const url = `${location.origin}${shareBtn.dataset.shareLink}`;
+    if (navigator.share) navigator.share({ url }).catch(() => {});
+    else {
+      navigator.clipboard?.writeText(url).catch(() => {});
+      flash(shareBtn, "copied");
+    }
+    return;
+  }
+  const pause = e.target.closest("[data-pause-link]");
+  if (pause) return toggleLinkPause(pause.dataset.pauseLink, pause.dataset.paused === "1");
   const del = e.target.closest("[data-del-link]");
-  if (del) {
-    deleteLink(del.dataset.delLink, del.dataset.delLabel);
-    return;
-  }
+  if (del) return deleteLink(del.dataset.delLink, del.dataset.delLabel);
+  const spause = e.target.closest("[data-pause-share]");
+  if (spause) return toggleSharePause(spause.dataset.pauseShare, spause.dataset.paused === "1");
+  const sdel = e.target.closest("[data-del-share]");
+  if (sdel) return deleteShare(sdel.dataset.delShare, sdel.dataset.delLabel);
   const refresh = e.target.closest("[data-refresh-detail]");
-  if (refresh) {
-    refreshDetail(refresh.dataset.refreshDetail, false);
-    return;
-  }
+  if (refresh) return refreshDetail(refresh.dataset.refreshDetail, false);
   const sync = e.target.closest("[data-sync-detail]");
-  if (sync) {
-    refreshDetail(sync.dataset.syncDetail, false, true);
-    return;
-  }
+  if (sync) return refreshDetail(sync.dataset.syncDetail, false, true);
   const history = e.target.closest("[data-toggle-history]");
   if (history) {
     const slug = history.dataset.toggleHistory;
     if (expandedUploads.has(slug)) expandedUploads.delete(slug);
     else expandedUploads.add(slug);
     refreshDetail(slug, false);
+  }
+  const qrClose = e.target.closest("#qr-modal");
+  if (qrClose && e.target.id === "qr-modal") $("qr-modal").classList.add("hidden");
+}
+
+function showQr(url, label) {
+  const modal = $("qr-modal");
+  if (!modal || typeof qrcode === "undefined") {
+    navigator.clipboard?.writeText(url).catch(() => {});
+    return;
+  }
+  try {
+    const q = qrcode(0, "M");
+    q.addData(url);
+    q.make();
+    $("qr-box").innerHTML = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+    $("qr-caption").textContent = label ? `${label} - ${url}` : url;
+    modal.classList.remove("hidden");
+  } catch {
+    navigator.clipboard?.writeText(url).catch(() => {});
   }
 }
 
@@ -353,7 +431,7 @@ async function closeLiveSession(id, slug) {
   if (!id && !slug) return;
   await fetch("/api/admin/live/close", {
     method: "POST",
-    headers: { ...auth(), "content-type": "application/json" },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({ id, slug }),
   });
   liveActive = liveActive.filter((s) => s.id !== id);
@@ -382,7 +460,7 @@ function makeEventRow() {
 function updateEventRow(el, e) {
   const c = e.c || {};
   const hasDetails = c.o || c.l || e.m;
-  
+
   if (hasDetails) {
     el.classList.add("expandable");
     el.onclick = () => el.classList.toggle("expanded");
@@ -394,13 +472,15 @@ function updateEventRow(el, e) {
   let typeIcon = "list";
   if (e.t === "start") typeIcon = "play";
   if (e.t === "file") typeIcon = "file";
-  if (e.t === "open") typeIcon = "eye";
-  if (e.t === "lock" || e.t === "global-lock") typeIcon = "lock";
+  if (e.t === "open" || e.t === "share-open") typeIcon = "eye";
+  if (e.t === "share-dl") typeIcon = "download";
+  if (e.t === "lock" || e.t === "global-lock" || e.t === "autopause") typeIcon = "lock";
   if (e.t === "sessionclose") typeIcon = "shield-alert";
+  if (e.t === "clienterror") typeIcon = "shield-alert";
 
   el.innerHTML = `
     <code class="${escAttr(e.t)}">${icon(typeIcon)}${esc(e.t)}</code>
-    <span>${esc(e.l || e.s || "")}${e.u ? " · " + esc(e.u) : ""}${e.f ? " · " + esc(e.f) : ""}</span>
+    <span>${esc(e.l || e.s || "")}${e.u ? " - " + esc(e.u) : ""}${e.f ? " - " + esc(e.f) : ""}</span>
     <time>${new Date(e.at).toLocaleString()}</time>
     ${hasDetails ? `
       <div class="event-row-details">
@@ -412,9 +492,9 @@ function updateEventRow(el, e) {
   `;
 }
 
+// ---- Drop links table ----
+
 function renderLinks(links) {
-  // Rows are <tr>; an empty-state <div> would be invalid inside <tbody>, so the
-  // table simply stays empty when there are no links.
   reconcile($("rows"), links, (l) => l.slug, makeLinkRow, updateLinkRow);
 }
 
@@ -422,23 +502,43 @@ function makeLinkRow() {
   return document.createElement("tr");
 }
 
+function stateBadge(state) {
+  if (state === "paused") return `<span class="tag err">paused</span>`;
+  if (state === "expired") return `<span class="tag warn">expired</span>`;
+  return "";
+}
+
 function updateLinkRow(tr, l) {
+  const budget = l.settings.maxTotalBytes
+    ? `<br><span class="muted">budget ${fmtBytes(l.stats.bytes)} / ${fmtBytes(l.settings.maxTotalBytes)}</span>`
+    : "";
   tr.innerHTML = `
-    <td><b>${esc(l.label)}</b><br><code>/d/${esc(l.slug)}</code></td>
-    <td>${l.hasPin ? "password" : "open"} · ${l.settings.concurrency}x · ${l.settings.chunkMB} MB<br>
+    <td><b>${esc(l.label)}</b> ${stateBadge(l.state)}<br><code>/d/${esc(l.slug)}</code></td>
+    <td>${l.hasPin ? "password" : "open"} - ${l.settings.concurrency}x - ${l.settings.chunkMB} MB<br>
       <span class="muted">${l.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</span></td>
-    <td>${l.stats.opens} opens · ${l.stats.files} files<br><span class="muted">${fmtBytes(l.stats.bytes)}</span></td>
+    <td>${l.stats.opens} opens - ${l.stats.files} files<br><span class="muted">${fmtBytes(l.stats.bytes)}</span>${budget}</td>
     <td class="actions">
       <button class="mini" data-open-detail="${escAttr(l.slug)}" type="button">detail</button>
-      <button class="mini" data-copy-link="${escAttr(l.slug)}" type="button">copy</button>
+      <button class="mini" data-copy-link="/d/${escAttr(l.slug)}" type="button">copy</button>
+      <button class="mini" data-qr-link="/d/${escAttr(l.slug)}" data-qr-label="${escAttr(l.label)}" type="button">qr</button>
       <button class="mini" data-open-folder="${escAttr(l.slug)}" type="button">folder</button>
+      <button class="mini" data-pause-link="${escAttr(l.slug)}" data-paused="${l.disabled ? "1" : "0"}" type="button">${l.disabled ? "resume" : "pause"}</button>
       <button class="mini danger" data-del-link="${escAttr(l.slug)}" data-del-label="${escAttr(l.label)}" type="button">delete</button>
     </td>`;
 }
 
+async function toggleLinkPause(slug, isPaused) {
+  await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ disabled: !isPaused }),
+  });
+  refreshAll();
+}
+
 async function deleteLink(slug, label) {
   if (!confirm(`Delete "${label}"? Drive files stay put.`)) return;
-  await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, { method: "DELETE", headers: auth() });
+  await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, { method: "DELETE" });
   if (currentDetailSlug === slug) {
     currentDetailSlug = "";
     $("detail-tab").classList.add("hidden");
@@ -450,6 +550,7 @@ async function deleteLink(slug, label) {
 async function createLink() {
   $("create-err").textContent = "";
   $("create").disabled = true;
+  const gb = Number(value("f-budget-gb")) || 0;
   const body = {
     label: value("f-label"),
     slug: value("f-slug"),
@@ -460,6 +561,9 @@ async function createLink() {
       concurrency: Number(value("f-conc")) || 4,
       chunkMB: Number(value("f-chunk")) || 32,
       perUploaderFolders: $("f-folders").checked,
+      maxTotalBytes: gb > 0 ? Math.round(gb * 1024 ** 3) : 0,
+      maxTotalFiles: Number(value("f-budget-files")) || 0,
+      maxSessions: Number(value("f-budget-sessions")) || 0,
     },
     notify: {
       enabled: $("f-notify").checked,
@@ -481,22 +585,92 @@ async function createLink() {
   };
   const r = await fetch("/api/admin/links", {
     method: "POST",
-    headers: { ...auth(), "content-type": "application/json" },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   $("create").disabled = false;
   const d = await r.json().catch(() => ({}));
   if (!r.ok) return ($("create-err").textContent = d.error || "failed");
   navigator.clipboard?.writeText(`${location.origin}/d/${d.slug}`).catch(() => {});
-  ["f-label", "f-slug", "f-pin", "f-folder", "f-logo", "f-bg", "f-welcome", "f-promo-title", "f-promo-text", "f-video", "f-cta-label", "f-cta-url"].forEach((id) => ($(id).value = ""));
+  ["f-label", "f-slug", "f-pin", "f-folder", "f-budget-gb", "f-budget-files", "f-budget-sessions", "f-logo", "f-bg", "f-welcome", "f-promo-title", "f-promo-text", "f-video", "f-cta-label", "f-cta-url"].forEach((id) => {
+    if ($(id)) $(id).value = "";
+  });
   showTab("links");
   refreshAll();
+  showQr(`${location.origin}/d/${d.slug}`, "Link created - URL copied to clipboard");
 }
+
+// ---- Share links ----
+
+function renderShares(shares) {
+  const box = $("share-rows");
+  if (!box) return;
+  reconcile(box, shares, (s) => s.slug, makeLinkRow, updateShareRow);
+}
+
+function updateShareRow(tr, s) {
+  tr.innerHTML = `
+    <td><b>${esc(s.label)}</b> ${stateBadge(s.state)}<br><code>/s/${esc(s.slug)}</code></td>
+    <td>${esc(s.mode)}${s.hasPin ? " - password" : ""}<br><span class="muted">${s.folderNames.map(esc).join(", ") || "-"}</span></td>
+    <td>${s.stats.opens} opens - ${s.stats.downloads} downloads<br><span class="muted">${fmtBytes(s.stats.bytes)}</span></td>
+    <td class="actions">
+      <button class="mini" data-copy-link="/s/${escAttr(s.slug)}" type="button">copy</button>
+      <button class="mini" data-qr-link="/s/${escAttr(s.slug)}" data-qr-label="${escAttr(s.label)}" type="button">qr</button>
+      <button class="mini" data-share-link="/s/${escAttr(s.slug)}" type="button">share</button>
+      <button class="mini" data-pause-share="${escAttr(s.slug)}" data-paused="${s.disabled ? "1" : "0"}" type="button">${s.disabled ? "resume" : "pause"}</button>
+      <button class="mini danger" data-del-share="${escAttr(s.slug)}" data-del-label="${escAttr(s.label)}" type="button">delete</button>
+    </td>`;
+}
+
+async function toggleSharePause(slug, isPaused) {
+  await fetch(`/api/admin/shares/${encodeURIComponent(slug)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ disabled: !isPaused }),
+  });
+  refreshAll();
+}
+
+async function deleteShare(slug, label) {
+  if (!confirm(`Delete share "${label}"? Drive files stay put; public access is revoked.`)) return;
+  await fetch(`/api/admin/shares/${encodeURIComponent(slug)}`, { method: "DELETE" });
+  refreshAll();
+}
+
+async function createShare() {
+  $("share-err").textContent = "";
+  $("share-create").disabled = true;
+  const body = {
+    label: value("s-label"),
+    slug: value("s-slug"),
+    folders: value("s-folders"),
+    mode: $("s-mode").value,
+    pin: value("s-pin"),
+    expiresDays: Number(value("s-days")) || 0,
+    allowZip: $("s-zip").checked,
+  };
+  const r = await fetch("/api/admin/shares", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  $("share-create").disabled = false;
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) return ($("share-err").textContent = d.error || "failed");
+  navigator.clipboard?.writeText(`${location.origin}/s/${d.slug}`).catch(() => {});
+  ["s-label", "s-slug", "s-folders", "s-pin"].forEach((id) => {
+    if ($(id)) $(id).value = "";
+  });
+  refreshAll();
+  showQr(`${location.origin}/s/${d.slug}`, "Share link created - URL copied to clipboard");
+}
+
+// ---- Link detail ----
 
 async function refreshDetail(slug, switchTab, fresh = false) {
   currentDetailSlug = slug;
   const url = `/api/admin/link/${encodeURIComponent(slug)}${fresh ? "?fresh=1" : ""}`;
-  const r = await fetch(url, { headers: auth() });
+  const r = await fetch(url);
   if (!r.ok) return;
   const d = await r.json();
   renderDetail(d);
@@ -510,21 +684,32 @@ function renderDetail(d) {
   const showAll = expandedUploads.has(l.slug);
   const visibleUploads = showAll ? uploads : uploads.slice(0, 8);
   const settingsOpen = openSettings.has(l.slug);
+  const budgetGb = l.settings.maxTotalBytes ? (l.settings.maxTotalBytes / 1024 ** 3).toFixed(0) : "";
+  const leaders = leaderboard(uploads);
   $("detail-view").innerHTML = `
     <section class="panel detail-summary">
       <div class="section-title">
         <div>
-          <p class="eyebrow">link detail</p>
+          <p class="eyebrow">link detail ${stateBadge(l.state)}</p>
           <h2>${esc(l.label)}</h2>
         </div>
-        <span class="muted">/d/${esc(l.slug)}</span>
+        <div class="history-tools">
+          <span class="muted">/d/${esc(l.slug)}</span>
+          <button class="mini" data-copy-link="/d/${escAttr(l.slug)}" type="button">copy</button>
+          <button class="mini" data-qr-link="/d/${escAttr(l.slug)}" data-qr-label="${escAttr(l.label)}" type="button">qr</button>
+          <button class="mini" data-share-link="/d/${escAttr(l.slug)}" type="button">share</button>
+          <button class="mini" data-pause-link="${escAttr(l.slug)}" data-paused="${l.disabled ? "1" : "0"}" type="button">${l.disabled ? "resume" : "pause"}</button>
+        </div>
       </div>
+      ${l.disabled && l.disabledReason ? `<div class="msg-err">Paused: ${esc(l.disabledReason)}</div>` : ""}
       <div class="stat-grid small">
         ${staticCard("Opens", l.stats.opens)}
         ${staticCard("Sessions", l.stats.sessions)}
         ${staticCard("Files", l.stats.files)}
         ${staticCard("Bytes", fmtBytes(l.stats.bytes))}
       </div>
+      ${budgetBar(l)}
+      ${leaders}
       <div class="section-subtitle">Live now</div>
       <div id="detail-live" class="live-list"></div>
     </section>
@@ -535,7 +720,7 @@ function renderDetail(d) {
           <h2>Upload history</h2>
         </div>
         <div class="history-tools">
-          <span class="muted">${uploads.length} files · ${fmtBytes(d.totalBytes)}</span>
+          <span class="muted">${uploads.length} files - ${fmtBytes(d.totalBytes)}</span>
           <button class="mini" data-refresh-detail="${escAttr(l.slug)}" type="button">${icon("refresh")}refresh</button>
           <button class="mini" data-sync-detail="${escAttr(l.slug)}" type="button">${icon("folder")}sync from Drive</button>
           ${
@@ -546,7 +731,7 @@ function renderDetail(d) {
         </div>
       </div>
       <div class="upload-list ${showAll ? "scrollable" : "compact"}">
-        ${uploads.length ? visibleUploads.map(uploadRow).join("") : `<div class="empty">No files yet. Use “sync from Drive” to pull any files saved with a delayed log.</div>`}
+        ${uploads.length ? visibleUploads.map(uploadRow).join("") : `<div class="empty">No files yet. Use "sync from Drive" to pull any files saved with a delayed log.</div>`}
       </div>
       ${
         !showAll && uploads.length > visibleUploads.length
@@ -560,15 +745,23 @@ function renderDetail(d) {
           <p class="eyebrow">configuration</p>
           <h2>${icon("sliders")}Edit settings</h2>
         </div>
-        <span class="muted">password, expiry, upload tuning, notifications, branding</span>
+        <span class="muted">password, expiry, budgets, upload tuning, notifications, branding</span>
       </summary>
       <div class="settings-grid">
         <div class="settings-card">
           <h3>Transfer</h3>
           <div class="grid-3">
-            <div class="field"><label>Parallel files</label><select id="d-conc">${opts([1,2,3,4], l.settings.concurrency)}</select></div>
-            <div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8,16,32], l.settings.chunkMB, " MB")}</select></div>
+            <div class="field"><label>Parallel files</label><select id="d-conc">${opts([1, 2, 3, 4], l.settings.concurrency)}</select></div>
+            <div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8, 16, 32], l.settings.chunkMB, " MB")}</select></div>
             <label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Per-uploader folders</label>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>Budgets (0 = unlimited, auto-pauses when reached)</h3>
+          <div class="grid-3">
+            <div class="field"><label>Max total GB</label><input id="d-budget-gb" type="number" min="0" value="${escAttr(budgetGb)}" /></div>
+            <div class="field"><label>Max files</label><input id="d-budget-files" type="number" min="0" value="${l.settings.maxTotalFiles || ""}" /></div>
+            <div class="field"><label>Max sessions</label><input id="d-budget-sessions" type="number" min="0" value="${l.settings.maxSessions || ""}" /></div>
           </div>
         </div>
         <div class="settings-card">
@@ -593,7 +786,7 @@ function renderDetail(d) {
           <div class="check-row">
             <label class="check"><input id="d-notify" type="checkbox" ${l.notify.enabled ? "checked" : ""} /> Email enabled</label>
             <label class="check"><input id="d-notify-start" type="checkbox" ${l.notify.start ? "checked" : ""} /> Start</label>
-            <label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Complete</label>
+            <label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Session digest</label>
           </div>
         </div>
       </div>
@@ -615,6 +808,30 @@ function renderDetail(d) {
   renderDetailLive(l.slug);
 }
 
+function budgetBar(l) {
+  if (!l.settings.maxTotalBytes) return "";
+  const pct = Math.min(100, Math.round((l.stats.bytes / l.settings.maxTotalBytes) * 100));
+  return `<div class="budget-bar"><span class="muted">budget: ${fmtBytes(l.stats.bytes)} of ${fmtBytes(l.settings.maxTotalBytes)} (${pct}%)</span><div class="trail"><i style="width:${pct}%"></i></div></div>`;
+}
+
+// Uploader leaderboard aggregated from the recent history.
+function leaderboard(uploads) {
+  if (!uploads.length) return "";
+  const byUploader = new Map();
+  for (const u of uploads) {
+    const cur = byUploader.get(u.u) || { files: 0, bytes: 0 };
+    cur.files++;
+    cur.bytes += u.s || 0;
+    byUploader.set(u.u, cur);
+  }
+  const rows = [...byUploader.entries()]
+    .sort((a, b) => b[1].bytes - a[1].bytes)
+    .slice(0, 6)
+    .map(([name, v]) => `<div class="leader-row"><b>${esc(name)}</b><span>${v.files} files - ${fmtBytes(v.bytes)}</span></div>`)
+    .join("");
+  return `<div class="section-subtitle">Top uploaders (recent history)</div><div class="leaderboard">${rows}</div>`;
+}
+
 function renderDetailLive(slug) {
   const box = $("detail-live");
   if (!box) return;
@@ -624,6 +841,7 @@ function renderDetailLive(slug) {
 }
 
 async function saveDetail(slug, clearPin) {
+  const gb = Number(value("d-budget-gb")) || 0;
   const body = {
     ...(clearPin ? { pin: "" } : value("d-pin") ? { pin: value("d-pin") } : {}),
     expiresDays: Number(value("d-days")) || 0,
@@ -631,6 +849,9 @@ async function saveDetail(slug, clearPin) {
       concurrency: Number(value("d-conc")) || 4,
       chunkMB: Number(value("d-chunk")) || 32,
       perUploaderFolders: $("d-folders").checked,
+      maxTotalBytes: gb > 0 ? Math.round(gb * 1024 ** 3) : 0,
+      maxTotalFiles: Number(value("d-budget-files")) || 0,
+      maxSessions: Number(value("d-budget-sessions")) || 0,
     },
     notify: {
       enabled: $("d-notify").checked,
@@ -647,7 +868,7 @@ async function saveDetail(slug, clearPin) {
   };
   const r = await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, {
     method: "PATCH",
-    headers: { ...auth(), "content-type": "application/json" },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   $("detail-msg").textContent = r.ok ? "Saved." : "Save failed.";
@@ -683,6 +904,7 @@ function icon(name) {
     play: '<polygon points="5 3 19 12 5 21 5 3"/>',
     eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
     file: '<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
     "shield-alert": '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
   };
   return `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ""}</svg>`;
@@ -691,7 +913,7 @@ function icon(name) {
 async function previewFile(fileId, button) {
   if (!fileId) return;
   button.disabled = true;
-  const r = await fetch(`/api/admin/thumb/${encodeURIComponent(fileId)}`, { headers: auth() });
+  const r = await fetch(`/api/admin/thumb/${encodeURIComponent(fileId)}`);
   const d = await r.json().catch(() => ({}));
   button.disabled = false;
   if (d.webViewLink) window.open(d.webViewLink, "_blank");
@@ -702,7 +924,7 @@ function opts(values, selected, suffix = "") {
 }
 
 function value(id) {
-  return $(id).value.trim();
+  return $(id) ? $(id).value.trim() : "";
 }
 
 function fmtBytes(b) {

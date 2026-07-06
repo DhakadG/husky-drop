@@ -7,6 +7,7 @@
 <title>LostHusky's DropBox</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://www.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
 </head>
@@ -42,6 +43,10 @@
   </section>
 
   <section id="main" class="hidden">
+    <div id="resume-banner" class="panel resume-banner hidden">
+      <b>You have unfinished uploads from a previous visit.</b>
+      <span class="muted">Re-select the same files below and they will continue from where they stopped instead of starting over.</span>
+    </div>
     <div class="drop-hero panel">
       <div>
         <img id="link-logo" class="link-logo hidden" alt="" />
@@ -62,8 +67,10 @@
         <div class="dropzone" id="zone" role="button" tabindex="0" aria-label="Add photos and videos">
           <div class="big">Tap to add photos and videos</div>
           <div class="sub">Original size, HEIC, MOV, folders, and large files are fine.</div>
+          <button class="mini hidden" id="folder-btn" type="button">or add a whole folder</button>
         </div>
         <input id="picker" type="file" multiple class="hidden" />
+        <input id="folderpicker" type="file" webkitdirectory multiple class="hidden" />
 
         <div class="security-grid" aria-label="Security notes">
           <div>
@@ -83,6 +90,7 @@
             <span>iPhones pause long uploads when the browser is closed.</span>
           </div>
         </div>
+        <button class="mini report-btn" id="report-btn" type="button">Something not working? Report a problem</button>
       </section>
 
       <aside class="panel promo hidden" id="promo">
@@ -97,22 +105,4 @@
     <section class="panel transfer-panel hidden" id="transfer-panel">
       <div class="transfer-head">
         <div>
-          <p class="eyebrow">transfer queue</p>
-          <h2><span id="pct">0</span>% complete</h2>
-        </div>
-        <div class="transfer-side">
-          <div class="muted" id="detail">waiting</div>
-          <div class="transfer-actions">
-            <button class="mini hidden" id="retry-all" type="button">retry failed</button>
-            <button class="mini danger hidden" id="cancel-all" type="button">cancel all</button>
-          </div>
-        </div>
-      </div>
-      <div class="trail total"><i id="totalbar"></i></div>
-      <div class="filelist" id="list"></div>
-    </section>
-  </section>
-</main>
-<script src="/drop.js"></script>
-</body>
-</html>
+          <p class="eyebrow"

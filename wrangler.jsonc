@@ -10,7 +10,7 @@
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "REPLACE_WITH_KV_NAMESPACE_ID",
+      "id": "74e8b6bf9b6d42cda0ddadd2e78f9e77",
       "remote": true
     }
   ],
@@ -29,6 +29,8 @@
     }
   ],
   "vars": {
-    "DRIVE_PARENT_ID": "REPLACE_WITH_OPTIONAL_PARENT_FOLDER_ID",
-    "LINK_SLUGS": "comma,separated,existing,slugs",
-    // Optional: Cloudflare Web Analytics beacon token (Worker inj
+    // Optional: Drive folder ID that new per-link folders are created inside.
+    // Leave empty to create them in My Drive root.
+    "DRIVE_PARENT_ID": "REDACTED_DRIVE_PARENT_ID",
+    "LINK_SLUGS": "kareri-lake-trek",
+    // Cloudflare Web Analytics: the Worker injects the beacon snippet 

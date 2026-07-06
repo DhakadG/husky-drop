@@ -4,6 +4,44 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 "message" }` with an HTTP status. PIN-checking endpoints may return `429
 {error, retryAfter}` plus a `Retry-After` header during lockout.
 
+> **v2 additions (2026-07)** - summary of endpoints added by the transfer.zip
+> adaptation pass; older sections below still apply unless noted:
+>
+> Public:
+> - `POST /api/client-error` `{linkId?, uploader?, name, message}` - rate
+>   limited 5/min/IP via the Durable Object; logged as `clienterror` events.
+> - `GET /api/share/meta/:slug` - public share-link metadata (no folder IDs).
+> - `POST /api/share/verify` `{slug, pin}` - share PIN gate (same lockouts).
+> - `POST /api/share/opened` `{slug}` - share open counter (DO-batched).
+> - `POST /api/share/list` `{slug, pin, folderIndex?, pageToken?}` - lists
+>   files with 15-min signed download URLs + short-lived thumbnail URLs.
+> - `POST /api/share/redirect` `{slug, pin}` - redirect-mode Drive URLs
+>   (re-grants the anyone-reader permission if needed).
+> - `GET /api/share/dl/:token` - streams one file from Drive through the
+>   Worker; token is HMAC-signed, scope+slug+file+expiry bound.
+>
+> Admin (cookie session `hd_admin` OR `Authorization: Bearer ADMIN_TOKEN`):
+> - `POST /api/admin/login` `{token}` - sets HttpOnly cookie (7d); login is
+>   rate limited 5 / 15 min / IP. `POST /api/admin/logout` clears it.
+> - `GET /api/admin/timeseries?days=30&slug=` - per-day rollups
+>   `{rows:[{day,opens,sessions,files,bytes,downloads}]}` from DO SQLite.
+> - `GET/POST /api/admin/shares`, `PATCH/DELETE /api/admin/shares/:slug` -
+>   share-link CRUD (`{label, slug?, folders, mode, pin?, expiresDays,
+>   allowZip}`; folders accepts Drive URLs or IDs, comma separated).
+> - `PATCH /api/admin/links/:slug` now also accepts `disabled` (pause) and
+>   settings `maxTotalBytes`, `maxTotalFiles`, `maxSessions` (budgets;
+>   breaching one auto-pauses the link and returns `413`).
+> - `POST /api/session` now also accepts `relativePath` (folder uploads) and
+>   returns `507` when Drive free space (minus a 5 GB reserve) cannot fit the
+>   file; paused links return `403`.
+> - Admin live WebSocket `/api/admin/live` authenticates via the session
+>   cookie; the `?token=` query parameter is gone.
+> - `GET /api/link/:slug` additionally returns `paused`, `state`, and
+>   `driveFreeGB`.
+> - Events are stored in one rolling KV key (`events:recent`, cap 200) and
+>   all counters flush through the Durable Object in batches (KV free-tier
+>   safety); `ev:*` per-event keys are legacy and self-expire.
+
 ## Public
 
 ### `GET /api/link/:slug`
@@ -101,112 +139,4 @@ snapshot to the Durable Object. It does not store progress snapshots in KV.
 Body:
 
 ```json
-{ "linkId": "trip", "filename": "IMG.MOV", "size": 2000, "mimeType": "video/quicktime", "uploader": "Riya", "fileId": "drive-file-id" }
-```
-
-Writes upload history, file event, and counters.
-
-### `POST /api/opened`
-
-Body:
-
-```json
-{ "linkId": "trip" }
-```
-
-Page-open tracking. The client de-dupes per browser session.
-
-## Admin
-
-All admin endpoints require:
-
-```text
-Authorization: Bearer <ADMIN_TOKEN>
-```
-
-### `GET /api/admin/live?token=<ADMIN_TOKEN>`
-
-Admin WebSocket endpoint for live upload progress snapshots.
-
-### `GET /api/admin/overview`
-
-Returns:
-
-```json
-{
-  "totals": { "links": 1, "opens": 2, "sessions": 3, "files": 4, "bytes": 5 },
-  "links": [],
-  "active": [],
-  "events": []
-}
-```
-
-`active` comes from the Durable Object snapshot. Durable history remains in KV.
-
-### `POST /api/admin/live/close`
-
-Body: `{id?, slug?}`. Returns `{ok, closed}`.
-
-Dismisses stuck or abandoned live transfers from the admin dashboard. `id`
-closes one session; `slug` without `id` closes every live session for that
-link. This only clears live dashboard state; completed Drive files stay in
-Drive.
-
-### `GET /api/admin/link/:slug`
-
-Returns `{link, uploads, count, totalBytes, active}`.
-
-### `POST /api/admin/links`
-
-Body:
-
-```json
-{
-  "label": "Spiti Trip",
-  "slug": "spiti-26",
-  "pin": "1234",
-  "expiresDays": 14,
-  "folderId": "",
-  "folderName": "",
-  "settings": { "concurrency": 2, "chunkMB": 8, "perUploaderFolders": true },
-  "notify": { "enabled": true, "start": true, "complete": false },
-  "theme": { "logoUrl": "", "backgroundUrl": "", "accentColor": "#f2a33c" }
-}
-```
-
-Blank folder means auto-create under `DRIVE_PARENT_ID` if configured.
-
-### `PATCH /api/admin/links/:slug`
-
-Accepts any subset of `label`, `pin` (`""` clears), `expiresDays`,
-`settings`, `notify`, and `theme`. Returns the updated admin-shaped link.
-
-### `DELETE /api/admin/links/:slug`
-
-Deletes the link record. Drive files remain.
-
-### `GET /api/admin/uploads/:slug`
-
-Returns `{uploads, count, totalBytes}`.
-
-### `GET /api/admin/thumb/:fileId`
-
-Returns Drive file preview metadata for admin-side preview/open actions.
-
-## Environment
-
-Secrets:
-
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_REFRESH_TOKEN`
-- `ADMIN_TOKEN`
-- optional `RESEND_API_KEY`
-- optional `NOTIFY_TO`
-- optional `NOTIFY_FROM`
-
-Vars:
-
-- optional `DRIVE_PARENT_ID`
-- optional `LINK_SLUGS` — comma-separated existing slugs for admin overview
-  recovery/fast-path when KV list quota is exhausted.
+{ "linkId": "trip", "filename": "IMG.MOV", "size": 2000, "mimeType": "video/quicktime", "uploader": "Riya",

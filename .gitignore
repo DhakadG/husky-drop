@@ -1,6 +1,8 @@
 node_modules/
 .dev.vars
 .wrangler/
-wrangler.jsonc
 .secrets/
 .playwright-mcp/
+.claude/
+.fuse_hidden*
+src/.fuse_hidden*

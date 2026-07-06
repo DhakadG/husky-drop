@@ -46,27 +46,19 @@ Wrong attempts from all IPs share a one-hour window. More than 60 wrong
 attempts locks PIN endpoints for that link for 10 minutes. This blunts
 distributed guessing where every IP stays below its own limit.
 
-## Other Measures
+## Other Measures (v2)
 
-- New PINs are salted SHA-256 hashes. Older unsalted hashes are accepted for
-  backward compatibility.
-- Secrets live in Worker secrets or `.dev.vars`; both are excluded from GitHub.
-- `wrangler.jsonc` is local-only. `wrangler.example.jsonc` is the committed
-  placeholder.
-- Admin access is a single bearer token over HTTPS. Rotate with
-  `wrangler secret put ADMIN_TOKEN`.
-- Session URIs are single-file Google resumable upload URLs; leaking one does
-  not leak Drive credentials.
-- Filenames, folder names, dashboard strings, and theme fields are sanitized and
-  length-capped.
-- Upload spam still exists if a trusted PIN holder uploads junk. Delete or
-  expire that link.
-
-## Not Implemented
-
-- Anti-virus scanning.
-- End-to-end client-side encryption.
-- Turnstile.
-
-Add those before making public claims beyond password protection, HTTPS
-transport, and Google Drive encryption at rest.
+- New PINs are PBKDF2-SHA256 (100k iterations, per-PIN salt). Legacy salted
+  and unsalted SHA-256 hashes still verify and are transparently re-hashed to
+  PBKDF2 on the next successful entry. All hash/token comparisons are
+  constant-time.
+- Admin auth: `POST /api/admin/login` mints an HMAC-signed HttpOnly, Secure,
+  SameSite=Strict cookie (7 days). Login attempts are rate limited
+  (5 / 15 min / IP via the Durable Object). The bearer token still works for
+  scripts. The admin WebSocket authenticates via the cookie - the token no
+  longer appears in any URL. Mutating admin routes also enforce a same-origin
+  `Origin` check.
+- Abuse containment: per-link budgets (`maxTotalBytes` / `maxTotalFiles` /
+  `maxSessions`) auto-pause a link when crossed, and any link can be manually
+  paused without deleting it. Upload sessions are refused when Drive free
+  space (minus a 5 GB rese
