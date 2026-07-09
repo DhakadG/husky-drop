@@ -40,7 +40,6 @@ let lightboxItems = [];
 let summarySeq = 0;
 const MAX_ZIP_BYTES = 3.8 * 1024 ** 3; // no zip64 in microzip fallback
 const TOKEN_REFRESH_MS = 90 * 1000;
-const ACCEL_THRESHOLD_BYTES = 64 * 1024 * 1024;
 const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
 const cardObserver =
@@ -709,6 +708,14 @@ async function ensureFreshDownload(file) {
   return file.dl;
 }
 
+// Always a plain anchor-click download: the browser's native progressive
+// download straight to the Downloads folder, on every device, with no
+// dialog of any kind - which is the universal fallback in the first place,
+// so there's nothing else to fall back to. A previous version used the File
+// System Access API's showSaveFilePicker() for large files to parallelize
+// the transfer, but that pops a native OS "Save As" file-explorer dialog on
+// every single download (Chrome/Edge only; unsupported elsewhere), which
+// reads as broken compared to how downloads work on every other site.
 async function downloadFile(file) {
   trackEvent("download", file.name);
   if (file.downloadBlocked) {
@@ -716,13 +723,6 @@ async function downloadFile(file) {
     return;
   }
   try {
-    if (file.size > ACCEL_THRESHOLD_BYTES && "showSaveFilePicker" in window) {
-      const handled = await acceleratedDownload(file).catch((err) => {
-        if (err?.name === "AbortError") return true; // user cancelled the save dialog
-        throw err;
-      });
-      if (handled) return;
-    }
     const url = await ensureFreshDownload(file);
     const a = document.createElement("a");
     a.href = url;
@@ -733,68 +733,6 @@ async function downloadFile(file) {
   } catch (err) {
     toast("Download failed", String(err.message || err).slice(0, 80), "err");
   }
-}
-
-// Splits the file into N byte ranges and fetches them concurrently, each
-// its own HTTP connection to the Worker (which itself streams straight from
-// Drive) - multiplying observed throughput well past what one connection
-// gets on a fast line, and writes straight to disk via the File System
-// Access API so memory use stays flat even for multi-GB files.
-async function acceleratedDownload(file) {
-  const url = await ensureFreshDownload(file);
-  let handle;
-  try {
-    handle = await window.showSaveFilePicker({ suggestedName: file.name });
-  } catch (err) {
-    if (err?.name === "AbortError") return true;
-    throw err;
-  }
-  const writable = await handle.createWritable();
-  const N = 6;
-  const part = Math.ceil(file.size / N);
-  const ranges = [];
-  for (let i = 0; i < N; i++) {
-    const start = i * part;
-    const end = Math.min(file.size - 1, start + part - 1);
-    if (start <= end) ranges.push([start, end]);
-  }
-  const progressToast = toast(`Downloading ${file.name}`, "starting...", "ok", true);
-  let doneBytes = 0;
-  let lastPaint = 0;
-  const paint = () => {
-    const now = Date.now();
-    if (now - lastPaint < 200) return;
-    lastPaint = now;
-    updateToast(progressToast, `${Math.floor((doneBytes / file.size) * 100)}% of ${fmtBytes(file.size)}`);
-  };
-  try {
-    await Promise.all(
-      ranges.map(async ([start, end]) => {
-        const res = await fetch(url, { headers: { range: `bytes=${start}-${end}` } });
-        if (!(res.status === 206 || res.status === 200) || !res.body) {
-          throw new Error(`range ${start}-${end} failed (HTTP ${res.status})`);
-        }
-        const reader = res.body.getReader();
-        let offset = start;
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          await writable.write({ type: "write", position: offset, data: value });
-          offset += value.length;
-          doneBytes += value.length;
-          paint();
-        }
-      })
-    );
-    await writable.close();
-    dismissToast(progressToast);
-    toast("Download complete", file.name, "ok");
-  } catch (err) {
-    dismissToast(progressToast);
-    await writable.abort().catch(() => {});
-    throw err;
-  }
-  return true;
 }
 
 // ---- Hover preview: play by default, deliberate scrubbing, buffered bar ----
@@ -1286,15 +1224,18 @@ async function openViewer(index, sourceEl) {
     wheelToZoom: true,
     preload: [1, 2],
     loop: false,
-    paddingFn: () => ({ top: 60, bottom: 88, left: 0, right: 0 }),
+    paddingFn: () => ({ top: 60, bottom: 96, left: 0, right: 0 }),
     appendToEl: document.body,
   });
 
   registerVideoContent(pswp);
   registerUi(pswp);
   pswp.on("change", () => {
+    const current = lightboxItems[pswp.currIndex];
+    updateCaption(current);
     syncStrip(pswp.currIndex);
-    trackEvent("view", lightboxItems[pswp.currIndex]?.name || "");
+    animateSlideIn(pswp.currSlide?.content?.element);
+    trackEvent("view", current?.name || "");
   });
   pswp.on("destroy", () => {
     destroyStrip();
@@ -1302,12 +1243,24 @@ async function openViewer(index, sourceEl) {
   });
 
   pswp.init();
-  mountStrip(pswp);
+  mountBottomBar(pswp);
+  updateCaption(file);
   // Warm neighbour full-res images so arrow navigation feels instant.
   for (const n of [index - 1, index + 1]) {
     const f = lightboxItems[n];
     if (f && /^image\//.test(f.mime) && f.thumb) new Image().src = thumbUrl(f, 2048);
   }
+}
+
+// A very short, purely-opacity fade on the slide's own content each time it
+// becomes active. PhotoSwipe already pans the whole slide horizontally on
+// prev/next; this just softens the cut on the content itself without
+// touching (or fighting) PhotoSwipe's own pan/zoom transform.
+function animateSlideIn(el) {
+  if (!el) return;
+  el.classList.remove("pswp-slide-in");
+  void el.offsetWidth; // restart the CSS animation
+  el.classList.add("pswp-slide-in");
 }
 
 function registerVideoContent(instance) {
@@ -1401,33 +1354,46 @@ function registerUi(instance) {
       },
       title: "Download",
     });
-    instance.ui.registerElement({
-      name: "caption",
-      order: 9,
-      appendTo: "bar",
-      html: "",
-      onInit: (el) => {
-        el.classList.add("pswp-caption");
-      },
-    });
-  });
-  instance.on("change", () => {
-    const el = instance.pswp?.element?.querySelector(".pswp-caption") || instance.element?.querySelector(".pswp-caption");
-    const file = instance.currSlide?.data?.file;
-    if (el && file) {
-      const parts = [fmtBytes(file.size)];
-      if (file.at) parts.push(new Date(file.at).toLocaleDateString());
-      el.innerHTML = `<b>${esc(file.name)}</b><span>${esc(parts.join(" - "))}</span>`;
-    }
   });
 }
 
-function mountStrip(instance) {
+// Caption lives in its own bottom info bar now, not PhotoSwipe's cramped top
+// toolbar (squeezed between square icon buttons, baseline-aligned against
+// them, which is what made it look stuck at an odd position). A short fade
+// on text change keeps it feeling responsive without being showy.
+let captionEl = null;
+function updateCaption(file) {
+  if (!captionEl || !file) return;
+  const parts = [fmtBytes(file.size)];
+  if (file.at) parts.push(new Date(file.at).toLocaleDateString());
+  captionEl.classList.remove("pswp-caption-in");
+  captionEl.innerHTML = `<b>${esc(file.name)}</b><span>${esc(parts.join(" - "))}</span>`;
+  void captionEl.offsetWidth;
+  captionEl.classList.add("pswp-caption-in");
+}
+
+// Bottom bar = caption + thumbstrip stacked in one flex column, so they
+// share one anchor point instead of two separately-positioned absolute
+// elements that have to agree on pixel heights by hand.
+function mountBottomBar(instance) {
+  const bar = document.createElement("div");
+  bar.className = "pswp-bottom-bar";
+  captionEl = document.createElement("div");
+  captionEl.className = "pswp-caption";
+  bar.appendChild(captionEl);
+  instance.element.appendChild(bar);
+  mountStrip(instance, bar);
+}
+
+function mountStrip(instance, bar) {
   if (typeof Swiper === "undefined" || lightboxItems.length < 2) return;
   const host = document.createElement("div");
   host.className = "swiper lb-strip";
-  host.innerHTML = `<div class="swiper-wrapper">${lightboxItems.map((f, i) => stripSlideHtml(f, i)).join("")}</div>`;
-  instance.element.appendChild(host);
+  const wrapper = document.createElement("div");
+  wrapper.className = "swiper-wrapper";
+  host.appendChild(wrapper);
+  lightboxItems.forEach((f, i) => wrapper.appendChild(stripSlide(f, i)));
+  bar.appendChild(host);
   strip = new Swiper(host, {
     slidesPerView: "auto",
     spaceBetween: 6,
@@ -1443,38 +1409,60 @@ function mountStrip(instance) {
         const idx = Number(sw.clickedSlide?.dataset?.i);
         if (Number.isFinite(idx)) instance.goTo(idx);
       },
-      init: () => syncStripActive(host),
     },
   });
-  syncStrip(instance.currIndex);
+  syncStripActive();
 }
 
-function stripSlideHtml(f, i) {
+// Explicit inline size on every slide, in addition to the CSS - belt and
+// suspenders against any stylesheet-load-order regression (a vendor CSS
+// file loading after ours previously overrode .lb-thumb's width/height with
+// Swiper's own 100%/100% slide defaults, which is what made one thumbnail
+// balloon to fill the whole viewer).
+function stripSlide(f, i) {
+  const el = document.createElement("div");
+  el.className = "swiper-slide lb-thumb";
+  el.dataset.i = i;
+  Object.assign(el.style, { width: "54px", height: "42px", flex: "0 0 auto" });
   const isVideo = /^video\//.test(f.mime);
-  const play = isVideo
-    ? `<i class="strip-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></i>`
-    : "";
-  const media = f.thumb
-    ? `<img loading="lazy" referrerpolicy="no-referrer" src="${escAttr(thumbUrl(f, 160))}" alt="">`
-    : `<span>${iconFor(f.mime)}</span>`;
-  return `<div class="swiper-slide lb-thumb" data-i="${i}">${media}${play}</div>`;
+  if (f.thumb) {
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.referrerPolicy = "no-referrer";
+    img.src = thumbUrl(f, 160);
+    img.alt = "";
+    el.appendChild(img);
+  } else {
+    const span = document.createElement("span");
+    span.textContent = iconFor(f.mime);
+    el.appendChild(span);
+  }
+  if (isVideo) {
+    el.insertAdjacentHTML(
+      "beforeend",
+      `<i class="strip-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></i>`
+    );
+  }
+  return el;
 }
 
-function syncStripActive(host) {
-  host.querySelectorAll(".lb-thumb").forEach((el) => {
+function syncStripActive() {
+  if (!strip) return;
+  strip.slides.forEach((el) => {
     el.classList.toggle("active", Number(el.dataset.i) === pswp?.currIndex);
   });
 }
 
 function syncStrip(index) {
   if (!strip) return;
-  strip.slideTo(index, 200);
-  syncStripActive(strip.el);
+  strip.slideTo(index, 220);
+  syncStripActive();
 }
 
 function destroyStrip() {
   strip?.destroy(true, true);
   strip = null;
+  captionEl = null;
 }
 
 // ---- Selection + zip ----
@@ -1727,18 +1715,6 @@ function toast(title, message = "", tone = "", sticky = false) {
     }, 4200);
   }
   return item;
-}
-
-function updateToast(item, message) {
-  if (!item) return;
-  const span = item.querySelector("span");
-  if (span) span.textContent = message;
-}
-
-function dismissToast(item) {
-  if (!item) return;
-  item.classList.remove("show");
-  setTimeout(() => item.remove(), 260);
 }
 
 function fmtBytes(b) {
