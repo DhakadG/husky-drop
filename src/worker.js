@@ -61,6 +61,7 @@ import {
 } from "./store.js";
 import {
   adminShare,
+  createShareZipTicket,
   createShare,
   deleteShare,
   getAllShares,
@@ -69,8 +70,11 @@ import {
   listShares,
   logShareOpened,
   patchShare,
+  refreshShareDownload,
   shareDownload,
   shareRedirect,
+  shareSummary,
+  shareZipDownload,
   verifySharePin,
 } from "./share.js";
 
@@ -145,9 +149,15 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/share/verify") return verifySharePin(request, env);
   if (m === "POST" && p === "/api/share/opened") return logShareOpened(request, env);
   if (m === "POST" && p === "/api/share/list") return listShareFiles(request, env);
+  if (m === "POST" && p === "/api/share/summary") return shareSummary(request, env);
+  if (m === "POST" && p === "/api/share/refresh-dl") return refreshShareDownload(request, env);
+  if (m === "POST" && p === "/api/share/zip-ticket") return createShareZipTicket(request, env);
   if (m === "POST" && p === "/api/share/redirect") return shareRedirect(request, env);
   if (m === "GET" && p.startsWith("/api/share/dl/")) {
     return shareDownload(request, env, p.slice("/api/share/dl/".length));
+  }
+  if (m === "GET" && p.startsWith("/api/share/zip/")) {
+    return shareZipDownload(request, env, p.slice("/api/share/zip/".length));
   }
 
   if (m === "POST" && p === "/api/admin/login") return adminLogin(request, env);

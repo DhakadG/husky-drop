@@ -10,6 +10,7 @@ export const COMPLETION_FLUSH_MS = 4000;
 export const RECENT_CAP = 200;
 export const EVENT_CAP = 200;
 export const SHARE_TOKEN_TTL = 15 * 60; // seconds a gallery download token lives
+export const SHARE_ZIP_TICKET_TTL = 15 * 60; // seconds a server ZIP ticket lives
 export const ADMIN_SESSION_TTL = 7 * 86400; // seconds an admin cookie session lives
 export const QUOTA_RESERVE = 5 * 1024 ** 3; // keep 5 GB of Drive headroom
 export const PBKDF2_ITERATIONS = 100000;

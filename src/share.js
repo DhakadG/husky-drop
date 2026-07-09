@@ -9,6 +9,7 @@ import {
   APP_NAME,
   MAX_EXPIRY_DAYS,
   SHARE_TOKEN_TTL,
+  SHARE_ZIP_TICKET_TTL,
   b64url,
   b64urlDecode,
   clamp,
@@ -19,6 +20,7 @@ import {
   normalizeShareStats,
   normalizeTheme,
   randomSlug,
+  sanitizeFilename,
   shareState,
   slugify,
   timingSafeEqual,
@@ -270,25 +272,10 @@ export async function listShareFiles(request, env) {
   if (failure) return failure;
   if (!env.GOOGLE_CLIENT_ID) return json({ folders: [], allowZip: share.allowZip !== false });
 
-  // Three listing modes:
-  //  - root (default): every shared root folder at once
-  //  - folderIndex: one root folder (pagination)
-  //  - folderToken: a subfolder previously handed out as a signed "ls" token,
-  //    so guests can browse the folder tree without ever seeing raw Drive IDs.
-  const folderToken = cleanText(b.folderToken || "", 800);
-  let targets;
-  if (folderToken) {
-    const parsedTok = await verifyShareToken(env, folderToken, "ls");
-    if (!parsedTok || parsedTok.slug !== share.slug) {
-      return json({ error: "this folder view expired - reload the page" }, 403);
-    }
-    targets = [[0, parsedTok.fileId]];
-  } else if ("folderIndex" in b) {
-    const folderIndex = clamp(Number(b.folderIndex) || 0, 0, share.folderIds.length - 1);
-    targets = [[folderIndex, share.folderIds[folderIndex]]];
-  } else {
-    targets = share.folderIds.map((id, i) => [i, id]);
-  }
+  const resolved = await resolveShareTargets(env, share, b);
+  if (resolved.error) return resolved.error;
+  const targets = resolved.targets;
+  const folderToken = resolved.folderToken;
   const single = !!folderToken || "folderIndex" in b;
 
   const folders = [];
@@ -304,25 +291,7 @@ export async function listShareFiles(request, env) {
         });
         continue;
       }
-      const token = await signShareToken(env, "dl", share.slug, f.id);
-      const img = f.imageMediaMetadata || {};
-      const vid = f.videoMediaMetadata || {};
-      let w = Number(img.width || vid.width) || 0;
-      let h = Number(img.height || vid.height) || 0;
-      // EXIF rotation of 90/270 means the rendered thumb is portrait.
-      if (Number(img.rotation) % 2 === 1) [w, h] = [h, w];
-      files.push({
-        id: f.id,
-        name: cleanText(f.name || "file", 200),
-        size: Number(f.size) || 0,
-        mime: cleanText(f.mimeType || "", 100),
-        at: Date.parse(f.modifiedTime || f.createdTime) || 0,
-        thumb: f.thumbnailLink || "",
-        w,
-        h,
-        dur: Number(vid.durationMillis) || 0,
-        dl: `/api/share/dl/${token}`,
-      });
+      files.push(await publicShareFile(env, share, f));
     }
     folders.push({
       index: i,
@@ -330,9 +299,92 @@ export async function listShareFiles(request, env) {
       files,
       subfolders,
       nextPageToken: page.nextPageToken || "",
+      loadedCount: files.length,
+      hasMore: !!page.nextPageToken,
     });
   }
   return json({ folders, allowZip: share.allowZip !== false });
+}
+
+async function resolveShareTargets(env, share, body) {
+  // Three listing modes:
+  //  - root (default): every shared root folder at once
+  //  - folderIndex: one root folder (pagination)
+  //  - folderToken: a subfolder previously handed out as a signed "ls" token,
+  //    so guests can browse the folder tree without ever seeing raw Drive IDs.
+  const folderToken = cleanText(body.folderToken || "", 800);
+  if (folderToken) {
+    const parsedTok = await verifyShareToken(env, folderToken, "ls");
+    if (!parsedTok || parsedTok.slug !== share.slug) {
+      return { error: json({ error: "this folder view expired - reload the page" }, 403) };
+    }
+    return { folderToken, targets: [[0, parsedTok.fileId]] };
+  }
+  if ("folderIndex" in body) {
+    const folderIndex = clamp(Number(body.folderIndex) || 0, 0, share.folderIds.length - 1);
+    return { folderToken: "", targets: [[folderIndex, share.folderIds[folderIndex]]] };
+  }
+  return {
+    folderToken: "",
+    targets: share.folderIds.map((id, i) => [i, id]),
+  };
+}
+
+async function publicShareFile(env, share, f) {
+  const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, f.id);
+  const img = f.imageMediaMetadata || {};
+  const vid = f.videoMediaMetadata || {};
+  let w = Number(img.width || vid.width) || 0;
+  let h = Number(img.height || vid.height) || 0;
+  // EXIF rotation of 90/270 means the rendered thumb is portrait.
+  if (Number(img.rotation) % 2 === 1) [w, h] = [h, w];
+  return {
+    id: f.id,
+    name: cleanText(f.name || "file", 200),
+    size: Number(f.size) || 0,
+    mime: cleanText(f.mimeType || "", 100),
+    at: Date.parse(f.modifiedTime || f.createdTime) || 0,
+    thumb: f.thumbnailLink || "",
+    w,
+    h,
+    aspect: w && h ? w / h : 0,
+    dur: Number(vid.durationMillis) || 0,
+    dl: `/api/share/dl/${token}`,
+    dlExpiresAt: expiresAt,
+  };
+}
+
+export async function shareSummary(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
+  if (error) return error;
+  const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
+  if (failure) return failure;
+  if (!env.GOOGLE_CLIENT_ID) {
+    return json({ files: 0, folders: 0, bytes: 0, images: 0, videos: 0, allowZip: share.allowZip !== false });
+  }
+  const resolved = await resolveShareTargets(env, share, b);
+  if (resolved.error) return resolved.error;
+
+  const summary = { files: 0, folders: 0, bytes: 0, images: 0, videos: 0, allowZip: share.allowZip !== false };
+  for (const [, folderId] of resolved.targets) {
+    let pageToken = "";
+    do {
+      const page = await driveListFolder(env, folderId, pageToken, { pageSize: 1000 });
+      for (const f of page.files || []) {
+        if (f.mimeType === "application/vnd.google-apps.folder") {
+          summary.folders++;
+          continue;
+        }
+        summary.files++;
+        summary.bytes += Number(f.size) || 0;
+        if (/^image\//.test(f.mimeType || "")) summary.images++;
+        if (/^video\//.test(f.mimeType || "")) summary.videos++;
+      }
+      pageToken = page.nextPageToken || "";
+    } while (pageToken);
+  }
+  return json(summary);
 }
 
 export async function shareRedirect(request, env) {
@@ -366,14 +418,21 @@ async function shareSigningKey(env) {
 }
 
 export async function signShareToken(env, scope, slug, fileId, ttlSec = SHARE_TOKEN_TTL) {
+  return (await signShareTokenWithExpiry(env, scope, slug, fileId, ttlSec)).token;
+}
+
+async function signShareTokenWithExpiry(env, scope, slug, fileId, ttlSec = SHARE_TOKEN_TTL) {
   const exp = Math.floor(Date.now() / 1000) + ttlSec;
   const body = `${scope}.${slug}.${fileId}.${exp}`;
   const key = await shareSigningKey(env);
   const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
-  return `${b64url(new TextEncoder().encode(body))}.${b64url(new Uint8Array(mac))}`;
+  return {
+    token: `${b64url(new TextEncoder().encode(body))}.${b64url(new Uint8Array(mac))}`,
+    expiresAt: exp * 1000,
+  };
 }
 
-export async function verifyShareToken(env, token, expectScope) {
+export async function verifyShareToken(env, token, expectScope, options = {}) {
   const dot = String(token || "").indexOf(".");
   if (dot < 1) return null;
   let body;
@@ -389,8 +448,311 @@ export async function verifyShareToken(env, token, expectScope) {
   if (parts.length !== 4) return null;
   const [scope, slug, fileId, exp] = parts;
   if (scope !== expectScope) return null;
-  if (Number(exp) * 1000 < Date.now()) return null;
-  return { slug, fileId };
+  const expiresAt = Number(exp) * 1000;
+  if (!options.allowExpired && expiresAt < Date.now()) return null;
+  return { slug, fileId, expiresAt, expired: expiresAt < Date.now() };
+}
+
+function downloadTokenFrom(value) {
+  const raw = cleanText(value || "", 1200);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw, "https://share.local");
+    const prefix = "/api/share/dl/";
+    if (url.pathname.startsWith(prefix)) return url.pathname.slice(prefix.length);
+  } catch {
+    // Fall through to path parsing.
+  }
+  const marker = "/api/share/dl/";
+  const i = raw.indexOf(marker);
+  const token = i >= 0 ? raw.slice(i + marker.length) : raw;
+  return token.split(/[?#]/)[0];
+}
+
+export async function refreshShareDownload(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const oldToken = downloadTokenFrom(b.dl || b.token);
+  const parsed = await verifyShareToken(env, oldToken, "dl", { allowExpired: true });
+  if (!parsed) return json({ error: "invalid download token" }, 403);
+  const slug = cleanText(b.slug || parsed.slug, 60);
+  if (slug !== parsed.slug) return json({ error: "download token does not belong to this share" }, 403);
+  const { share, error } = await loadActiveShare(env, slug);
+  if (error) return error;
+  const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
+  if (failure) return failure;
+  const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, parsed.fileId);
+  return json({ dl: `/api/share/dl/${token}`, dlExpiresAt: expiresAt });
+}
+
+export async function createShareZipTicket(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
+  if (error) return error;
+  const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
+  if (failure) return failure;
+  if (share.allowZip === false) return json({ error: "zip downloads are disabled for this share" }, 403);
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
+
+  const requested = Array.isArray(b.files) ? b.files.slice(0, 1000) : [];
+  if (!requested.length) return json({ error: "choose at least one file" }, 400);
+  const files = [];
+  for (const item of requested) {
+    const token = downloadTokenFrom(item?.dl || item?.token);
+    const parsed = await verifyShareToken(env, token, "dl", { allowExpired: true });
+    if (!parsed || parsed.slug !== share.slug) return json({ error: "invalid file selection" }, 403);
+    files.push({
+      fileId: parsed.fileId,
+      name: sanitizeFilename(item?.name || `${parsed.fileId}.bin`),
+      size: Math.max(0, Number(item?.size) || 0),
+      mime: cleanText(item?.mime || "application/octet-stream", 100),
+    });
+  }
+
+  const ticket = b64url(crypto.getRandomValues(new Uint8Array(18)));
+  const expiresAt = Date.now() + SHARE_ZIP_TICKET_TTL * 1000;
+  const zipName = sanitizeFilename(`${share.label.replace(/[^\w-]+/g, "_") || "share"}.zip`);
+  await env.KV.put(
+    `sharezip:${ticket}`,
+    JSON.stringify({ slug: share.slug, label: share.label, zipName, files, expiresAt }),
+    { expirationTtl: SHARE_ZIP_TICKET_TTL }
+  );
+  return json({ ticket, url: `/api/share/zip/${ticket}`, expiresAt, count: files.length });
+}
+
+export async function shareZipDownload(request, env, ticket) {
+  const safeTicket = cleanText(ticket || "", 200).replace(/[^A-Za-z0-9_-]/g, "");
+  const payload = safeTicket ? await env.KV.get(`sharezip:${safeTicket}`, "json") : null;
+  if (!payload) return json({ error: "zip ticket not found or expired" }, 404);
+  if (payload.expiresAt && payload.expiresAt < Date.now()) {
+    await env.KV.delete(`sharezip:${safeTicket}`);
+    return json({ error: "zip ticket expired" }, 410);
+  }
+  const { share, error } = await loadActiveShare(env, payload.slug);
+  if (error) return error;
+  if (share.allowZip === false) return json({ error: "zip downloads are disabled for this share" }, 403);
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
+
+  const files = (payload.files || []).map((file) => ({
+    ...file,
+    name: sanitizeFilename(file.name || `${file.fileId}.bin`),
+    size: Math.max(0, Number(file.size) || 0),
+    stream: async () => driveMediaStream(env, file.fileId),
+  }));
+  const headers = new Headers({
+    "content-type": "application/zip",
+    "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(payload.zipName || "share.zip")}`,
+    "cache-control": "private, no-store",
+    "x-content-type-options": "nosniff",
+  });
+
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  zipStoreStream(files, async (chunk) => writer.write(chunk))
+    .then(() => writer.close())
+    .catch((err) => writer.abort(err));
+  return new Response(readable, { headers });
+}
+
+async function driveMediaStream(env, fileId) {
+  const tok = await accessToken(env);
+  const r = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
+    { headers: { authorization: `Bearer ${tok}` } }
+  );
+  if (!r.ok || !r.body) throw new Error("Drive download failed");
+  return r.body;
+}
+
+const ZIP32_MAX = 0xffffffffn;
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(crc, buf) {
+  crc = crc ^ 0xffffffff;
+  for (let i = 0; i < buf.length; i++) crc = CRC_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function u16(v) {
+  return new Uint8Array([v & 255, (v >>> 8) & 255]);
+}
+
+function u32(v) {
+  return new Uint8Array([v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]);
+}
+
+function u64(v) {
+  const out = new Uint8Array(8);
+  let n = BigInt(v);
+  for (let i = 0; i < 8; i++) {
+    out[i] = Number(n & 255n);
+    n >>= 8n;
+  }
+  return out;
+}
+
+function concatBytes(parts) {
+  let len = 0;
+  for (const p of parts) len += p.length;
+  const out = new Uint8Array(len);
+  let offset = 0;
+  for (const p of parts) {
+    out.set(p, offset);
+    offset += p.length;
+  }
+  return out;
+}
+
+function dosDateTime(d = new Date()) {
+  const time = ((d.getHours() & 31) << 11) | ((d.getMinutes() & 63) << 5) | ((d.getSeconds() >> 1) & 31);
+  const date = (((d.getFullYear() - 1980) & 127) << 9) | (((d.getMonth() + 1) & 15) << 5) | (d.getDate() & 31);
+  return { time, date };
+}
+
+function zip64Extra(values) {
+  const body = concatBytes(values.map((v) => u64(v)));
+  return concatBytes([u16(0x0001), u16(body.length), body]);
+}
+
+async function zipStoreStream(files, write) {
+  const enc = new TextEncoder();
+  const { time, date } = dosDateTime();
+  const central = [];
+  let offset = 0n;
+
+  for (const file of files) {
+    const nameBytes = enc.encode(dedupeZipName(file.name, central));
+    const lfhOffset = offset;
+    const declaredSize = BigInt(Math.max(0, Number(file.size) || 0));
+    const localZip64 = declaredSize > ZIP32_MAX;
+    const localExtra = localZip64 ? zip64Extra([0n, 0n]) : new Uint8Array();
+    const lfh = concatBytes([
+      u32(0x04034b50),
+      u16(localZip64 ? 45 : 20),
+      u16(0x0808),
+      u16(0),
+      u16(time),
+      u16(date),
+      u32(0),
+      u32(localZip64 ? 0xffffffff : 0),
+      u32(localZip64 ? 0xffffffff : 0),
+      u16(nameBytes.length),
+      u16(localExtra.length),
+      nameBytes,
+      localExtra,
+    ]);
+    await write(lfh);
+    offset += BigInt(lfh.length);
+
+    let crc = 0;
+    let size = 0n;
+    const stream = await file.stream();
+    const reader = stream.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      crc = crc32(crc, chunk);
+      size += BigInt(chunk.length);
+      await write(chunk);
+    }
+    offset += size;
+
+    const zip64 = localZip64 || size > ZIP32_MAX || lfhOffset > ZIP32_MAX;
+    const descriptor = zip64
+      ? concatBytes([u32(0x08074b50), u32(crc), u64(size), u64(size)])
+      : concatBytes([u32(0x08074b50), u32(crc), u32(Number(size)), u32(Number(size))]);
+    await write(descriptor);
+    offset += BigInt(descriptor.length);
+
+    const centralExtraValues = [];
+    if (size > ZIP32_MAX || localZip64) centralExtraValues.push(size, size);
+    if (lfhOffset > ZIP32_MAX) centralExtraValues.push(lfhOffset);
+    const centralExtra = centralExtraValues.length ? zip64Extra(centralExtraValues) : new Uint8Array();
+    central.push({
+      name: new TextDecoder().decode(nameBytes),
+      bytes: concatBytes([
+        u32(0x02014b50),
+        u16(zip64 ? 45 : 20),
+        u16(zip64 ? 45 : 20),
+        u16(0x0808),
+        u16(0),
+        u16(time),
+        u16(date),
+        u32(crc),
+        u32(size > ZIP32_MAX || localZip64 ? 0xffffffff : Number(size)),
+        u32(size > ZIP32_MAX || localZip64 ? 0xffffffff : Number(size)),
+        u16(nameBytes.length),
+        u16(centralExtra.length),
+        u16(0),
+        u16(0),
+        u16(0),
+        u32(0),
+        u32(lfhOffset > ZIP32_MAX ? 0xffffffff : Number(lfhOffset)),
+        nameBytes,
+        centralExtra,
+      ]),
+    });
+  }
+
+  const cdStart = offset;
+  for (const entry of central) {
+    await write(entry.bytes);
+    offset += BigInt(entry.bytes.length);
+  }
+  const cdSize = offset - cdStart;
+  const needsZip64 = central.length >= 0xffff || cdSize > ZIP32_MAX || cdStart > ZIP32_MAX;
+  if (needsZip64) {
+    const zip64EocdStart = offset;
+    const zip64Eocd = concatBytes([
+      u32(0x06064b50),
+      u64(44n),
+      u16(45),
+      u16(45),
+      u32(0),
+      u32(0),
+      u64(BigInt(central.length)),
+      u64(BigInt(central.length)),
+      u64(cdSize),
+      u64(cdStart),
+    ]);
+    await write(zip64Eocd);
+    offset += BigInt(zip64Eocd.length);
+    const locator = concatBytes([u32(0x07064b50), u32(0), u64(zip64EocdStart), u32(1)]);
+    await write(locator);
+    offset += BigInt(locator.length);
+  }
+  const eocd = concatBytes([
+    u32(0x06054b50),
+    u16(0),
+    u16(0),
+    u16(needsZip64 ? 0xffff : central.length),
+    u16(needsZip64 ? 0xffff : central.length),
+    u32(needsZip64 ? 0xffffffff : Number(cdSize)),
+    u32(needsZip64 ? 0xffffffff : Number(cdStart)),
+    u16(0),
+  ]);
+  await write(eocd);
+}
+
+function dedupeZipName(name, central) {
+  const used = new Set(central.map((entry) => entry.name));
+  const base = sanitizeFilename(name);
+  let out = base;
+  let i = 1;
+  while (used.has(out)) {
+    const dot = base.lastIndexOf(".");
+    out = dot > 0 ? `${base.slice(0, dot)} (${i})${base.slice(dot)}` : `${base} (${i})`;
+    i++;
+  }
+  return out;
 }
 
 export async function shareDownload(request, env, token) {

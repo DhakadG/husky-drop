@@ -16,7 +16,30 @@ const listingCache = new Map(); // token -> { d, at }
 const selected = new Map(); // fileId -> file
 let lightboxItems = [];
 let lightboxIndex = -1;
+let summarySeq = 0;
+let lightboxVideo = null;
 const MAX_ZIP_BYTES = 3.8 * 1024 ** 3; // no zip64 in microzip
+const TOKEN_REFRESH_MS = 90 * 1000;
+const canHoverPreview = matchMedia("(hover: hover) and (pointer: fine)").matches;
+const previewVideos = new Map(); // fileId -> video
+const cardObserver = "IntersectionObserver" in window
+  ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const file = entry.target._file;
+          if (file && /^video\//.test(file.mime) && !file.aspect && !file.thumb) probeVideoMetadata(file);
+          cardObserver.unobserve(entry.target);
+        }
+      }
+    }, { rootMargin: "700px" })
+  : null;
+const moreObserver = "IntersectionObserver" in window
+  ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder);
+      }
+    }, { rootMargin: "700px" })
+  : null;
 
 init();
 
@@ -125,6 +148,8 @@ async function showGallery() {
   $("select-all").addEventListener("click", () => selectAll(true));
   $("select-none").addEventListener("click", () => selectAll(false));
   $("zip-btn").addEventListener("click", downloadZip);
+  $("mobile-clear")?.addEventListener("click", () => selectAll(false));
+  $("mobile-zip")?.addEventListener("click", downloadZip);
   const sortEl = $("sort");
   sortEl.value = sortMode;
   sortEl.addEventListener("change", () => {
@@ -155,6 +180,28 @@ async function fetchListing(token) {
   return r.json();
 }
 
+async function loadSummary() {
+  const seq = ++summarySeq;
+  const here = crumbs[crumbs.length - 1];
+  const body = { slug, pin };
+  if (here?.token) body.folderToken = here.token;
+  try {
+    const r = await fetch("/api/share/summary", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (seq !== summarySeq || !current) return;
+    current.summary = d;
+    renderMeta();
+    refreshLoadMoreCopy();
+  } catch {
+    // Exact counts are a progressive enhancement; listing still works.
+  }
+}
+
 let navigating = false;
 async function navigate(token, name, push = true) {
   // Guard against double-clicks / re-entrancy pushing duplicate crumbs.
@@ -175,8 +222,10 @@ async function navigate(token, name, push = true) {
     }
     if (push) crumbs.push({ token, name });
     current = d;
+    current.summary = null;
     allowZip = d.allowZip !== false;
     render();
+    loadSummary();
   } catch (err) {
     toast("Could not open folder", String(err.message || err).slice(0, 80), "err");
   } finally {
@@ -260,7 +309,8 @@ function render() {
     const grid = document.createElement("div");
     grid.className = "justified";
     grid._files = files;
-    for (const file of files) {
+    files.forEach((file, i) => {
+      file._renderIndex = i;
       const el = card(file);
       file._el = el;
       grid.appendChild(el);
@@ -268,14 +318,10 @@ function render() {
         file._lbIndex = lightboxItems.length;
         lightboxItems.push(file);
       }
-    }
+    });
     section.appendChild(grid);
     if (folder.nextPageToken) {
-      const more = document.createElement("button");
-      more.className = "mini load-more";
-      more.type = "button";
-      more.textContent = "load more files";
-      more.addEventListener("click", () => loadMore(folder, more));
+      const more = loadMoreButton(folder);
       section.appendChild(more);
     }
     host.appendChild(section);
@@ -284,8 +330,75 @@ function render() {
   scheduleLayout();
 }
 
+function loadMoreButton(folder) {
+  const more = document.createElement("button");
+  more.className = "load-more-card";
+  more.type = "button";
+  more._folder = folder;
+  more.innerHTML = `
+    <span class="load-more-main">Load next files</span>
+    <span class="load-more-sub"></span>
+    <i aria-hidden="true"></i>`;
+  more.addEventListener("click", () => loadMore(folder, more));
+  updateLoadMoreCopy(more, folder);
+  moreObserver?.observe(more);
+  return more;
+}
+
+function refreshLoadMoreCopy() {
+  document.querySelectorAll(".load-more-card").forEach((button) => {
+    if (button._folder) updateLoadMoreCopy(button, button._folder);
+  });
+}
+
+function updateLoadMoreCopy(button, folder, state = "") {
+  const loaded = (folder.files || []).length;
+  const total = current?.summary?.files || 0;
+  const remaining = total ? Math.max(0, total - loaded) : 0;
+  const next = Math.min(200, remaining || 200);
+  button.classList.toggle("loading", state === "loading");
+  button.classList.toggle("error", state === "error");
+  button.querySelector(".load-more-main").textContent =
+    state === "loading" ? "Loading more files..." : state === "error" ? "Could not load. Try again" : `Load next ${next}`;
+  button.querySelector(".load-more-sub").textContent = total
+    ? `${loaded} of ${total} shown`
+    : `${loaded} shown - counting total`;
+}
+
 async function loadMore(folder, button) {
   button.disabled = true;
+  updateLoadMoreCopy(button, folder, "loading");
+  try {
+    const page = await prefetchMore(folder);
+    folder._prefetch = null;
+    folder._prefetchPromise = null;
+    if (!page) throw new Error("No page returned");
+    folder.files.push(...page.files);
+    for (const sub of page.subfolders || []) {
+      if (!folder.subfolders.some((s) => s.name === sub.name)) folder.subfolders.push(sub);
+    }
+    folder.nextPageToken = page.nextPageToken;
+    render();
+  } catch {
+    button.disabled = false;
+    updateLoadMoreCopy(button, folder, "error");
+  }
+}
+
+async function prefetchMore(folder) {
+  if (folder._prefetch) return folder._prefetch;
+  if (folder._prefetchPromise) return folder._prefetchPromise;
+  if (!folder.nextPageToken) return null;
+  folder._prefetchPromise = fetchMorePage(folder).then((page) => {
+    folder._prefetch = page;
+    return page;
+  }).finally(() => {
+    folder._prefetchPromise = null;
+  });
+  return folder._prefetchPromise;
+}
+
+async function fetchMorePage(folder) {
   const here = crumbs[crumbs.length - 1];
   const body = { slug, pin, pageToken: folder.nextPageToken };
   if (here.token) body.folderToken = here.token;
@@ -295,29 +408,26 @@ async function loadMore(folder, button) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  button.disabled = false;
-  if (!r.ok) return;
+  if (!r.ok) throw new Error("load failed");
   const d = await r.json();
-  const page = (d.folders || [])[0];
-  if (!page) return;
-  folder.files.push(...page.files);
-  for (const sub of page.subfolders || []) {
-    if (!folder.subfolders.some((s) => s.name === sub.name)) folder.subfolders.push(sub);
-  }
-  folder.nextPageToken = page.nextPageToken;
-  render();
+  return (d.folders || [])[0] || null;
 }
 
 function renderMeta() {
   const el = $("meta");
   el.innerHTML = "";
   const folders = current?.folders || [];
-  const count = folders.reduce((t, f) => t + f.files.length, 0);
+  const loadedCount = folders.reduce((t, f) => t + f.files.length, 0);
   const subCount = folders.reduce((t, f) => t + (f.subfolders?.length || 0), 0);
-  const bytes = folders.reduce((t, f) => t + f.files.reduce((x, y) => x + y.size, 0), 0);
-  el.append(chip(`${count} file${count === 1 ? "" : "s"}`));
-  if (subCount) el.append(chip(`${subCount} folder${subCount === 1 ? "" : "s"}`));
+  const loadedBytes = folders.reduce((t, f) => t + f.files.reduce((x, y) => x + y.size, 0), 0);
+  const summary = current?.summary;
+  const count = summary?.files ?? loadedCount;
+  const folderCount = summary?.folders ?? subCount;
+  const bytes = summary?.bytes ?? loadedBytes;
+  el.append(chip(summary ? `${count} file${count === 1 ? "" : "s"}` : `${loadedCount} shown - counting`));
+  if (folderCount) el.append(chip(`${folderCount} folder${folderCount === 1 ? "" : "s"}`));
   el.append(chip(fmtBytes(bytes)));
+  if (summary?.videos) el.append(chip(`${summary.videos} video${summary.videos === 1 ? "" : "s"}`));
   if (meta.expiresAt) {
     const days = Math.max(0, Math.ceil((meta.expiresAt - Date.now()) / 86400000));
     el.append(chip(`closes in ${days} day${days === 1 ? "" : "s"}`, days <= 2 ? "warn" : ""));
@@ -347,8 +457,9 @@ function thumbUrl(file, size) {
 
 function card(file) {
   const fig = document.createElement("figure");
+  fig._file = file;
   const media = /^(image|video)\//.test(file.mime) && file.thumb;
-  fig.className = `g-card${media ? "" : " plain"}`;
+  fig.className = `g-card${media ? "" : " plain"}${/^video\//.test(file.mime) ? " video-card" : ""}`;
   const dur = file.dur ? `<span class="g-dur">${fmtDur(file.dur)}</span>` : "";
   const play = /^video\//.test(file.mime)
     ? `<span class="g-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></span>`
@@ -364,16 +475,29 @@ function card(file) {
     <figcaption><b>${esc(file.name)}</b><span>${fmtBytes(file.size)}</span></figcaption>`;
 
   if (file.thumb) {
+    const mediaBox = document.createElement("div");
+    mediaBox.className = "g-media";
     const img = document.createElement("img");
-    img.loading = "lazy";
+    img.loading = file._renderIndex < 18 ? "eager" : "lazy";
+    img.decoding = "async";
+    img.fetchPriority = file._renderIndex < 8 ? "high" : "auto";
     img.referrerPolicy = "no-referrer";
     img.alt = file.name;
+    img.sizes = "(max-width: 640px) 48vw, (max-width: 1280px) 24vw, 320px";
+    img.srcset = [320, 512, 768, 1024].map((s) => `${thumbUrl(file, s)} ${s}w`).join(", ");
     img.src = thumbUrl(file, 512);
+    img.onload = () => {
+      if (!file.aspect && img.naturalWidth && img.naturalHeight) {
+        file.aspect = img.naturalWidth / img.naturalHeight;
+        scheduleLayout();
+      }
+    };
     img.onerror = () => {
       fig.classList.add("plain");
-      img.replaceWith(plainIcon(file));
+      mediaBox.replaceWith(plainIcon(file));
     };
-    fig.prepend(img);
+    mediaBox.appendChild(img);
+    fig.prepend(mediaBox);
   } else {
     fig.prepend(plainIcon(file));
   }
@@ -383,12 +507,18 @@ function card(file) {
     e.stopPropagation();
     toggleSelect(file, fig);
   });
-  fig.querySelector(".g-dl").addEventListener("click", (e) => e.stopPropagation());
+  fig.querySelector(".g-dl").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    downloadFile(file);
+  });
   fig.addEventListener("click", () => {
     if (selected.size) return toggleSelect(file, fig);
-    if (file._lbIndex != null) openLightbox(file._lbIndex);
-    else window.open(file.dl, "_blank");
+    if (file._lbIndex != null) openLightbox(file._lbIndex, fig);
+    else downloadFile(file);
   });
+  installHoverPreview(fig, file);
+  if (cardObserver) cardObserver.observe(fig);
   fig.classList.toggle("selected", selected.has(file.id));
   return fig;
 }
@@ -413,6 +543,114 @@ function iconFor(mime) {
   return "FILE";
 }
 
+function tokenFresh(file) {
+  return file.dl && file.dlExpiresAt && file.dlExpiresAt - Date.now() > TOKEN_REFRESH_MS;
+}
+
+async function ensureFreshDownload(file) {
+  if (tokenFresh(file)) return file.dl;
+  const r = await fetch("/api/share/refresh-dl", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ slug, pin, dl: file.dl }),
+  });
+  if (!r.ok) throw new Error("download link expired");
+  const d = await r.json();
+  file.dl = d.dl;
+  file.dlExpiresAt = d.dlExpiresAt;
+  if (file._el) {
+    const a = file._el.querySelector(".g-dl");
+    if (a) a.href = file.dl;
+  }
+  return file.dl;
+}
+
+async function downloadFile(file) {
+  try {
+    const url = await ensureFreshDownload(file);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name || "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (err) {
+    toast("Download failed", String(err.message || err).slice(0, 80), "err");
+  }
+}
+
+function installHoverPreview(fig, file) {
+  if (!canHoverPreview || !/^video\//.test(file.mime)) return;
+  let hoverTimer = 0;
+  fig.addEventListener("pointerenter", () => {
+    if (selected.size) return;
+    hoverTimer = setTimeout(() => startHoverPreview(fig, file), 180);
+  });
+  fig.addEventListener("pointerleave", () => {
+    clearTimeout(hoverTimer);
+    stopHoverPreview(fig, file);
+  });
+}
+
+async function startHoverPreview(fig, file) {
+  if (!fig.isConnected || selected.size) return;
+  try {
+    const video = await getPreviewVideo(file);
+    if (!fig.isConnected || selected.size || lightboxVideo === video) return;
+    const media = fig.querySelector(".g-media") || fig.querySelector(".file-ico");
+    video.className = "g-video-preview";
+    video.controls = false;
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    if (media && video.parentNode !== media) media.appendChild(video);
+    fig.classList.add("previewing");
+    await video.play().catch(() => {});
+  } catch {
+    // Some browser/codec combinations refuse hover preview; click playback still works.
+  }
+}
+
+function stopHoverPreview(fig, file) {
+  const video = previewVideos.get(file.id);
+  if (!video || lightboxVideo === video) return;
+  video.pause();
+  fig.classList.remove("previewing");
+}
+
+async function probeVideoMetadata(file) {
+  if (!/^video\//.test(file.mime) || file.aspect) return;
+  try {
+    const video = await getPreviewVideo(file);
+    if (video.videoWidth && video.videoHeight) {
+      file.aspect = video.videoWidth / video.videoHeight;
+      scheduleLayout();
+    }
+  } catch {
+    // Keep the stable placeholder ratio.
+  }
+}
+
+async function getPreviewVideo(file) {
+  let video = previewVideos.get(file.id);
+  if (video) return video;
+  await ensureFreshDownload(file);
+  video = document.createElement("video");
+  video.preload = "metadata";
+  video.muted = true;
+  video.loop = true;
+  video.playsInline = true;
+  video.src = `${file.dl}?inline=1`;
+  video.addEventListener("loadedmetadata", () => {
+    if (!file.aspect && video.videoWidth && video.videoHeight) {
+      file.aspect = video.videoWidth / video.videoHeight;
+      scheduleLayout();
+    }
+  });
+  previewVideos.set(file.id, video);
+  return video;
+}
+
 // ---- Justified layout (Google-Photos style rows, no cropping) ----
 
 let layoutScheduled = false;
@@ -426,7 +664,7 @@ function scheduleLayout() {
 }
 
 function aspectOf(file) {
-  const a = file.w && file.h ? file.w / file.h : /^(image|video)\//.test(file.mime) && file.thumb ? 4 / 3 : 1;
+  const a = file.aspect || (file.w && file.h ? file.w / file.h : /^(image|video)\//.test(file.mime) && file.thumb ? 4 / 3 : 1);
   return Math.min(2.8, Math.max(0.45, a));
 }
 
@@ -468,9 +706,21 @@ function installLightbox() {
   $("lb-close").addEventListener("click", closeLightbox);
   $("lb-prev").addEventListener("click", () => stepLightbox(-1));
   $("lb-next").addEventListener("click", () => stepLightbox(1));
+  $("lb-dl").addEventListener("click", () => {
+    const file = lightboxItems[lightboxIndex];
+    if (file) downloadFile(file);
+  });
   $("lightbox").addEventListener("click", (e) => {
     if (e.target.id === "lightbox" || e.target.classList.contains("lb-stage")) closeLightbox();
   });
+  let touchX = 0;
+  $("lb-stage").addEventListener("touchstart", (e) => {
+    touchX = e.changedTouches[0]?.clientX || 0;
+  }, { passive: true });
+  $("lb-stage").addEventListener("touchend", (e) => {
+    const dx = (e.changedTouches[0]?.clientX || 0) - touchX;
+    if (Math.abs(dx) > 48) stepLightbox(dx > 0 ? -1 : 1);
+  }, { passive: true });
   document.addEventListener("keydown", (e) => {
     if ($("lightbox").classList.contains("hidden")) return;
     if (e.key === "Escape") closeLightbox();
@@ -479,38 +729,51 @@ function installLightbox() {
   });
 }
 
-function openLightbox(index) {
+async function openLightbox(index, sourceEl = null) {
   if (index < 0 || index >= lightboxItems.length) return;
   lightboxIndex = index;
   const file = lightboxItems[index];
   const stage = $("lb-stage");
+  releaseLightboxVideo();
   stage.innerHTML = "";
   if (/^video\//.test(file.mime)) {
-    const video = document.createElement("video");
+    let video = previewVideos.get(file.id);
+    if (!video) video = await getPreviewVideo(file);
+    if (!tokenFresh(file)) {
+      await ensureFreshDownload(file);
+      video.src = `${file.dl}?inline=1`;
+    }
+    lightboxVideo = video;
     video.controls = true;
     video.autoplay = true;
     video.playsInline = true;
-    video.src = `${file.dl}?inline=1`;
+    video.muted = false;
+    video.loop = false;
     if (file.thumb) video.poster = thumbUrl(file, 1024);
     stage.appendChild(video);
+    video.play().catch(() => {});
   } else {
     const img = document.createElement("img");
     img.alt = file.name;
     img.referrerPolicy = "no-referrer";
+    img.decoding = "async";
     img.src = thumbUrl(file, 2048);
     stage.appendChild(img);
   }
   $("lb-name").textContent = file.name;
   $("lb-info").textContent = `${fmtBytes(file.size)}${file.at ? ` - ${new Date(file.at).toLocaleDateString()}` : ""} - ${index + 1}/${lightboxItems.length}`;
-  $("lb-dl").href = file.dl;
+  $("lb-quality").disabled = !/^video\//.test(file.mime);
   $("lb-prev").classList.toggle("hidden", index === 0);
   $("lb-next").classList.toggle("hidden", index === lightboxItems.length - 1);
   $("lightbox").classList.remove("hidden");
   document.body.classList.add("no-scroll");
+  renderLightboxStrip();
+  animateFromTile(sourceEl);
   // Warm neighbour images for instant arrow navigation.
   for (const n of [index - 1, index + 1]) {
     const f = lightboxItems[n];
     if (f && /^image\//.test(f.mime) && f.thumb) new Image().src = thumbUrl(f, 2048);
+    if (f && /^video\//.test(f.mime) && f.thumb) getPreviewVideo(f).catch(() => {});
   }
 }
 
@@ -521,7 +784,73 @@ function stepLightbox(delta) {
 function closeLightbox() {
   $("lightbox").classList.add("hidden");
   $("lb-stage").innerHTML = "";
+  $("lb-strip").innerHTML = "";
+  releaseLightboxVideo();
   document.body.classList.remove("no-scroll");
+}
+
+function releaseLightboxVideo() {
+  if (!lightboxVideo) return;
+  lightboxVideo.pause();
+  lightboxVideo.controls = false;
+  lightboxVideo.muted = true;
+  lightboxVideo.loop = true;
+  lightboxVideo.removeAttribute("autoplay");
+  lightboxVideo = null;
+}
+
+function renderLightboxStrip() {
+  const strip = $("lb-strip");
+  strip.innerHTML = "";
+  const start = Math.max(0, lightboxIndex - 18);
+  const end = Math.min(lightboxItems.length, lightboxIndex + 19);
+  for (let i = start; i < end; i++) {
+    const file = lightboxItems[i];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `lb-thumb${i === lightboxIndex ? " active" : ""}`;
+    btn.setAttribute("aria-label", `open ${file.name}`);
+    if (file.thumb) {
+      const img = document.createElement("img");
+      img.src = thumbUrl(file, 160);
+      img.alt = "";
+      img.loading = "lazy";
+      img.referrerPolicy = "no-referrer";
+      btn.appendChild(img);
+    } else {
+      btn.innerHTML = `<span>${iconFor(file.mime)}</span>`;
+    }
+    btn.addEventListener("click", () => openLightbox(i));
+    strip.appendChild(btn);
+  }
+  strip.querySelector(".active")?.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+function animateFromTile(sourceEl) {
+  if (!sourceEl || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const from = sourceEl.getBoundingClientRect();
+  const to = $("lb-stage").getBoundingClientRect();
+  if (!from.width || !to.width) return;
+  const ghost = sourceEl.cloneNode(true);
+  ghost.className = "lb-open-ghost";
+  Object.assign(ghost.style, {
+    left: `${from.left}px`,
+    top: `${from.top}px`,
+    width: `${from.width}px`,
+    height: `${from.height}px`,
+  });
+  document.body.appendChild(ghost);
+  requestAnimationFrame(() => {
+    Object.assign(ghost.style, {
+      left: `${to.left + to.width * 0.08}px`,
+      top: `${to.top + to.height * 0.08}px`,
+      width: `${to.width * 0.84}px`,
+      height: `${to.height * 0.84}px`,
+      opacity: "0",
+      borderRadius: "14px",
+    });
+  });
+  setTimeout(() => ghost.remove(), 280);
 }
 
 // ---- Selection + zip ----
@@ -549,40 +878,64 @@ function updateSelInfo() {
   const files = [...selected.values()];
   const bytes = files.reduce((t, f) => t + f.size, 0);
   $("sel-info").textContent = files.length ? `${files.length} selected - ${fmtBytes(bytes)}` : "";
+  $("mobile-sel-info").textContent = files.length ? `${files.length} selected - ${fmtBytes(bytes)}` : "";
   $("select-none").classList.toggle("hidden", files.length === 0);
+  $("mobile-select-bar").classList.toggle("hidden", files.length === 0);
   const btn = $("zip-btn");
-  if (!allowZip || typeof microzip === "undefined") return btn.classList.add("hidden");
+  const mobileZip = $("mobile-zip");
+  if (!allowZip) {
+    btn.classList.add("hidden");
+    mobileZip.classList.add("hidden");
+    return;
+  }
   btn.classList.toggle("hidden", files.length === 0);
+  mobileZip.classList.toggle("hidden", files.length === 0);
   btn.textContent = files.length ? `Download ${files.length} as zip (${fmtBytes(bytes)})` : "Download zip";
+  mobileZip.textContent = files.length ? `Zip ${files.length}` : "Download zip";
 }
 
 async function downloadZip() {
   let files = [...selected.values()];
   if (!files.length) return;
   const bytes = files.reduce((t, f) => t + f.size, 0);
-  if (bytes > MAX_ZIP_BYTES) {
-    toast("Selection too large for zip", "Keep it under 3.8 GB, or download files individually.", "warn");
-    return;
-  }
-  // Download tokens live 15 minutes; refresh the listing if it's stale so the
-  // zip never dies halfway on an expired URL.
-  if (Date.now() - listFetchedAt > 10 * 60000) {
-    listingCache.clear();
-    const here = crumbs[crumbs.length - 1];
-    await navigate(here.token, here.name, false);
-    const byId = new Map();
-    for (const f of current?.folders || []) for (const file of f.files) byId.set(file.id, file);
-    files = files.map((f) => byId.get(f.id) || f).filter(Boolean);
-  }
 
   const btn = $("zip-btn");
   btn.disabled = true;
+  $("mobile-zip").disabled = true;
   dedupe = null; // fresh name-dedupe per zip
   const zipName = `${meta.label.replace(/[^\w-]+/g, "_") || "share"}.zip`;
+  try {
+    btn.textContent = "Preparing zip...";
+    $("mobile-zip").textContent = "Preparing...";
+    const ticket = await createServerZipTicket(files);
+    const a = document.createElement("a");
+    a.href = ticket.url;
+    a.download = zipName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast("Zip download started", `${files.length} files - ${fmtBytes(bytes)}`, "ok");
+    btn.disabled = false;
+    $("mobile-zip").disabled = false;
+    updateSelInfo();
+    return;
+  } catch (serverErr) {
+    if (bytes > MAX_ZIP_BYTES) {
+      toast("Zip failed", "Server zip could not start, and this selection is too large for browser zip.", "err");
+      return;
+    }
+    if (typeof microzip === "undefined") {
+      toast("Zip failed", String(serverErr.message || serverErr).slice(0, 80), "err");
+      return;
+    }
+    toast("Using browser zip fallback", "Keeping this tab open while the archive is built.", "warn");
+  }
+
   try {
     const entries = files.map((f) => ({
       name: dedupeName(f),
       stream: async () => {
+        await ensureFreshDownload(f);
         const r = await fetch(f.dl);
         if (!r.ok || !r.body) throw new Error(`download failed: ${f.name}`);
         return r.body;
@@ -623,8 +976,26 @@ async function downloadZip() {
     if (err?.name !== "AbortError") toast("Zip failed", String(err.message || err).slice(0, 80), "err");
   } finally {
     btn.disabled = false;
+    $("mobile-zip").disabled = false;
     updateSelInfo();
   }
+}
+
+async function createServerZipTicket(files) {
+  const r = await fetch("/api/share/zip-ticket", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      slug,
+      pin,
+      files: files.map((f) => ({ dl: f.dl, name: f.name, size: f.size, mime: f.mime })),
+    }),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error(d.error || "server zip failed");
+  }
+  return r.json();
 }
 
 const usedNames = () => {

@@ -8,6 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
 </head>
@@ -81,15 +82,27 @@
   </section>
 </main>
 
+<div id="mobile-select-bar" class="mobile-select-bar hidden">
+  <span id="mobile-sel-info"></span>
+  <button class="mini" id="mobile-clear" type="button">clear</button>
+  <button class="btn zip-btn" id="mobile-zip" type="button">Download zip</button>
+</div>
+
 <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
-  <button class="lb-btn lb-close" id="lb-close" type="button" aria-label="close">&#10005;</button>
+  <div class="lb-topbar">
+    <div class="lb-meta"><b id="lb-name"></b><span id="lb-info" class="muted"></span></div>
+    <div class="lb-tools">
+      <select id="lb-quality" class="quality-select" aria-label="video quality">
+        <option value="original">Original / Auto</option>
+      </select>
+      <button class="mini" id="lb-dl" type="button">download</button>
+      <button class="lb-btn lb-close" id="lb-close" type="button" aria-label="close">&#10005;</button>
+    </div>
+  </div>
   <button class="lb-btn lb-prev" id="lb-prev" type="button" aria-label="previous">&#8249;</button>
   <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="next">&#8250;</button>
   <div class="lb-stage" id="lb-stage"></div>
-  <div class="lb-bar">
-    <div class="lb-meta"><b id="lb-name"></b><span id="lb-info" class="muted"></span></div>
-    <a class="mini" id="lb-dl" href="#" download>download</a>
-  </div>
+  <div class="lb-strip" id="lb-strip" aria-label="media thumbnails"></div>
 </div>
 
 <script src="/vendor/microzip.js"></script>

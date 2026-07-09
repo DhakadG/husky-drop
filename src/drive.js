@@ -109,15 +109,16 @@ export async function driveFileMeta(env, fileId) {
   return r.json();
 }
 
-export async function driveListFolder(env, folderId, pageToken) {
+export async function driveListFolder(env, folderId, pageToken, options = {}) {
   const tok = await accessToken(env);
+  const pageSize = Math.max(1, Math.min(Number(options.pageSize) || 200, 1000));
   const params = new URLSearchParams({
     q: `'${driveQueryEscape(folderId)}' in parents and trashed=false`,
     fields:
       "nextPageToken,files(id,name,size,mimeType,modifiedTime,createdTime,thumbnailLink," +
       "imageMediaMetadata(width,height,rotation),videoMediaMetadata(width,height,durationMillis))",
     orderBy: "folder,name",
-    pageSize: "200",
+    pageSize: String(pageSize),
     supportsAllDrives: "true",
     includeItemsFromAllDrives: "true",
   });

@@ -62,6 +62,111 @@ function jsonRequest(path, body, token = "test-admin", method = "POST") {
   });
 }
 
+function publicJsonRequest(path, body, method = "POST") {
+  return request(path, {
+    method,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function withMockedGoogleDrive(fn) {
+  const originalFetch = globalThis.fetch;
+  const calls = { listPageSizes: [], mediaRanges: [] };
+  const files = {
+    "drive-folder": {
+      id: "drive-folder",
+      name: "Drive Folder",
+      mimeType: "application/vnd.google-apps.folder",
+    },
+    "file-img": {
+      id: "file-img",
+      name: "A Photo.jpg",
+      size: "4",
+      mimeType: "image/jpeg",
+      thumbnailLink: "https://lh3.googleusercontent.com/fake=s220",
+      imageMediaMetadata: { width: 4000, height: 3000, rotation: 0 },
+      modifiedTime: "2026-07-01T00:00:00.000Z",
+    },
+    "file-video": {
+      id: "file-video",
+      name: "B Video.mp4",
+      size: "6",
+      mimeType: "video/mp4",
+      thumbnailLink: "https://lh3.googleusercontent.com/video=s220",
+      videoMediaMetadata: { width: 1920, height: 1080, durationMillis: "7000" },
+      modifiedTime: "2026-07-02T00:00:00.000Z",
+    },
+    "file-mov": {
+      id: "file-mov",
+      name: "C No Thumb.mov",
+      size: "5",
+      mimeType: "video/quicktime",
+      modifiedTime: "2026-07-03T00:00:00.000Z",
+    },
+  };
+  const mediaBytes = {
+    "file-img": new TextEncoder().encode("IMG!"),
+    "file-video": new TextEncoder().encode("VIDEO!"),
+    "file-mov": new TextEncoder().encode("MOV!!"),
+  };
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.hostname === "oauth2.googleapis.com") {
+      return new Response(JSON.stringify({ access_token: "google-token", expires_in: 3600 }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/drive/v3/files")) {
+      if (url.searchParams.get("alt") === "media") {
+        const id = decodeURIComponent(url.pathname.split("/").pop());
+        const bytes = mediaBytes[id] || new Uint8Array();
+        const range = init.headers?.range || init.headers?.Range || "";
+        calls.mediaRanges.push(range);
+        if (range) {
+          return new Response(bytes.slice(0, 1), {
+            status: 206,
+            headers: {
+              "content-type": files[id]?.mimeType || "application/octet-stream",
+              "content-range": `bytes 0-0/${bytes.length}`,
+              "content-length": "1",
+            },
+          });
+        }
+        return new Response(bytes, {
+          headers: {
+            "content-type": files[id]?.mimeType || "application/octet-stream",
+            "content-length": String(bytes.length),
+          },
+        });
+      }
+
+      const id = decodeURIComponent(url.pathname.split("/").pop());
+      if (id && id !== "files") {
+        const file = files[id];
+        return file
+          ? new Response(JSON.stringify(file), { headers: { "content-type": "application/json" } })
+          : new Response(JSON.stringify({ error: "not found" }), { status: 404 });
+      }
+
+      calls.listPageSizes.push(url.searchParams.get("pageSize"));
+      const pageToken = url.searchParams.get("pageToken") || "";
+      const body = pageToken === "page-2"
+        ? { files: [files["file-mov"]] }
+        : { nextPageToken: "page-2", files: [files["file-img"], files["file-video"]] };
+      return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input, init);
+  };
+
+  try {
+    return await fn(calls);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 async function legacySha256(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -383,6 +488,97 @@ async function main() {
 
   res = await worker.fetch(request("/api/share/dl/garbage-token"), env);
   assert.equal(res.status, 403, "invalid download token rejected");
+
+  await withMockedGoogleDrive(async (calls) => {
+    const driveEnv = makeEnv({
+      GOOGLE_CLIENT_ID: "google-client",
+      GOOGLE_CLIENT_SECRET: "google-secret",
+      GOOGLE_REFRESH_TOKEN: "google-refresh",
+    });
+    res = await worker.fetch(
+      jsonRequest("/api/admin/shares", {
+        label: "Drive Share",
+        slug: "drive-share",
+        folders: "drive-folder",
+        mode: "gallery",
+        pin: "2468",
+        expiresDays: 7,
+      }),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "Drive-backed share can be created under mocked Google API");
+
+    res = await worker.fetch(
+      publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468" }),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "share list succeeds with Google Drive configured");
+    const listed = await res.json();
+    assert.equal(listed.folders[0].files.length, 2, "first Drive page is listed");
+    assert.equal(listed.folders[0].loadedCount, 2, "list response reports loaded count");
+    assert.equal(listed.folders[0].hasMore, true, "list response reports more pages");
+    assert.ok(Number.isFinite(listed.folders[0].files[0].dlExpiresAt), "list response includes download expiry");
+
+    res = await worker.fetch(
+      publicJsonRequest("/api/share/summary", { slug: "drive-share", pin: "2468" }),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "share summary endpoint succeeds");
+    const summary = await res.json();
+    assert.equal(summary.files, 3, "summary pages through all Drive files");
+    assert.equal(summary.bytes, 15, "summary totals bytes across Drive pages");
+    assert.equal(summary.images, 1, "summary counts images");
+    assert.equal(summary.videos, 2, "summary counts videos");
+    assert.ok(calls.listPageSizes.includes("1000"), "summary uses larger Drive page size");
+
+    const firstDl = listed.folders[0].files[0].dl;
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 16 * 60 * 1000;
+    try {
+      res = await worker.fetch(request(firstDl), driveEnv);
+      assert.equal(res.status, 403, "expired share download token is rejected");
+      res = await worker.fetch(
+        publicJsonRequest("/api/share/refresh-dl", { slug: "drive-share", pin: "2468", dl: firstDl }),
+        driveEnv
+      );
+      assert.equal(res.status, 200, "expired but signed download token can be refreshed after PIN validation");
+      const refreshed = await res.json();
+      assert.match(refreshed.dl, /^\/api\/share\/dl\//, "refresh returns a new download URL");
+      assert.ok(refreshed.dlExpiresAt > Date.now(), "refresh returns the new expiry");
+    } finally {
+      Date.now = originalNow;
+    }
+
+    res = await worker.fetch(
+      publicJsonRequest("/api/share/zip-ticket", {
+        slug: "drive-share",
+        pin: "2468",
+        files: listed.folders[0].files.map((f) => ({ dl: f.dl, name: f.name, size: f.size, mime: f.mime })),
+      }),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "zip ticket is created for selected signed files");
+    const ticket = await res.json();
+    assert.match(ticket.url, /^\/api\/share\/zip\//, "zip ticket returns a download URL");
+
+    res = await worker.fetch(request(ticket.url), driveEnv);
+    assert.equal(res.status, 200, "zip ticket streams an archive");
+    assert.equal(res.headers.get("content-type"), "application/zip");
+    assert.match(res.headers.get("content-disposition") || "", /Drive_Share\.zip/);
+    const archive = new Uint8Array(await res.arrayBuffer());
+    assert.equal(new TextDecoder().decode(archive.slice(0, 2)), "PK", "streamed zip starts with a ZIP header");
+
+    const tampered = firstDl.replace(/.$/, firstDl.endsWith("A") ? "B" : "A");
+    res = await worker.fetch(
+      publicJsonRequest("/api/share/zip-ticket", {
+        slug: "drive-share",
+        pin: "2468",
+        files: [{ dl: tampered, name: "bad.jpg", size: 1 }],
+      }),
+      driveEnv
+    );
+    assert.equal(res.status, 403, "tampered zip selection token is rejected");
+  });
 
   res = await worker.fetch(jsonRequest("/api/admin/shares/kareri-album", { disabled: true }, "test-admin", "PATCH"), env);
   assert.equal(res.status, 200);
