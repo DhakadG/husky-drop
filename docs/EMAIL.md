@@ -38,14 +38,14 @@ You do **NOT** need MX records at the root to *send* email. MX records are only 
 
 | Type | Name (what Resend calls it) | Purpose |
 |---|---|---|
-| TXT | `send.losthusky` (→ `send.losthusky.qzz.io`) | value `v=spf1 include:amazonses.com ~all` (SPF) — authorises Resend's servers to send for you |
-| MX | `send.losthusky` (→ `send.losthusky.qzz.io`), priority 10 | `feedback-smtp.<region>.amazonses.com` — bounce/feedback handling for the *sending* subdomain (this is not inbound mail for you) |
-| TXT | `resend._domainkey.losthusky` (→ `resend._domainkey.losthusky.qzz.io`) | long `p=MIGfMA0...` value (DKIM) — cryptographically signs your emails |
+| TXT | `send` (→ `send.losthusky.qzz.io`) | value `v=spf1 include:amazonses.com ~all` (SPF) — authorises Resend's servers to send for you |
+| MX | `send` (→ `send.losthusky.qzz.io`), priority 10 | `feedback-smtp.<region>.amazonses.com` — bounce/feedback handling for the *sending* subdomain (this is not inbound mail for you) |
+| TXT | `resend._domainkey` (→ `resend._domainkey.losthusky.qzz.io`) | long `p=MIGfMA0...` value (DKIM) — cryptographically signs your emails |
 
 **Important — the Name field:** Cloudflare does NOT auto-trim the zone suffix
 the way some registrars do. If your zone in Cloudflare is `losthusky.qzz.io`,
 paste the record name **exactly as Resend shows it, minus the trailing
-`.losthusky.qzz.io`** — e.g. enter `send.losthusky`, not
+`.losthusky.qzz.io`** — e.g. enter `send`, not
 `send.losthusky.qzz.io` (which resolves to
 `send.losthusky.qzz.io.losthusky.qzz.io` and silently fails verification).
 This bit us once already — always resolve the final record with

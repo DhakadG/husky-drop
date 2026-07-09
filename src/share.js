@@ -852,7 +852,7 @@ function dedupeZipName(name, central) {
 // Drive again. Larger files always stream straight through (uncached).
 const EDGE_CACHEABLE_BYTES = 100 * 1024 * 1024;
 
-export async function shareDownload(request, env, token) {
+export async function shareDownload(request, env, token, ctx) {
   const parsed = await verifyShareToken(env, token, "dl");
   if (!parsed) return json({ error: "invalid or expired download token" }, 403);
   const { share, error } = await loadActiveShare(env, parsed.slug);
@@ -877,7 +877,7 @@ export async function shareDownload(request, env, token) {
   if (cache) {
     const hit = await cache.match(cacheKey);
     if (hit) {
-      if (!range) {
+      if (!range || /bytes=0-/.test(range)) {
         await bumpDownloadStats(env, share, request, cacheHitName(hit), Number(hit.headers.get("content-length")) || 0, viewer);
       }
       return hit;
@@ -900,15 +900,22 @@ export async function shareDownload(request, env, token) {
     if (!full.ok || !full.body) return json({ error: "Drive download failed" }, 502);
     const headers = shareMediaHeaders(meta, true);
     headers.set("content-length", String(bytes));
-    try {
-      await cache.put(new Request(`https://media.internal.share/f/${parsed.fileId}`), new Response(full.body, { status: 200, headers }));
-    } catch (err) {
-      console.error("edge cache put failed", err.message);
-    }
-    const served = await cache.match(cacheKey);
-    if (served) {
-      if (!range) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
-      return served;
+    const [clientBody, cacheBody] = full.body.tee();
+    const putPromise = cache
+      .put(new Request(`https://media.internal.share/f/${parsed.fileId}`), new Response(cacheBody, { status: 200, headers }))
+      .catch((err) => console.error("edge cache put failed", err.message));
+    if (range) {
+      await putPromise;
+      const served = await cache.match(cacheKey);
+      if (served) {
+        if (/bytes=0-/.test(range)) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
+        return served;
+      }
+    } else {
+      if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(putPromise);
+      else await putPromise;
+      await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
+      return new Response(clientBody, { status: 200, headers });
     }
     // Cache write raced or was rejected (e.g. size limits) - fall through
     // and serve this one request directly instead of failing it.

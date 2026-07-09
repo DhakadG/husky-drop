@@ -89,6 +89,8 @@ export default {
     try {
       if (p.startsWith("/api/")) return await api(request, env, url, ctx);
       if (p === "/") return servePage(env, url, "/index.html");
+      if (p === "/privacy") return servePage(env, url, "/privacy.html");
+      if (p === "/terms") return servePage(env, url, "/terms.html");
       if (p.startsWith("/d/")) return servePage(env, url, "/drop.html");
       if (p.startsWith("/s/")) return servePage(env, url, "/share.html");
       if (p === "/admin") return servePage(env, url, "/admin.html");
@@ -157,7 +159,7 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/share/zip-ticket") return createShareZipTicket(request, env);
   if (m === "POST" && p === "/api/share/redirect") return shareRedirect(request, env);
   if (m === "GET" && p.startsWith("/api/share/dl/")) {
-    return shareDownload(request, env, p.slice("/api/share/dl/".length));
+    return shareDownload(request, env, p.slice("/api/share/dl/".length), ctx);
   }
   if (m === "GET" && p.startsWith("/api/share/zip/")) {
     return shareZipDownload(request, env, p.slice("/api/share/zip/".length));

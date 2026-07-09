@@ -100,7 +100,7 @@ async function refreshAll() {
     }
     if (!r.ok) return;
     overview = await r.json();
-    if (!liveActive.length) liveActive = overview.active || [];
+    liveActive = overview.active || [];
     renderStats();
     renderLive();
     renderEvents();
@@ -358,11 +358,22 @@ function liveRowInner(s) {
   // sample); the list scrolls via CSS instead of hiding files behind "+N".
   const inFlight = s.files || [];
   const files = inFlight
-    .map((f) => `<li class="${escAttr(f.state || "")}">${esc(f.name)} <span>${fmtBytes(f.sent)} / ${fmtBytes(f.size)}</span></li>`)
+    .map((f) => {
+      const state = liveFileState(f);
+      const pct = f.size ? Math.min(100, Math.round((Number(f.sent || 0) / Number(f.size || 0)) * 100)) : 0;
+      return `
+        <div class="file-row ${escAttr(state)}">
+          <div class="file-top">
+            <div class="file-name">${esc(f.name || "file")}</div>
+            <div class="file-stat ${escAttr(liveFileStatClass(state))}">${fmtBytes(f.sent || 0)} / ${fmtBytes(f.size || 0)}</div>
+          </div>
+          <div class="trail"><i style="width:${pct}%"></i></div>
+        </div>`;
+    })
     .join("");
   const more =
     s.count > s.done + inFlight.length
-      ? `<li class="more">${s.count - s.done - inFlight.length} more queued</li>`
+      ? `<div class="list-note">${s.count - s.done - inFlight.length} more queued</div>`
       : "";
   const age = Math.max(0, Math.round((Date.now() - Number(s.lastSeen || Date.now())) / 1000));
   const state = s.state === "stale" ? "abandoned" : s.state === "done" ? "complete" : "uploading";
@@ -372,22 +383,43 @@ function liveRowInner(s) {
   if (s.state === "uploading" && s.eta) tags.push(`<span class="tag eta">~${fmtTime(s.eta)} left</span>`);
   if (s.error) tags.push(`<span class="tag err">${s.error} need attention</span>`);
   const meta = tags.length ? `<div class="live-meta">${tags.join("")}</div>` : "";
+  const headline = `${s.pct || 0}% complete`;
+  const detail = `${s.done || 0}/${s.count || 0} files - ${fmtBytes(s.sent || 0)} of ${fmtBytes(s.total || 0)}${
+    s.speed ? ` - ${fmtBytes(s.speed)}/s` : ""
+  }${s.eta ? ` - ~${fmtTime(s.eta)} left` : ""}`;
   return `
-    <div class="live-top">
+    <div class="transfer-head live-transfer-head">
       <div>
-        <b>${esc(s.uploader)}</b>
-        <div class="muted">${esc(s.slug)} - ${s.pct || 0}% - ${fmtBytes(s.sent || 0)} of ${fmtBytes(s.total || 0)} - ${age}s ago</div>
+        <p class="eyebrow">${esc(s.slug)} - ${esc(state)}</p>
+        <h2><span>${esc(headline)}</span></h2>
+        <div class="muted">${esc(s.uploader || "anonymous")} - updated ${age}s ago</div>
       </div>
-      <span class="state-pill">${esc(state)}</span>
+      <div class="transfer-side">
+        <span class="muted">${esc(detail)}</span>
+        <span class="state-pill">${esc(state)}</span>
+      </div>
     </div>
-    <div class="trail"><i style="width:${s.pct || 0}%"></i></div>
+    <div class="trail total"><i style="width:${s.pct || 0}%"></i></div>
     ${meta}
-    <ul>${files}${more}</ul>
+    <div class="filelist live-queue">${files}${more}</div>
     <div class="row-actions">
       <button class="mini" data-open-detail="${escAttr(s.slug)}" type="button">${icon("list")}detail</button>
       <button class="mini" data-open-folder="${escAttr(s.slug)}" type="button">${icon("folder")}open</button>
       <button class="mini danger" data-close-session="${escAttr(s.id)}" data-close-slug="${escAttr(s.slug)}" type="button">dismiss</button>
     </div>`;
+}
+
+function liveFileState(f) {
+  const state = String(f.state || "uploading");
+  if (state === "done" || state === "error" || state === "warning" || state === "canceled") return state;
+  return Number(f.sent || 0) >= Number(f.size || 1) ? "done" : "uploading";
+}
+
+function liveFileStatClass(state) {
+  if (state === "done") return "ok";
+  if (state === "error" || state === "canceled") return "err";
+  if (state === "warning") return "warn";
+  return "";
 }
 
 function handleAdminAction(e) {

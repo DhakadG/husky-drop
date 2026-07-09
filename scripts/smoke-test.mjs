@@ -34,15 +34,17 @@ class FakeKV {
 }
 
 function makeEnv(extra = {}) {
-  return {
-    ADMIN_TOKEN: "test-admin",
-    KV: new FakeKV(),
-    ASSETS: {
+  const assets =
+    extra.ASSETS || {
       fetch: async () =>
         new Response("<!doctype html><html><body>ok</body></html>", {
           headers: { "content-type": "text/html; charset=utf-8" },
         }),
-    },
+    };
+  return {
+    ADMIN_TOKEN: "test-admin",
+    KV: new FakeKV(),
+    ASSETS: assets,
     ...extra,
   };
 }
@@ -193,6 +195,25 @@ async function legacySha256(text) {
 
 async function main() {
   const env = makeEnv();
+
+  const policyAssetRequests = [];
+  const policyEnv = makeEnv({
+    ASSETS: {
+      fetch: async (req) => {
+        policyAssetRequests.push(new URL(req.url).pathname);
+        return new Response(`page:${new URL(req.url).pathname}`, {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      },
+    },
+  });
+  let policyRes = await worker.fetch(request("/privacy"), policyEnv);
+  assert.equal(policyRes.status, 200, "privacy policy route serves a page");
+  assert.equal(await policyRes.text(), "page:/privacy.html");
+  policyRes = await worker.fetch(request("/terms"), policyEnv);
+  assert.equal(policyRes.status, 200, "terms route serves a page");
+  assert.equal(await policyRes.text(), "page:/terms.html");
+  assert.deepEqual(policyAssetRequests, ["/privacy.html", "/terms.html"]);
 
   let res = await worker.fetch(
     jsonRequest("/api/admin/links", {

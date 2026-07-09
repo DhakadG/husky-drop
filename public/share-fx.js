@@ -72,13 +72,14 @@
   let ringLabel = null;
   const STATES = {
     default: { scale: 1, label: "" },
-    photo: { scale: 1.9, label: "view" },
-    video: { scale: 1.9, label: "play" },
-    folder: { scale: 1.7, label: "open" },
-    link: { scale: 1.3, label: "" },
-    scrub: { scale: 2.3, label: "" },
-    zoom: { scale: 2.6, label: "" },
+    photo: { scale: 1.42, label: "view" },
+    video: { scale: 1.42, label: "play" },
+    folder: { scale: 1.34, label: "open" },
+    link: { scale: 1.16, label: "" },
+    scrub: { scale: 1.55, label: "scrub" },
+    zoom: { scale: 1.62, label: "" },
   };
+  let lastPointer = { x: 0, y: 0 };
 
   function installCursor() {
     if (cursorInstalled || !canHover || reduced) return;
@@ -103,6 +104,7 @@
       "pointermove",
       (e) => {
         lastMove = performance.now();
+        lastPointer = { x: e.clientX, y: e.clientY };
         dot.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
         if (qx) {
           qx(e.clientX);
@@ -164,8 +166,69 @@
     else ring.style.transform += ` scale(${s.scale})`;
   }
 
-  function setScrubbing(on) {
-    setCursorState(on ? "scrub" : "photo");
+  function cursorStateForTarget(target) {
+    const el =
+      target?.closest?.("[data-cursor]") ||
+      document.elementFromPoint(lastPointer.x, lastPointer.y)?.closest?.("[data-cursor]");
+    return el?.dataset?.cursor || "default";
+  }
+
+  function setScrubbing(on, target) {
+    setCursorState(on ? "scrub" : cursorStateForTarget(target));
+  }
+
+  function tileDepth(el) {
+    if (!el || el._fxDepthBound || !hasGsap || reduced || !canHover) return;
+    el._fxDepthBound = true;
+    el.addEventListener(
+      "pointerenter",
+      () => {
+        gsap.to(el, {
+          y: -7,
+          scale: 1.036,
+          boxShadow:
+            "0 34px 90px -36px rgba(4, 12, 24, 0.72), 0 14px 36px -20px rgba(47, 107, 255, 0.38)",
+          duration: 0.22,
+          ease: "power2.out",
+          overwrite: "auto",
+        });
+      },
+      { passive: true }
+    );
+    el.addEventListener(
+      "pointermove",
+      (e) => {
+        const r = el.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        gsap.to(el, {
+          rotationX: y * -3.2,
+          rotationY: x * 3.2,
+          transformPerspective: 800,
+          duration: 0.2,
+          ease: "power2.out",
+          overwrite: "auto",
+        });
+      },
+      { passive: true }
+    );
+    el.addEventListener(
+      "pointerleave",
+      () => {
+        gsap.to(el, {
+          y: 0,
+          scale: 1,
+          rotationX: 0,
+          rotationY: 0,
+          boxShadow: "",
+          duration: 0.28,
+          ease: "power2.out",
+          overwrite: "auto",
+          clearProps: "transform,boxShadow",
+        });
+      },
+      { passive: true }
+    );
   }
 
   window.shareFx = {
@@ -178,6 +241,7 @@
     installCursor,
     setCursorState,
     setScrubbing,
+    tileDepth,
     hasMotion: hasGsap && !reduced,
     canHoverPreview: canHover,
   };

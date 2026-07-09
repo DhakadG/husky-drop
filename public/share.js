@@ -17,6 +17,7 @@ const fx = window.shareFx || {
   shake() {},
   setCursorState() {},
   setScrubbing() {},
+  tileDepth() {},
   hasMotion: false,
   canHoverPreview: matchMedia("(hover: hover) and (pointer: fine)").matches,
 };
@@ -586,6 +587,7 @@ function isViewable(file) {
 
 function thumbUrl(file, size) {
   if (!file.thumb) return "";
+  if (/^data:/i.test(file.thumb)) return file.thumb;
   return file.thumb.replace(/=s\d+(-c)?$/, `=s${size}`);
 }
 
@@ -620,7 +622,9 @@ function card(file) {
     img.referrerPolicy = "no-referrer";
     img.alt = file.name;
     img.sizes = "(max-width: 640px) 48vw, (max-width: 1280px) 24vw, 320px";
-    img.srcset = [320, 512, 768, 1024].map((s) => `${thumbUrl(file, s)} ${s}w`).join(", ");
+    if (!/^data:/i.test(file.thumb)) {
+      img.srcset = [320, 512, 768, 1024].map((s) => `${thumbUrl(file, s)} ${s}w`).join(", ");
+    }
     img.src = thumbUrl(file, 512);
     img.onload = () => {
       if (!file.aspect && img.naturalWidth && img.naturalHeight) {
@@ -654,6 +658,7 @@ function card(file) {
     else downloadFile(file);
   });
   installHoverPreview(fig, file);
+  fx.tileDepth(fig);
   if (cardObserver) cardObserver.observe(fig);
   fig.classList.toggle("selected", selected.has(file.id));
   return fig;
@@ -787,29 +792,40 @@ async function acceleratedDownload(file) {
   return true;
 }
 
-// ---- Hover preview: instant thumb, scrub-on-hover, buffered bar ----
+// ---- Hover preview: play by default, deliberate scrubbing, buffered bar ----
 
 function installHoverPreview(fig, file) {
-  if (!canHoverPreview || !/^video\//.test(file.mime)) return;
+  if (!/^video\//.test(file.mime)) return;
   let hoverTimer = 0;
   let scrubRaf = 0;
   let idleTimer = 0;
   let targetT = 0;
+  let touchHoldTimer = 0;
+  let touchScrubbing = false;
+  let suppressNextClick = false;
+  let touchStart = null;
 
-  fig.addEventListener("pointerenter", () => {
-    if (selected.size) return;
-    hoverTimer = setTimeout(() => startHoverPreview(fig, file), 150);
-  });
+  const endScrub = (resume = true) => {
+    clearTimeout(idleTimer);
+    fig.classList.remove("scrubbing", "touch-scrubbing");
+    fx.setScrubbing(false, fig);
+    const video = previewVideos.get(file.id);
+    if (resume && video && fig.classList.contains("previewing")) video.play().catch(() => {});
+  };
 
-  fig.addEventListener("pointermove", (e) => {
+  const scrubAt = (e) => {
     const video = previewVideos.get(file.id);
     if (!video || !fig.classList.contains("previewing") || !video.duration) return;
     const r = fig.getBoundingClientRect();
-    targetT = Math.max(0, Math.min(0.999, (e.clientX - r.left) / r.width)) * video.duration;
+    const pct = Math.max(0, Math.min(0.999, (e.clientX - r.left) / r.width));
+    targetT = pct * video.duration;
+    fig.style.setProperty("--scrub-x", `${pct * 100}%`);
+    video.pause();
     if (!fig.classList.contains("scrubbing")) {
       fig.classList.add("scrubbing");
-      fx.setScrubbing(true);
+      fx.setScrubbing(true, fig);
     }
+    updateScrubBadge(fig, video, targetT);
     if (!scrubRaf) {
       scrubRaf = requestAnimationFrame(() => {
         scrubRaf = 0;
@@ -820,29 +836,100 @@ function installHoverPreview(fig, file) {
       });
     }
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      fig.classList.remove("scrubbing");
-      fx.setScrubbing(false);
-      video.play().catch(() => {});
-    }, 450);
-  });
+    idleTimer = setTimeout(() => endScrub(true), 450);
+  };
 
-  fig.addEventListener("pointerleave", () => {
-    clearTimeout(hoverTimer);
-    clearTimeout(idleTimer);
-    cancelAnimationFrame(scrubRaf);
-    scrubRaf = 0;
-    fig.classList.remove("scrubbing");
-    stopHoverPreview(fig, file);
-  });
+  if (canHoverPreview) {
+    fig.addEventListener("pointerenter", () => {
+      if (selected.size) return;
+      hoverTimer = setTimeout(() => startHoverPreview(fig, file, { reset: true }), 140);
+    });
+
+    fig.addEventListener("pointermove", (e) => {
+      if (e.shiftKey) scrubAt(e);
+      else if (fig.classList.contains("scrubbing")) endScrub(true);
+    });
+
+    fig.addEventListener("pointerleave", () => {
+      clearTimeout(hoverTimer);
+      clearTimeout(idleTimer);
+      cancelAnimationFrame(scrubRaf);
+      scrubRaf = 0;
+      endScrub(false);
+      stopHoverPreview(fig, file);
+    });
+  }
+
+  fig.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.pointerType !== "touch" || selected.size) return;
+      touchStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      touchHoldTimer = setTimeout(async () => {
+        touchScrubbing = true;
+        suppressNextClick = true;
+        fig.classList.add("touch-scrubbing");
+        try {
+          fig.setPointerCapture(e.pointerId);
+        } catch {}
+        await startHoverPreview(fig, file, { reset: true });
+        scrubAt(e);
+      }, 420);
+    },
+    { passive: true }
+  );
+
+  fig.addEventListener(
+    "pointermove",
+    (e) => {
+      if (e.pointerType !== "touch" || !touchStart) return;
+      const moved = Math.hypot(e.clientX - touchStart.x, e.clientY - touchStart.y);
+      if (!touchScrubbing && moved > 12) clearTimeout(touchHoldTimer);
+      if (touchScrubbing) {
+        e.preventDefault();
+        scrubAt(e);
+      }
+    },
+    { passive: false }
+  );
+
+  const finishTouch = (e) => {
+    clearTimeout(touchHoldTimer);
+    if (touchScrubbing) {
+      e.preventDefault();
+      endScrub(false);
+      stopHoverPreview(fig, file);
+      try {
+        fig.releasePointerCapture(touchStart?.id);
+      } catch {}
+      setTimeout(() => {
+        suppressNextClick = false;
+      }, 220);
+    }
+    touchScrubbing = false;
+    touchStart = null;
+  };
+  fig.addEventListener("pointerup", finishTouch, { passive: false });
+  fig.addEventListener("pointercancel", finishTouch, { passive: false });
+  fig.addEventListener(
+    "click",
+    (e) => {
+      if (!suppressNextClick) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true
+  );
 }
 
-async function startHoverPreview(fig, file) {
+async function startHoverPreview(fig, file, opts = {}) {
   if (!fig.isConnected || selected.size) return;
   try {
     const video = await getPreviewVideo(file);
     if (!fig.isConnected || selected.size) return;
+    if (opts.reset) resetPreviewTime(video);
     const media = fig.querySelector(".g-media") || fig.querySelector(".file-ico");
+    const hadThumb = !!file.thumb;
     video.className = "g-video-preview";
     video.controls = false;
     video.muted = true;
@@ -853,17 +940,10 @@ async function startHoverPreview(fig, file) {
       // actually play, instead of a black frame while it buffers.
       fig.classList.add("buffering");
       video.style.opacity = "0";
-      video.addEventListener(
-        "canplay",
-        () => {
-          video.style.opacity = "";
-          fig.classList.remove("buffering");
-        },
-        { once: true }
-      );
       media.appendChild(video);
       attachBufferBar(media, video, fig);
     }
+    revealPreviewWhenReady(fig, file, video, hadThumb);
     fig.classList.add("previewing");
     await video.play().catch(() => {});
   } catch {
@@ -878,26 +958,105 @@ function stopHoverPreview(fig, file) {
   fig.classList.remove("previewing", "buffering");
 }
 
+function resetPreviewTime(video) {
+  const reset = () => {
+    try {
+      video.currentTime = 0;
+    } catch {}
+  };
+  if (video.readyState >= 1) reset();
+  else video.addEventListener("loadedmetadata", reset, { once: true });
+}
+
+function revealPreviewWhenReady(fig, file, video, hadThumb) {
+  let revealed = false;
+  const reveal = () => {
+    if (revealed) return;
+    revealed = true;
+    if (!hadThumb) promoteVideoFrameAsThumb(file, fig, video);
+    video.style.opacity = "";
+    fig.classList.remove("buffering");
+    updateScrubBadge(fig, video);
+  };
+  if (video.readyState >= 2) reveal();
+  else {
+    fig.classList.add("buffering");
+    video.style.opacity = "0";
+    video.addEventListener("loadeddata", reveal, { once: true });
+    video.addEventListener("canplay", reveal, { once: true });
+  }
+}
+
+function promoteVideoFrameAsThumb(file, fig, video) {
+  if (file.thumb || file._sessionThumbFailed || !video.videoWidth || !video.videoHeight) return;
+  try {
+    const maxW = 720;
+    const scale = Math.min(1, maxW / video.videoWidth);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    file.thumb = canvas.toDataURL("image/jpeg", 0.78);
+    file.aspect = video.videoWidth / video.videoHeight;
+
+    const img = document.createElement("img");
+    img.loading = "eager";
+    img.decoding = "async";
+    img.alt = file.name;
+    img.src = file.thumb;
+
+    const host = video.parentElement;
+    if (host?.classList.contains("file-ico")) {
+      const mediaBox = document.createElement("div");
+      mediaBox.className = "g-media session-thumb";
+      mediaBox.appendChild(img);
+      host.replaceWith(mediaBox);
+      mediaBox.appendChild(video);
+      attachBufferBar(mediaBox, video, fig);
+    } else if (host?.classList.contains("g-media") && !host.querySelector("img")) {
+      host.prepend(img);
+    }
+    fig.classList.remove("plain");
+    fig.dataset.cursor = "video";
+    scheduleLayout();
+  } catch {
+    file._sessionThumbFailed = true;
+  }
+}
+
 // Small buffered/played bar pinned to the bottom of a hovering video tile -
 // there are no native controls in hover mode, so this is the only feedback
 // for "how much of this video has loaded" while scrubbing.
 function attachBufferBar(host, video, fig) {
-  if (host.querySelector(".buffer-bar")) return;
+  const existing = host.querySelector(".buffer-bar");
+  if (existing) {
+    fig._scrubBadge = existing.querySelector(".scrub-time");
+    return;
+  }
   const bar = document.createElement("div");
   bar.className = "buffer-bar";
-  bar.innerHTML = `<i class="buffered"></i><i class="played"></i>`;
+  bar.innerHTML = `<i class="buffered"></i><i class="played"></i><em class="scrub-time"></em>`;
   host.appendChild(bar);
   const buffered = bar.querySelector(".buffered");
   const played = bar.querySelector(".played");
+  fig._scrubBadge = bar.querySelector(".scrub-time");
   const paint = () => {
     const d = video.duration || 0;
     let buf = 0;
     for (let i = 0; i < video.buffered.length; i++) buf = Math.max(buf, video.buffered.end(i));
     buffered.style.width = d ? `${Math.min(100, (buf / d) * 100)}%` : "0%";
     played.style.width = d ? `${Math.min(100, (video.currentTime / d) * 100)}%` : "0%";
+    updateScrubBadge(fig, video);
   };
   for (const ev of ["progress", "timeupdate", "loadedmetadata", "seeking"]) video.addEventListener(ev, paint);
   fig?.addEventListener("pointerleave", () => bar.remove(), { once: true });
+}
+
+function updateScrubBadge(fig, video, time = video.currentTime) {
+  const badge = fig?._scrubBadge;
+  if (!badge || !video.duration) return;
+  badge.textContent = `${fmtDur(time)} / ${fmtDur(video.duration)}`;
 }
 
 async function probeVideoMetadata(file) {

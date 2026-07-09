@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="robots" content="noindex" />
-<title>losthusky's · dropbox</title>
+<title>LostHusky Drop</title>
+<meta name="description" content="Private media transfer and Google Drive share galleries for original photos and videos." />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,39 +15,102 @@
 <main class="home-shell">
   <nav class="topbar">
     <a class="brand" href="/"><i class="brand-mark"></i>losthusky<span>/</span>drop</a>
-    <a class="nav-link" href="/admin">admin</a>
+    <div class="nav-cluster">
+      <a class="nav-link" href="/privacy">privacy</a>
+      <a class="nav-link" href="/terms">terms</a>
+      <a class="nav-link" href="/admin">admin</a>
+    </div>
   </nav>
 
-  <section class="hero">
-    <p class="eyebrow">private trip-file receiving system</p>
-    <h1>LostHusky's DropBox</h1>
-    <p class="hero-copy">
-      A secure drop-link system for collecting original iPhone photos and videos
-      from friends, organized straight into Google Drive.
-    </p>
-    <div class="hero-actions">
-      <a class="btn" href="/admin">Open dashboard →</a>
-      <span class="muted">Share only the private /d/link URLs.</span>
+  <section class="home-hero">
+    <div class="hero-copy-block">
+      <p class="eyebrow">private media transfer and share gallery</p>
+      <h1>LostHusky Drop</h1>
+      <p class="hero-copy">
+        A personal file drop and gallery system for collecting original photos
+        and videos, saving them to Google Drive, and sharing polished private
+        albums with the people who need access.
+      </p>
+      <div class="hero-actions">
+        <a class="btn" href="/admin">Open dashboard</a>
+        <a class="btn ghost" href="/privacy">Privacy policy</a>
+      </div>
     </div>
+    <div class="home-console panel" aria-label="app capabilities">
+      <div class="console-head">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="console-grid">
+        <div><b>630</b><span>file gallery support</span></div>
+        <div><b>ZIP64</b><span>server streamed archives</span></div>
+        <div><b>OAuth</b><span>viewer identity for private shares</span></div>
+        <div><b>Live</b><span>transfer queue monitoring</span></div>
+      </div>
+      <div class="console-queue" aria-hidden="true">
+        <p><span style="width:64%"></span></p>
+        <p><span style="width:87%"></span></p>
+        <p><span style="width:42%"></span></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="home-section">
+    <div>
+      <p class="eyebrow">what it does</p>
+      <h2>Collect originals, track transfers, and share galleries without passing files through the app server.</h2>
+    </div>
+    <p class="section-copy">
+      Uploaders send files through private drop links. The browser uploads
+      directly to Google Drive using resumable sessions, while the app handles
+      access control, progress, metadata, gallery browsing, and owner-facing
+      activity history.
+    </p>
   </section>
 
   <section class="feature-band">
     <div>
-      <b>5 TB transfer ceiling</b>
-      <span>Browser-to-Google resumable uploads. File bytes never cross the Worker.</span>
+      <b>Direct Drive uploads</b>
+      <span>Large photos and videos use Google Drive resumable upload sessions instead of Worker file buffering.</span>
     </div>
     <div>
-      <b>Password and lockouts</b>
-      <span>Salted password hashes, per-link/IP lockouts, retry countdowns.</span>
+      <b>Private share galleries</b>
+      <span>PIN protected albums support responsive tiles, media viewing, thumbnails, downloads, and server ZIPs.</span>
     </div>
     <div>
-      <b>Live admin progress</b>
-      <span>Durable Object WebSockets stream upload progress without KV heartbeat writes.</span>
+      <b>Google sign-in gate</b>
+      <span>Optional OAuth sign-in lets owners see which signed-in viewer opened, viewed, or downloaded share content.</span>
     </div>
     <div>
-      <b>Branded drop pages</b>
-      <span>Logo, background, accent color, welcome copy, promo media, and CTA.</span>
+      <b>Live transfer queue</b>
+      <span>The dashboard shows active uploaders, per-file progress, throughput, ETA, and recent activity.</span>
     </div>
+  </section>
+
+  <section class="home-section home-split">
+    <div class="panel">
+      <p class="eyebrow">security model</p>
+      <h2>Access is scoped to private links.</h2>
+      <p class="section-copy">
+        Drop links and share links can expire, pause, require a PIN, and limit
+        usage. Share download URLs are short-lived and refreshed only after the
+        same share checks pass again.
+      </p>
+    </div>
+    <div class="panel">
+      <p class="eyebrow">public documents</p>
+      <h2>Consent-screen links</h2>
+      <div class="legal-link-grid">
+        <a href="/privacy">Application privacy policy</a>
+        <a href="/terms">Application terms of service</a>
+      </div>
+      <p class="muted">For questions about this application, contact notify@losthusky.qzz.io.</p>
+    </div>
+  </section>
+
+  <section class="home-foot">
+    <span>LostHusky Drop</span>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
   </section>
 </main>
 </body>
