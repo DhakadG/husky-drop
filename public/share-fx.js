@@ -181,59 +181,12 @@
     setCursorState(on ? "scrub" : cursorStateForTarget(target));
   }
 
-  function tileDepth(el) {
-    if (!el || el._fxDepthBound || !hasGsap || reduced || !canHover) return;
-    el._fxDepthBound = true;
-    el.addEventListener(
-      "pointerenter",
-      () => {
-        gsap.to(el, {
-          y: -7,
-          scale: 1.036,
-          boxShadow:
-            "0 34px 90px -36px rgba(4, 12, 24, 0.72), 0 14px 36px -20px rgba(47, 107, 255, 0.38)",
-          duration: 0.22,
-          ease: "power2.out",
-          overwrite: "auto",
-        });
-      },
-      { passive: true }
-    );
-    el.addEventListener(
-      "pointermove",
-      (e) => {
-        const r = el.getBoundingClientRect();
-        const x = (e.clientX - r.left) / r.width - 0.5;
-        const y = (e.clientY - r.top) / r.height - 0.5;
-        gsap.to(el, {
-          rotationX: y * -3.2,
-          rotationY: x * 3.2,
-          transformPerspective: 800,
-          duration: 0.2,
-          ease: "power2.out",
-          overwrite: "auto",
-        });
-      },
-      { passive: true }
-    );
-    el.addEventListener(
-      "pointerleave",
-      () => {
-        gsap.to(el, {
-          y: 0,
-          scale: 1,
-          rotationX: 0,
-          rotationY: 0,
-          boxShadow: "",
-          duration: 0.28,
-          ease: "power2.out",
-          overwrite: "auto",
-          clearProps: "transform,boxShadow",
-        });
-      },
-      { passive: true }
-    );
-  }
+  // Tile hover lift/depth is pure CSS now (see .g-card:hover in style.css) -
+  // a per-pointermove GSAP 3D tilt used to run here at the same time as the
+  // CSS hover transform, fighting over the same `transform` property every
+  // frame. That's what made the hover feel slow and heavy. Kept as a no-op
+  // so any remaining fx.tileDepth(el) call sites stay harmless.
+  function tileDepth() {}
 
   window.shareFx = {
     reveal,

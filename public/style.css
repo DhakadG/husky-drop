@@ -1724,18 +1724,20 @@ body.has-fx-cursor .mobile-select-bar * { cursor: none !important; }
   cursor: pointer;
   width: 200px;
   height: 200px;
-  transition: transform 180ms ease, box-shadow 180ms ease, border-radius 180ms ease;
+  /* Single source of truth for the hover lift - a GSAP 3D tilt used to run
+     on pointermove alongside this same transform, fighting over it every
+     frame and making the hover feel slow. Pure CSS now: fast and minimal. */
+  transition: transform 130ms cubic-bezier(0.2, 0.7, 0.3, 1), box-shadow 160ms ease, border-radius 160ms ease;
   transform-origin: center;
-  transform-style: preserve-3d;
-  will-change: transform, box-shadow;
+  will-change: transform;
 }
 .g-card:hover {
-  transform: scale(1.035);
+  transform: translateY(-4px) scale(1.03);
   z-index: 6;
   border-radius: 8px;
   box-shadow:
-    0 34px 90px -36px rgba(4, 12, 24, 0.72),
-    0 14px 36px -20px rgba(47, 107, 255, 0.38);
+    0 18px 34px -18px rgba(4, 12, 24, 0.55),
+    0 8px 16px -10px rgba(4, 12, 24, 0.3);
 }
 .g-media {
   position: absolute;
@@ -1750,10 +1752,10 @@ body.has-fx-cursor .mobile-select-bar * { cursor: none !important; }
   height: 100%;
   object-fit: cover; /* tile is already aspect-matched, so nothing is cropped */
   display: block;
-  transition: transform 200ms ease;
+  transition: transform 160ms ease;
 }
 .g-card:hover img,
-.g-card.previewing .g-video-preview { transform: scale(1.025); }
+.g-card.previewing .g-video-preview { transform: scale(1.012); }
 .g-video-preview {
   position: absolute;
   inset: 0;

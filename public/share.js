@@ -43,8 +43,6 @@ const TOKEN_REFRESH_MS = 90 * 1000;
 const ACCEL_THRESHOLD_BYTES = 64 * 1024 * 1024;
 const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
-const hoverPreviewControllers = new Set();
-let shiftScrubHeld = false;
 const cardObserver =
   "IntersectionObserver" in window
     ? new IntersectionObserver(
@@ -800,30 +798,14 @@ async function acceleratedDownload(file) {
 }
 
 // ---- Hover preview: play by default, deliberate scrubbing, buffered bar ----
-
-window.addEventListener(
-  "keydown",
-  (e) => {
-    if (e.key === "Shift") setShiftScrubHeld(true);
-  },
-  { passive: true }
-);
-window.addEventListener(
-  "keyup",
-  (e) => {
-    if (e.key === "Shift") setShiftScrubHeld(false);
-  },
-  { passive: true }
-);
-window.addEventListener("blur", () => setShiftScrubHeld(false));
-
-function setShiftScrubHeld(on) {
-  if (shiftScrubHeld === on) return;
-  shiftScrubHeld = on;
-  if (!on) {
-    for (const controller of hoverPreviewControllers) controller.endShiftScrub();
-  }
-}
+//
+// One state machine per card (idle -> playing -> scrubbing). Desktop scrub
+// reads e.shiftKey live on every pointermove instead of tracking a global
+// "is Shift down" flag - a global flag goes stale the moment a keyup is
+// missed (losing focus, a browser shortcut, alt-tabbing while the key is
+// down), which is exactly what caused scrubbing to get stuck on. Reading
+// the key state directly off each event is self-correcting: the very next
+// mouse move always reflects reality.
 
 function installHoverPreview(fig, file) {
   if (!/^video\//.test(file.mime)) return;
@@ -831,116 +813,113 @@ function installHoverPreview(fig, file) {
   let scrubRaf = 0;
   let touchHoldTimer = 0;
   let touchStart = null;
+  let touchArmed = false;
   let startPromise = null;
-  let lastTouchPoint = null;
-  const state = {
-    mode: "",
-    scrubbing: false,
-    targetTime: 0,
-    suppressClickUntil: 0,
-    touchPending: false,
-  };
+  const state = { scrubbing: false, suppressClickUntil: 0 };
 
-  const requestPreview = (reset = true) => {
+  const requestPreview = () => {
     if (!startPromise) {
-      startPromise = startHoverPreview(fig, file, { reset }).finally(() => {
+      startPromise = startHoverPreview(fig, file, { reset: true }).finally(() => {
         startPromise = null;
       });
     }
     return startPromise;
   };
 
-  const beginScrub = (mode) => {
+  const beginScrub = () => {
     const video = previewVideos.get(file.id);
     if (!video || !Number.isFinite(video.duration) || video.duration <= 0 || !fig.classList.contains("previewing")) return false;
-    state.mode = mode;
     state.scrubbing = true;
     video.pause();
     fig.classList.add("scrubbing");
-    fig.classList.toggle("touch-scrubbing", mode === "touch");
     fx.setScrubbing(true, fig);
-    updateScrubBadge(fig, video, video.currentTime);
     return true;
   };
 
-  const endScrub = ({ resume = true, stopPreview = false, suppressClick = false } = {}) => {
+  // Always sets --scrub-x (and the timestamp badge) in the same synchronous
+  // step that turns scrubbing on, so the playhead/badge never has a frame
+  // where it's showing at its CSS default (dead center) before JS catches up.
+  const scrubTo = (clientX) => {
+    const video = previewVideos.get(file.id);
+    if (!video || !video.duration) return;
+    const r = fig.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(0.999, (clientX - r.left) / r.width));
+    const t = pct * video.duration;
+    fig.style.setProperty("--scrub-x", `${pct * 100}%`);
+    updateScrubBadge(fig, video, t);
+    if (!scrubRaf) {
+      scrubRaf = requestAnimationFrame(() => {
+        scrubRaf = 0;
+        if (Math.abs(video.currentTime - t) > 0.08) {
+          if (video.fastSeek) video.fastSeek(t);
+          else video.currentTime = t;
+        }
+      });
+    }
+  };
+
+  const endScrub = ({ resume = true, stopPreview = false } = {}) => {
+    if (!state.scrubbing) return;
     cancelAnimationFrame(scrubRaf);
     scrubRaf = 0;
-    state.mode = "";
     state.scrubbing = false;
-    state.touchPending = false;
     fig.classList.remove("scrubbing", "touch-scrubbing");
     fig.style.removeProperty("--scrub-x");
     fx.setScrubbing(false, fig);
     const video = previewVideos.get(file.id);
-    if (resume && video && fig.classList.contains("previewing") && !stopPreview) video.play().catch(() => {});
     if (stopPreview) stopHoverPreview(fig, file, { removeBar: true });
-    if (suppressClick) state.suppressClickUntil = performance.now() + 260;
-  };
-
-  const scrubAt = (point, mode) => {
-    if (!state.scrubbing && !beginScrub(mode)) return false;
-    const video = previewVideos.get(file.id);
-    if (!video || !fig.classList.contains("previewing") || !video.duration) return false;
-    const r = fig.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(0.999, (point.clientX - r.left) / r.width));
-    state.targetTime = pct * video.duration;
-    fig.style.setProperty("--scrub-x", `${pct * 100}%`);
-    video.pause();
-    updateScrubBadge(fig, video, state.targetTime);
-    if (!scrubRaf) {
-      scrubRaf = requestAnimationFrame(() => {
-        scrubRaf = 0;
-        if (Math.abs(video.currentTime - state.targetTime) > 0.08) {
-          if (video.fastSeek) video.fastSeek(state.targetTime);
-          else video.currentTime = state.targetTime;
-        }
-      });
-    }
-    return true;
+    else if (resume && video && fig.classList.contains("previewing")) video.play().catch(() => {});
   };
 
   if (canHoverPreview) {
-    fig.addEventListener("pointerenter", () => {
-      if (selected.size) return;
-      hoverTimer = setTimeout(() => requestPreview(true), 140);
+    fig.addEventListener("pointerenter", (e) => {
+      if (selected.size || e.pointerType !== "mouse") return;
+      hoverTimer = setTimeout(requestPreview, 140);
     });
 
+    // The single desktop mouse handler: Shift held -> scrub; Shift not held
+    // while a scrub was in progress -> resume normal playback. No separate
+    // "shift mode" flag to fall out of sync with the key.
     fig.addEventListener("pointermove", (e) => {
       if (selected.size || e.pointerType !== "mouse") return;
-      if (shiftScrubHeld) {
-        if (!fig.classList.contains("previewing")) requestPreview(true);
-        scrubAt(e, "shift");
-      } else if (state.mode === "shift") {
+      if (e.shiftKey) {
+        if (!fig.classList.contains("previewing")) return requestPreview();
+        if (!state.scrubbing && !beginScrub()) return;
+        scrubTo(e.clientX);
+      } else if (state.scrubbing) {
         endScrub({ resume: true });
       }
     });
 
-    fig.addEventListener("pointerleave", () => {
+    fig.addEventListener("pointerleave", (e) => {
+      if (e.pointerType !== "mouse") return;
       clearTimeout(hoverTimer);
       endScrub({ resume: false });
       stopHoverPreview(fig, file);
     });
   }
 
+  // Touch: press-and-hold arms scrubbing, then a horizontal drag scrubs.
+  // A plain tap (no hold) still opens the viewer as normal.
   fig.addEventListener(
     "pointerdown",
     (e) => {
       if (e.pointerType !== "touch" || selected.size) return;
       clearTimeout(touchHoldTimer);
       touchStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
-      lastTouchPoint = { clientX: e.clientX, clientY: e.clientY };
-      state.touchPending = true;
+      touchArmed = false;
       touchHoldTimer = setTimeout(async () => {
-        if (!touchStart || !state.touchPending) return;
+        if (!touchStart) return;
         try {
           fig.setPointerCapture(e.pointerId);
         } catch {}
-        await requestPreview(true);
+        await requestPreview();
         const video = previewVideos.get(file.id);
         if (video && !video.duration) await waitForVideoDuration(video);
-        if (!touchStart || !state.touchPending) return;
-        scrubAt(lastTouchPoint || e, "touch");
+        if (!touchStart) return;
+        touchArmed = true;
+        fig.classList.add("touch-scrubbing");
+        if (beginScrub()) scrubTo(touchStart.x);
       }, 420);
     },
     { passive: true }
@@ -950,32 +929,32 @@ function installHoverPreview(fig, file) {
     "pointermove",
     (e) => {
       if (e.pointerType !== "touch" || !touchStart) return;
-      const moved = Math.hypot(e.clientX - touchStart.x, e.clientY - touchStart.y);
-      lastTouchPoint = { clientX: e.clientX, clientY: e.clientY };
-      if (!state.scrubbing && moved > 12) {
-        clearTimeout(touchHoldTimer);
-        state.touchPending = false;
+      if (!touchArmed) {
+        const moved = Math.hypot(e.clientX - touchStart.x, e.clientY - touchStart.y);
+        if (moved > 12) {
+          clearTimeout(touchHoldTimer);
+          touchStart = null;
+        }
+        return;
       }
-      if (state.mode === "touch") {
-        e.preventDefault();
-        scrubAt(e, "touch");
-      }
+      e.preventDefault();
+      scrubTo(e.clientX);
     },
     { passive: false }
   );
 
   const finishTouch = (e) => {
     clearTimeout(touchHoldTimer);
-    state.touchPending = false;
-    if (state.mode === "touch") {
+    if (touchArmed) {
       e.preventDefault();
-      endScrub({ resume: false, stopPreview: true, suppressClick: true });
+      endScrub({ resume: false, stopPreview: true });
+      state.suppressClickUntil = performance.now() + 260;
       try {
         fig.releasePointerCapture(touchStart?.id);
       } catch {}
     }
+    touchArmed = false;
     touchStart = null;
-    lastTouchPoint = null;
   };
   fig.addEventListener("pointerup", finishTouch, { passive: false });
   fig.addEventListener("pointercancel", finishTouch, { passive: false });
@@ -988,17 +967,6 @@ function installHoverPreview(fig, file) {
     },
     true
   );
-
-  const controller = {
-    endShiftScrub() {
-      if (!fig.isConnected) {
-        hoverPreviewControllers.delete(controller);
-        return;
-      }
-      if (state.mode === "shift") endScrub({ resume: true });
-    },
-  };
-  hoverPreviewControllers.add(controller);
 }
 
 async function startHoverPreview(fig, file, opts = {}) {
@@ -1070,41 +1038,73 @@ function revealPreviewWhenReady(fig, file, video, hadThumb) {
   }
 }
 
+// Captures a representative frame and keeps it as this file's thumbnail for
+// the rest of the session, so a no-thumbnail tile doesn't go blank again the
+// moment the pointer leaves it. Seeks a little into the clip first - frame 0
+// is frequently black or still fading in right after a cut - and falls back
+// to whatever frame is already showing if the seek doesn't settle quickly.
+// Runs once per file (guarded by file.thumb / _sessionThumbFailed) and never
+// blocks the live hover preview, which keeps playing throughout.
 function promoteVideoFrameAsThumb(file, fig, video) {
   if (file.thumb || file._sessionThumbFailed || !video.videoWidth || !video.videoHeight) return;
-  try {
-    const maxW = 720;
-    const scale = Math.min(1, maxW / video.videoWidth);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    file.thumb = canvas.toDataURL("image/jpeg", 0.78);
-    file.aspect = video.videoWidth / video.videoHeight;
 
-    const img = document.createElement("img");
-    img.loading = "eager";
-    img.decoding = "async";
-    img.alt = file.name;
-    img.src = file.thumb;
+  const capture = () => {
+    try {
+      const maxW = 720;
+      const scale = Math.min(1, maxW / video.videoWidth);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      file.thumb = canvas.toDataURL("image/jpeg", 0.78);
+      file.aspect = video.videoWidth / video.videoHeight;
 
-    const host = video.parentElement;
-    if (host?.classList.contains("file-ico")) {
-      const mediaBox = document.createElement("div");
-      mediaBox.className = "g-media session-thumb";
-      mediaBox.appendChild(img);
-      host.replaceWith(mediaBox);
-      mediaBox.appendChild(video);
-      attachBufferBar(mediaBox, video, fig);
-    } else if (host?.classList.contains("g-media") && !host.querySelector("img")) {
-      host.prepend(img);
+      const img = document.createElement("img");
+      img.loading = "eager";
+      img.decoding = "async";
+      img.alt = file.name;
+      img.src = file.thumb;
+
+      const host = video.parentElement;
+      if (host?.classList.contains("file-ico")) {
+        const mediaBox = document.createElement("div");
+        mediaBox.className = "g-media session-thumb";
+        mediaBox.appendChild(img);
+        host.replaceWith(mediaBox);
+        mediaBox.appendChild(video);
+        attachBufferBar(mediaBox, video, fig);
+      } else if (host?.classList.contains("g-media") && !host.querySelector("img")) {
+        host.prepend(img);
+      }
+      fig.classList.remove("plain");
+      fig.dataset.cursor = "video";
+      scheduleLayout();
+    } catch {
+      file._sessionThumbFailed = true;
     }
-    fig.classList.remove("plain");
-    fig.dataset.cursor = "video";
-    scheduleLayout();
+  };
+
+  const target = Math.min(1, (video.duration || 0) * 0.1);
+  if (!target || video.currentTime >= target - 0.05) {
+    capture();
+    return;
+  }
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    video.removeEventListener("seeked", finish);
+    capture();
+  };
+  const timer = setTimeout(finish, 600);
+  video.addEventListener("seeked", finish, { once: true });
+  try {
+    if (video.fastSeek) video.fastSeek(target);
+    else video.currentTime = target;
   } catch {
-    file._sessionThumbFailed = true;
+    finish();
   }
 }
 
