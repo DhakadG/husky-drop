@@ -244,6 +244,15 @@ export function clientIp(request) {
   return request?.headers?.get("cf-connecting-ip") || request?.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
 }
 
+export function getCookie(request, name) {
+  const raw = request.headers.get("cookie") || "";
+  for (const part of raw.split(/;\s*/)) {
+    const eq = part.indexOf("=");
+    if (eq > 0 && part.slice(0, eq) === name) return part.slice(eq + 1);
+  }
+  return "";
+}
+
 export function extractClientInfo(request) {
   if (!request || !request.headers) return null;
   const ua = request.headers.get("user-agent") || "";

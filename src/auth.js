@@ -11,7 +11,7 @@
 // verification review, and viewer identity is used solely so the owner can
 // see who viewed/downloaded what in their own admin dashboard.
 
-import { ADMIN_SESSION_TTL, b64url, b64urlDecode, cleanText, json, safeUrl, timingSafeEqual } from "./util.js";
+import { ADMIN_SESSION_TTL, b64url, b64urlDecode, cleanText, getCookie, json, safeUrl, timingSafeEqual } from "./util.js";
 
 const VIEWER_COOKIE = "hd_viewer";
 const VIEWER_TTL = 30 * 86400; // seconds a signed-in viewer session lives
@@ -44,16 +44,34 @@ async function verifyPayload(env, token) {
   }
 }
 
-function getCookie(request, name) {
-  const raw = request.headers.get("cookie") || "";
-  for (const part of raw.split(/;\s*/)) {
-    const eq = part.indexOf("=");
-    if (eq > 0 && part.slice(0, eq) === name) return part.slice(eq + 1);
-  }
-  return "";
-}
-
 // ---- Login / callback ----
+
+// Shared 2-step Google OAuth code exchange: authorization code -> id_token ->
+// verified tokeninfo. Both the viewer flow (authCallback) and the admin flow
+// (adminAuthCallback) need identical steps here, only what happens with the
+// resulting email differs.
+async function exchangeGoogleCode(env, code, redirectUri) {
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!tokenRes.ok) return null;
+  const tokenData = await tokenRes.json();
+  if (!tokenData.id_token) return null;
+
+  const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokenData.id_token)}`);
+  if (!infoRes.ok) return null;
+  const info = await infoRes.json();
+  if (info.aud !== env.GOOGLE_CLIENT_ID || !info.email) return null;
+  return info;
+}
 
 export function authLogin(request, env, url) {
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Google sign-in is not configured" }, 503);
@@ -83,29 +101,8 @@ export async function authCallback(request, env, url) {
   if (!code) return redirectWithError(url, slug, "sign-in was cancelled");
 
   try {
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: env.GOOGLE_CLIENT_ID,
-        client_secret: env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: `${url.origin}/api/auth/callback`,
-        grant_type: "authorization_code",
-      }),
-    });
-    if (!tokenRes.ok) return redirectWithError(url, slug, "Google sign-in failed");
-    const tokenData = await tokenRes.json();
-    if (!tokenData.id_token) return redirectWithError(url, slug, "Google sign-in failed");
-
-    const infoRes = await fetch(
-      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokenData.id_token)}`
-    );
-    if (!infoRes.ok) return redirectWithError(url, slug, "Google sign-in failed");
-    const info = await infoRes.json();
-    if (info.aud !== env.GOOGLE_CLIENT_ID || !info.email) {
-      return redirectWithError(url, slug, "Google sign-in failed");
-    }
+    const info = await exchangeGoogleCode(env, code, `${url.origin}/api/auth/callback`);
+    if (!info) return redirectWithError(url, slug, "Google sign-in failed");
 
     const viewer = {
       e: cleanText(info.email, 160),
@@ -196,27 +193,11 @@ export async function adminAuthCallback(request, env, url) {
   }
 
   try {
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: env.GOOGLE_CLIENT_ID,
-        client_secret: env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: `${url.origin}/api/admin/auth/callback`,
-        grant_type: "authorization_code",
-      }),
-    });
-    if (!tokenRes.ok) return redirectAdminWithError(url, "Google sign-in failed");
-    const tokenData = await tokenRes.json();
-    if (!tokenData.id_token) return redirectAdminWithError(url, "Google sign-in failed");
-
-    const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokenData.id_token)}`);
-    if (!infoRes.ok) return redirectAdminWithError(url, "Google sign-in failed");
-    const info = await infoRes.json();
+    const info = await exchangeGoogleCode(env, code, `${url.origin}/api/admin/auth/callback`);
+    if (!info) return redirectAdminWithError(url, "Google sign-in failed");
     const email = cleanText(info.email || "", 160).toLowerCase();
     const allowed = String(env.ADMIN_EMAIL || "").trim().toLowerCase();
-    if (info.aud !== env.GOOGLE_CLIENT_ID || !email || email !== allowed) {
+    if (!email || email !== allowed) {
       return redirectAdminWithError(url, "unauthorized Google account");
     }
 

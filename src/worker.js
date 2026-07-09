@@ -20,6 +20,7 @@ import {
   cleanText,
   clientIp,
   escapeHtml,
+  getCookie,
   json,
   linkState,
   makePinFields,
@@ -210,15 +211,6 @@ async function isAdmin(request, env) {
   const cookie = getCookie(request, "hd_admin");
   if (!cookie) return false;
   return verifyAdminSession(env, cookie);
-}
-
-function getCookie(request, name) {
-  const raw = request.headers.get("cookie") || "";
-  for (const part of raw.split(/;\s*/)) {
-    const eq = part.indexOf("=");
-    if (eq > 0 && part.slice(0, eq) === name) return part.slice(eq + 1);
-  }
-  return "";
 }
 
 async function adminLogin(request, env) {

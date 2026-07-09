@@ -44,7 +44,6 @@ const MAX_VISIBLE = 60;
 const uploadingList = [];
 const attention = [];
 const doneRecent = [];
-const rowEls = new Map();
 let tailNote = null;
 let paintScheduled = false;
 
@@ -259,12 +258,7 @@ function pickerGate() {
   return true;
 }
 
-function chip(text, cls = "") {
-  const el = document.createElement("span");
-  el.className = `chip ${cls}`;
-  el.textContent = text;
-  return el;
-}
+// chip() lives in public.js (shared with admin.js/share.js).
 
 // Recursively walk dropped FileSystemEntry trees, capturing each file's
 // relative path ("Trip/Day 1/IMG.jpg") so the Drive folder tree can be
@@ -866,30 +860,7 @@ function visibleItems() {
 function renderVisible() {
   const list = $("list");
   const vis = visibleItems();
-  const visSet = new Set(vis);
-
-  for (const [item, el] of rowEls) {
-    if (!visSet.has(item)) {
-      el.remove();
-      rowEls.delete(item);
-    }
-  }
-
-  let prev = null;
-  for (const item of vis) {
-    let el = rowEls.get(item);
-    if (!el) {
-      el = makeRow(item);
-      rowEls.set(item, el);
-    }
-    updateRow(el, item);
-    if (prev) {
-      if (prev.nextSibling !== el) prev.after(el);
-    } else if (list.firstChild !== el) {
-      list.prepend(el);
-    }
-    prev = el;
-  }
+  reconcile(list, vis, (item) => item, makeRow, updateRow);
 
   const hidden = totals.count - vis.length;
   if (hidden > 0) {
@@ -1100,32 +1071,10 @@ function toast(title, message = "", tone = "") {
   }, 4200);
 }
 
-function fmtBytes(b) {
-  if (!b) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  while (b >= 1024 && i < u.length - 1) {
-    b /= 1024;
-    i++;
-  }
-  return `${b.toFixed(b >= 100 || i === 0 ? 0 : 1)} ${u[i]}`;
-}
-
-function fmtTime(seconds) {
-  const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
+// fmtBytes/fmtTime/escAttr live in public.js (shared with admin.js/share.js).
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
-}
-
-function escAttr(value) {
-  return String(value || "").replace(/"/g, "&quot;");
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

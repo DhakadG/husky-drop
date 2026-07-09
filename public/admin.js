@@ -168,35 +168,7 @@ function connectLive() {
   }
 }
 
-// ---- Keyed reconciliation helpers (reuse DOM nodes across refreshes) ----
-
-function reconcile(container, items, keyOf, createEl, updateEl) {
-  const map = container._rows || (container._rows = new Map());
-  const seen = new Set();
-  let prev = null;
-  for (const item of items) {
-    const key = keyOf(item);
-    seen.add(key);
-    let el = map.get(key);
-    if (!el) {
-      el = createEl(item);
-      map.set(key, el);
-    }
-    updateEl(el, item);
-    if (prev) {
-      if (prev.nextSibling !== el) prev.after(el);
-    } else if (container.firstChild !== el) {
-      container.prepend(el);
-    }
-    prev = el;
-  }
-  for (const [key, el] of map) {
-    if (!seen.has(key)) {
-      el.remove();
-      map.delete(key);
-    }
-  }
-}
+// reconcile() lives in public.js (shared with drop.js/share.js).
 
 function setEmpty(container, isEmpty, text) {
   if (isEmpty) {
@@ -212,36 +184,24 @@ function setEmpty(container, isEmpty, text) {
 }
 
 function upsertCards(container, pairs, cls) {
-  const map = container._cards || (container._cards = new Map());
-  const seen = new Set();
-  let prev = null;
-  for (const [label, value] of pairs) {
-    seen.add(label);
-    let el = map.get(label);
-    if (!el) {
-      el = document.createElement("div");
+  reconcile(
+    container,
+    pairs,
+    ([label]) => label,
+    () => {
+      const el = document.createElement("div");
       el.className = cls;
       el.innerHTML = `<span></span><b></b>`;
       el._label = el.querySelector("span");
       el._value = el.querySelector("b");
-      el._label.textContent = label;
-      map.set(label, el);
-    }
-    const text = String(value);
-    if (el._value.textContent !== text) el._value.textContent = text;
-    if (prev) {
-      if (prev.nextSibling !== el) prev.after(el);
-    } else if (container.firstChild !== el) {
-      container.prepend(el);
-    }
-    prev = el;
-  }
-  for (const [label, el] of map) {
-    if (!seen.has(label)) {
-      el.remove();
-      map.delete(label);
-    }
-  }
+      return el;
+    },
+    (el, [label, value]) => {
+      if (el._label.textContent !== label) el._label.textContent = label;
+      const text = String(value);
+      if (el._value.textContent !== text) el._value.textContent = text;
+    },
+  );
 }
 
 function renderStats() {
@@ -341,7 +301,7 @@ function renderMetrics(sessions) {
     "live-metric",
   );
   const hot = sessions.length > 0;
-  for (const [, card] of el._cards) card.classList.toggle("hot", hot);
+  for (const [, card] of el._rows) card.classList.toggle("hot", hot);
 }
 
 function makeLiveRow() {
@@ -1167,40 +1127,4 @@ function value(id) {
   return $(id) ? $(id).value.trim() : "";
 }
 
-function fmtBytes(b) {
-  if (!b) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  while (b >= 1024 && i < u.length - 1) {
-    b /= 1024;
-    i++;
-  }
-  return `${b.toFixed(b >= 100 || i === 0 ? 0 : 1)} ${u[i]}`;
-}
-
-function fmtTime(seconds) {
-  const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
-
-function esc(s) {
-  return String(s ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[c],
-  );
-}
-
-function escAttr(s) {
-  return esc(s).replace(/`/g, "&#96;");
-}
+// fmtBytes/fmtTime/esc/escAttr live in public.js (shared with drop.js/share.js).

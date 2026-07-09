@@ -6,21 +6,9 @@
 
 const $ = (id) => document.getElementById(id);
 const slug = location.pathname.split("/").filter(Boolean).pop();
-const fx = window.shareFx || {
-  reveal() {},
-  crumbSwap() {},
-  toolbar() {},
-  pop() {},
-  fadeIn(el) {
-    if (el) el.style.opacity = "1";
-  },
-  shake() {},
-  setCursorState() {},
-  setScrubbing() {},
-  tileDepth() {},
-  hasMotion: false,
-  canHoverPreview: matchMedia("(hover: hover) and (pointer: fine)").matches,
-};
+// ponytail: share-fx.js is a plain <script> loaded before this module in
+// share.html, so window.shareFx is always set by the time this runs.
+const fx = window.shareFx;
 
 let meta = null;
 let viewer = null;
@@ -1430,6 +1418,17 @@ function mountBottomBar(instance) {
   const bar = document.createElement("div");
   bar.className = "pswp-bottom-bar";
   bar.addEventListener("wheel", (e) => e.stopPropagation(), { capture: true, passive: true });
+  // PhotoSwipe's own pan/swipe/close gesture listens for these on its root
+  // element and will contest a drag that starts on the strip (grabbing it
+  // as a main-image swipe), which is why a strip drag looked like it
+  // "snapped back" - it was never reaching Swiper's own handler uncontested.
+  // Same capture+stopPropagation trick as the wheel isolation above: it
+  // blocks propagation to ancestors but not to other listeners already on
+  // this element or its descendants (Swiper's drag handlers live on the
+  // strip host itself), so Swiper still gets the gesture.
+  for (const type of ["pointerdown", "mousedown", "touchstart"]) {
+    bar.addEventListener(type, (e) => e.stopPropagation(), { capture: true });
+  }
   captionEl = document.createElement("div");
   captionEl.className = "pswp-caption";
   bar.appendChild(captionEl);
@@ -1765,12 +1764,7 @@ function installTracking() {
 
 // ---- Utilities ----
 
-function chip(text, cls = "") {
-  const el = document.createElement("span");
-  el.className = `chip ${cls}`;
-  el.textContent = text;
-  return el;
-}
+// chip/fmtBytes/esc/escAttr live in public.js (shared with admin.js/drop.js).
 
 function toast(title, message = "", tone = "", sticky = false) {
   const stack = $("toasts");
@@ -1791,17 +1785,6 @@ function toast(title, message = "", tone = "", sticky = false) {
   return item;
 }
 
-function fmtBytes(b) {
-  if (!b) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  while (b >= 1024 && i < u.length - 1) {
-    b /= 1024;
-    i++;
-  }
-  return `${b.toFixed(b >= 100 || i === 0 ? 0 : 1)} ${u[i]}`;
-}
-
 function fmtDur(ms) {
   const s = Math.round(ms / 1000);
   const m = Math.floor(s / 60);
@@ -1810,20 +1793,3 @@ function fmtDur(ms) {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function esc(s) {
-  return String(s ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[c],
-  );
-}
-
-function escAttr(s) {
-  return esc(s).replace(/`/g, "&#96;");
-}
