@@ -32,6 +32,7 @@ import {
   randomSlug,
   retryJson,
   sanitizeFilename,
+  sanitizeRelPath,
   slugify,
   timingSafeEqual,
 } from "./util.js";
@@ -41,6 +42,7 @@ import {
   driveQuota,
   ensureLinkFolderDirect,
   quotaFree,
+  resolvePathFolderDirect,
   resolveUploaderFolderDirect,
 } from "./drive.js";
 import {
@@ -308,6 +310,21 @@ async function resolveUploaderFolder(env, link, uploader) {
   return d.folderId || link.folderId;
 }
 
+// Resolve the final Drive folder for a file, recreating the uploaded folder
+// tree (relativePath directories) beneath the link / per-uploader folder.
+async function resolveTargetFolder(env, link, uploader, segments) {
+  if (!segments.length) return resolveUploaderFolder(env, link, uploader);
+  if (!env.LIVE_TRACKER) return resolvePathFolderDirect(env, link, uploader, segments);
+  const res = await liveStub(env).fetch("https://live.internal/pathfolder", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ link, uploader, segments }),
+  });
+  if (!res.ok) throw new Error("folder resolver failed");
+  const d = await res.json();
+  return d.folderId || link.folderId;
+}
+
 // Lazy Drive folder creation for links returned instantly at create time.
 async function ensureLinkFolder(env, link) {
   if (link.folderId) return link.folderId;
@@ -485,7 +502,16 @@ async function createSession(request, env) {
       return json({ error: "Drive folder is not ready yet: " + err.message }, 503);
     }
   }
-  const folderId = await resolveUploaderFolder(env, link, uploader);
+  // Recreate the uploaded folder tree: "Trip/Day 1/IMG.jpg" lands in a real
+  // Trip/Day 1 folder chain instead of being flattened with metadata only.
+  const relSegments = sanitizeRelPath(relativePath || "");
+  const folderSegments = relSegments.length > 1 ? relSegments.slice(0, -1) : [];
+  let folderId;
+  try {
+    folderId = await resolveTargetFolder(env, link, uploader, folderSegments);
+  } catch (err) {
+    return json({ error: "Drive folder create failed: " + err.message }, 502);
+  }
   const tok = await accessToken(env);
   const origin = new URL(request.url).origin;
 

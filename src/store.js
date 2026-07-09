@@ -252,6 +252,27 @@ export async function gatePin(request, env, link, pin, keyPrefix = "link:", brut
 
 // ---- Notifications ----
 
+// Branded wrapper applied to every outgoing email so notifications match the
+// blue dashboard theme. Body HTML is produced by trusted call sites only.
+function emailTemplate(bodyHtml) {
+  return `<!doctype html>
+<html>
+<body style="margin:0;padding:0;background:#eaf0f9;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;padding:28px 16px;">
+    <div style="background:linear-gradient(135deg,#2f6bff,#15c0c9);border-radius:16px 16px 0 0;padding:18px 24px;">
+      <span style="color:#ffffff;font-size:16px;font-weight:700;letter-spacing:-0.01em;">losthusky<span style="opacity:.75">/</span>drop</span>
+    </div>
+    <div style="background:#ffffff;border-radius:0 0 16px 16px;padding:24px;color:#0c1a2b;font-size:14.5px;line-height:1.6;">
+      ${bodyHtml}
+    </div>
+    <p style="color:#9aa8b8;font-size:11.5px;text-align:center;margin:14px 0 0;">
+      Automated notification from LostHusky's DropBox
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
 export async function sendNotify(env, msg) {
   if (!env.RESEND_API_KEY || !env.NOTIFY_TO || !env.NOTIFY_FROM) return;
   await fetch("https://api.resend.com/emails", {
@@ -264,7 +285,7 @@ export async function sendNotify(env, msg) {
       from: env.NOTIFY_FROM,
       to: [env.NOTIFY_TO],
       subject: msg.subject,
-      html: msg.html,
+      html: emailTemplate(msg.html),
     }),
   }).catch((err) => console.error("notify failed", err.message));
 }

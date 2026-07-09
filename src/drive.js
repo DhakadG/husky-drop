@@ -113,9 +113,11 @@ export async function driveListFolder(env, folderId, pageToken) {
   const tok = await accessToken(env);
   const params = new URLSearchParams({
     q: `'${driveQueryEscape(folderId)}' in parents and trashed=false`,
-    fields: "nextPageToken,files(id,name,size,mimeType,modifiedTime,createdTime,thumbnailLink)",
+    fields:
+      "nextPageToken,files(id,name,size,mimeType,modifiedTime,createdTime,thumbnailLink," +
+      "imageMediaMetadata(width,height,rotation),videoMediaMetadata(width,height,durationMillis))",
     orderBy: "folder,name",
-    pageSize: "100",
+    pageSize: "200",
     supportsAllDrives: "true",
     includeItemsFromAllDrives: "true",
   });
@@ -192,6 +194,30 @@ export async function resolveUploaderFolderDirect(env, link, uploader) {
   const folder = found || (await driveCreateFolder(env, safeName, link.folderId));
   await env.KV.put(cacheKey, JSON.stringify(folder), { expirationTtl: 180 * 86400 });
   return folder.id;
+}
+
+// Resolves (and caches) a nested subfolder path under the upload target
+// folder, creating any missing folders along the way. Used to mirror the
+// folder tree of a folder upload ("Trip/Day 1/...") inside Drive.
+export async function resolvePathFolderDirect(env, link, uploader, segments) {
+  let parentId = await resolveUploaderFolderDirect(env, link, uploader);
+  if (!Array.isArray(segments) || !segments.length) return parentId;
+  let pathKey = parentId;
+  for (const segment of segments) {
+    const name = sanitizeFolderName(segment);
+    pathKey += `/${name.toLowerCase()}`;
+    const cacheKey = `pathfolder:${link.slug}:${await sha256(pathKey)}`;
+    const cached = await env.KV.get(cacheKey, "json");
+    if (cached?.id) {
+      parentId = cached.id;
+      continue;
+    }
+    const found = await driveFindFolder(env, name, parentId);
+    const folder = found || (await driveCreateFolder(env, name, parentId));
+    await env.KV.put(cacheKey, JSON.stringify({ id: folder.id }), { expirationTtl: 180 * 86400 });
+    parentId = folder.id;
+  }
+  return parentId;
 }
 
 // Lazy Drive folder creation for links returned instantly at create time.

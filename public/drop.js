@@ -94,13 +94,13 @@ function showGone(eyebrow = "closed", title = "This link is not available.", sub
 }
 
 function applySettings(settings) {
-  concurrency = clamp(Number(settings.concurrency) || 4, 1, 4);
+  concurrency = clamp(Number(settings.concurrency) || 4, 1, 8);
   chunkSize = clamp((Number(settings.chunkMB) || 32) * 1024 * 1024, MIN_CHUNK, MAX_CHUNK);
 }
 
 function applyTheme(theme) {
-  document.documentElement.style.setProperty("--accent", theme.accentColor || "#f2a33c");
-  document.documentElement.style.setProperty("--page-bg", theme.backgroundColor || "#101418");
+  document.documentElement.style.setProperty("--accent", theme.accentColor || "#2f6bff");
+  document.documentElement.style.setProperty("--page-bg", theme.backgroundColor || "#eaf0f9");
   if (theme.backgroundUrl) document.body.style.backgroundImage = `url("${theme.backgroundUrl}")`;
   if (theme.logoUrl) {
     $("link-logo").src = theme.logoUrl;
@@ -176,10 +176,14 @@ function showMain() {
     zone.classList.add("drag");
   });
   zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
-  zone.addEventListener("drop", (e) => {
+  zone.addEventListener("drop", async (e) => {
     e.preventDefault();
     zone.classList.remove("drag");
-    if (pickerGate()) addFiles(e.dataTransfer.files);
+    if (!pickerGate()) return;
+    // Traverse dropped directories with the FileSystem API so folder trees
+    // keep their relative paths (dataTransfer.files flattens them).
+    const collected = await collectDropped(e.dataTransfer);
+    addFiles(collected);
   });
   picker.addEventListener("change", () => {
     addFiles(picker.files);
@@ -262,19 +266,49 @@ function chip(text, cls = "") {
   return el;
 }
 
+// Recursively walk dropped FileSystemEntry trees, capturing each file's
+// relative path ("Trip/Day 1/IMG.jpg") so the Drive folder tree can be
+// mirrored server-side. Falls back to the flat file list on old browsers.
+async function collectDropped(dt) {
+  const entries = [...(dt.items || [])].map((it) => it.webkitGetAsEntry?.()).filter(Boolean);
+  if (!entries.length) return [...dt.files];
+  const out = [];
+  const CAP = 20000;
+  const entryFile = (entry) => new Promise((resolve) => entry.file(resolve, () => resolve(null)));
+  const readBatch = (reader) => new Promise((resolve) => reader.readEntries(resolve, () => resolve([])));
+  async function walk(entry, path) {
+    if (out.length >= CAP) return;
+    if (entry.isFile) {
+      const file = await entryFile(entry);
+      if (file) out.push({ file, rel: path ? `${path}${file.name}` : "" });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (;;) {
+        const batch = await readBatch(reader);
+        if (!batch.length) break;
+        for (const child of batch) await walk(child, `${path}${entry.name}/`);
+      }
+    }
+  }
+  for (const entry of entries) await walk(entry, "");
+  return out;
+}
+
 function addFiles(files) {
-  const incoming = [...files];
+  const incoming = [...files].map((f) =>
+    f instanceof File ? { file: f, rel: f.webkitRelativePath || "" } : f
+  );
   if (!incoming.length) return;
   let skippedEmpty = 0;
   let skippedDupe = 0;
   let resumed = 0;
-  const seen = new Set(queue.map((q) => `${q.file.name}:${q.file.size}`));
-  for (const file of incoming) {
+  const seen = new Set(queue.map((q) => `${q.relativePath}:${q.file.name}:${q.file.size}`));
+  for (const { file, rel } of incoming) {
     if (!file.size) {
       skippedEmpty++;
       continue;
     }
-    const dupeKey = `${file.name}:${file.size}`;
+    const dupeKey = `${rel}:${file.name}:${file.size}`;
     if (seen.has(dupeKey)) {
       skippedDupe++;
       continue;
@@ -282,7 +316,7 @@ function addFiles(files) {
     seen.add(dupeKey);
     const item = {
       file,
-      relativePath: file.webkitRelativePath || "",
+      relativePath: rel || "",
       sent: 0,
       state: "queued",
       retries: 0,

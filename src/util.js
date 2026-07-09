@@ -69,6 +69,18 @@ export function sanitizeFolderName(value) {
   return cleanText(value, 60).replace(/[\\/:*?"<>|]/g, "_") || "anonymous";
 }
 
+// Split an uploader-supplied relative path ("Trip/Day 1/IMG_001.jpg") into
+// safe folder segments. Strips traversal parts and caps depth so a malicious
+// client cannot spray thousands of nested Drive folders.
+export function sanitizeRelPath(value, maxSegments = 12) {
+  const raw = String(value || "").replace(/\\/g, "/");
+  return raw
+    .split("/")
+    .map((s) => cleanText(s, 90))
+    .filter((s) => s && s !== "." && s !== "..")
+    .slice(0, maxSegments);
+}
+
 export function safeUrl(value) {
   const s = cleanText(value || "", 400);
   if (!s) return "";
@@ -279,8 +291,8 @@ export function normalizeEvent(event, request) {
 export function normalizeSettings(input = {}) {
   // Fast defaults (4 parallel files, 32 MB chunks) apply whenever a link has no
   // explicit tuning. Admins can still pick any supported value in the editor.
-  const concurrency = clamp(Number(input.concurrency) || 4, 1, 4);
-  const chunkMB = [8, 16, 32].includes(Number(input.chunkMB)) ? Number(input.chunkMB) : 32;
+  const concurrency = clamp(Number(input.concurrency) || 4, 1, 8);
+  const chunkMB = [8, 16, 32, 64].includes(Number(input.chunkMB)) ? Number(input.chunkMB) : 32;
   const maxTransferBytes = clamp(Number(input.maxTransferBytes) || MAX_DEFAULT_BYTES, 1, MAX_DEFAULT_BYTES);
   return {
     concurrency,
@@ -295,11 +307,18 @@ export function normalizeSettings(input = {}) {
 }
 
 export function normalizeTheme(input = {}) {
+  // Links saved before the blue UI refresh have the old orange/dark defaults
+  // baked into KV; treat those exact values as "unset" so everything renders
+  // with the current brand theme.
+  let accent = safeColor(input.accentColor);
+  if (!accent || accent.toLowerCase() === "#f2a33c") accent = "#2f6bff";
+  let bg = safeColor(input.backgroundColor);
+  if (!bg || bg.toLowerCase() === "#101418") bg = "#eaf0f9";
   return {
     logoUrl: safeUrl(input.logoUrl),
     backgroundUrl: safeUrl(input.backgroundUrl),
-    backgroundColor: safeColor(input.backgroundColor) || "#101418",
-    accentColor: safeColor(input.accentColor) || "#f2a33c",
+    backgroundColor: bg,
+    accentColor: accent,
     welcome: cleanText(input.welcome || "Send the full-resolution photos and videos here.", 180),
     promoTitle: cleanText(input.promoTitle || "", 80),
     promoText: cleanText(input.promoText || "", 180),

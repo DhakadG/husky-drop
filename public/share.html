@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="robots" content="noindex" />
 <title>Shared files - LostHusky's DropBox</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
 </head>
-<body class="drop-page">
-<div class="ambient"></div>
+<body class="drop-page share-page">
 <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="true"></div>
-<main class="drop-shell">
+<main class="share-shell">
   <header class="topbar">
     <a class="brand" href="/"><i class="brand-mark"></i>losthusky<span>/</span>drop</a>
     <div class="status-pill" id="ws-state">shared folder</div>
@@ -49,27 +49,49 @@
   </section>
 
   <section id="main" class="hidden">
-    <div class="drop-hero panel">
-      <div>
+    <div class="share-head">
+      <div class="share-title">
         <img id="link-logo" class="link-logo hidden" alt="" />
-        <p class="eyebrow">shared with you</p>
-        <h1 id="label">Shared files</h1>
-        <p id="welcome" class="hero-copy">Browse and download the files below.</p>
-        <div class="meta-row" id="meta"></div>
+        <div>
+          <p class="eyebrow">shared with you</p>
+          <h1 id="label">Shared files</h1>
+        </div>
+      </div>
+      <div class="meta-row" id="meta"></div>
+    </div>
+
+    <div class="gallery-toolbar panel">
+      <nav class="crumbs" id="crumbs" aria-label="folders"></nav>
+      <div class="toolbar-tools">
+        <select id="sort" class="sort-select" aria-label="sort files">
+          <option value="name">Name A-Z</option>
+          <option value="new">Newest first</option>
+          <option value="old">Oldest first</option>
+          <option value="size">Largest first</option>
+          <option value="type">Type</option>
+        </select>
+        <button class="mini" id="select-all" type="button">select all</button>
+        <button class="mini hidden" id="select-none" type="button">clear</button>
+        <span class="muted" id="sel-info"></span>
+        <button class="btn zip-btn hidden" id="zip-btn" type="button">Download zip</button>
       </div>
     </div>
 
-    <section class="panel">
-      <div class="gallery-toolbar">
-        <button class="mini" id="select-all" type="button">select all</button>
-        <button class="mini" id="select-none" type="button">clear</button>
-        <button class="btn hidden" id="zip-btn" type="button">Download selected as zip</button>
-        <span class="muted" id="sel-info"></span>
-      </div>
-      <div id="folders"></div>
-    </section>
+    <div id="folders"></div>
   </section>
 </main>
+
+<div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
+  <button class="lb-btn lb-close" id="lb-close" type="button" aria-label="close">&#10005;</button>
+  <button class="lb-btn lb-prev" id="lb-prev" type="button" aria-label="previous">&#8249;</button>
+  <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="next">&#8250;</button>
+  <div class="lb-stage" id="lb-stage"></div>
+  <div class="lb-bar">
+    <div class="lb-meta"><b id="lb-name"></b><span id="lb-info" class="muted"></span></div>
+    <a class="mini" id="lb-dl" href="#" download>download</a>
+  </div>
+</div>
+
 <script src="/vendor/microzip.js"></script>
 <script src="/share.js"></script>
 </body>

@@ -22,7 +22,7 @@ import {
   normalizeUploadMeta,
   sanitizeFolderName,
 } from "./util.js";
-import { ensureLinkFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
+import { ensureLinkFolderDirect, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
 import { bumpShareStats, bumpStats, mergeEventsKV, sendNotify } from "./store.js";
 
 export class LiveTracker {
@@ -172,6 +172,41 @@ export class LiveTracker {
       return new Response(JSON.stringify({ folderId }), { headers: JSON_HEADERS });
     }
 
+    if (request.method === "POST" && url.pathname === "/pathfolder") {
+      // Serialize nested folder creation for folder uploads so parallel files
+      // from the same directory never race and create duplicate Drive folders.
+      const body = await request.json().catch(() => ({}));
+      const link = body.link || {};
+      const uploader = cleanText(body.uploader || "anonymous", 60) || "anonymous";
+      const segments = Array.isArray(body.segments)
+        ? body.segments.map((s) => cleanText(s, 90)).filter(Boolean).slice(0, 12)
+        : [];
+      if (!link.slug || !link.folderId) {
+        return new Response(JSON.stringify({ error: "link required" }), {
+          status: 400,
+          headers: JSON_HEADERS,
+        });
+      }
+      const key = `path:${link.slug}:${sanitizeFolderName(uploader).toLowerCase()}:${segments.join("/").toLowerCase()}`;
+      if (!this.folderLocks.has(key)) {
+        this.folderLocks.set(
+          key,
+          resolvePathFolderDirect(this.env, link, uploader, segments).finally(() =>
+            this.folderLocks.delete(key)
+          )
+        );
+      }
+      try {
+        const folderId = await this.folderLocks.get(key);
+        return new Response(JSON.stringify({ folderId }), { headers: JSON_HEADERS });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 502,
+          headers: JSON_HEADERS,
+        });
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/linkfolder") {
       // Serialize lazy Drive folder creation for links created "instantly".
       const body = await request.json().catch(() => ({}));
@@ -297,19 +332,39 @@ export class LiveTracker {
   }
 
   timeseries(days, slugFilter) {
-    if (!this.sqlReady) return [];
     const since = dayKey(Date.now() - days * 86400_000);
-    try {
-      const query = `SELECT day, SUM(opens) AS opens, SUM(sessions) AS sessions,
-          SUM(files) AS files, SUM(bytes) AS bytes, SUM(downloads) AS downloads
-        FROM day_stats WHERE day >= ?${slugFilter ? " AND slug = ?" : ""}
-        GROUP BY day ORDER BY day`;
-      const cursor = slugFilter ? this.sql.exec(query, since, slugFilter) : this.sql.exec(query, since);
-      return cursor.toArray();
-    } catch (err) {
-      console.error("timeseries failed", err.message);
-      return [];
+    const byDay = new Map();
+    if (this.sqlReady) {
+      try {
+        const query = `SELECT day, SUM(opens) AS opens, SUM(sessions) AS sessions,
+            SUM(files) AS files, SUM(bytes) AS bytes, SUM(downloads) AS downloads
+          FROM day_stats WHERE day >= ?${slugFilter ? " AND slug = ?" : ""}
+          GROUP BY day ORDER BY day`;
+        const cursor = slugFilter
+          ? this.sql.exec(query, since, slugFilter)
+          : this.sql.exec(query, since);
+        for (const row of cursor.toArray()) byDay.set(row.day, row);
+      } catch (err) {
+        console.error("timeseries failed", err.message);
+      }
     }
+    // Fold in deltas still waiting for the next alarm flush so the chart
+    // reflects activity from the last few seconds too.
+    for (const [key, d] of this.pendingDays) {
+      const sep = key.lastIndexOf("|");
+      const slug = key.slice(0, sep);
+      const day = key.slice(sep + 1);
+      if (day < since) continue;
+      if (slugFilter && slug !== slugFilter) continue;
+      const cur = byDay.get(day) || { day, opens: 0, sessions: 0, files: 0, bytes: 0, downloads: 0 };
+      cur.opens = (Number(cur.opens) || 0) + (d.opens || 0);
+      cur.sessions = (Number(cur.sessions) || 0) + (d.sessions || 0);
+      cur.files = (Number(cur.files) || 0) + (d.files || 0);
+      cur.bytes = (Number(cur.bytes) || 0) + (d.bytes || 0);
+      cur.downloads = (Number(cur.downloads) || 0) + (d.downloads || 0);
+      byDay.set(day, cur);
+    }
+    return [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : 1));
   }
 
   bumpDay(slug, delta) {

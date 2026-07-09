@@ -270,19 +270,47 @@ export async function listShareFiles(request, env) {
   if (failure) return failure;
   if (!env.GOOGLE_CLIENT_ID) return json({ folders: [], allowZip: share.allowZip !== false });
 
-  const single = "folderIndex" in b;
-  const folderIndex = clamp(Number(b.folderIndex) || 0, 0, share.folderIds.length - 1);
-  const folders = [];
-  const targets = single
-    ? [[folderIndex, share.folderIds[folderIndex]]]
-    : share.folderIds.map((id, i) => [i, id]);
+  // Three listing modes:
+  //  - root (default): every shared root folder at once
+  //  - folderIndex: one root folder (pagination)
+  //  - folderToken: a subfolder previously handed out as a signed "ls" token,
+  //    so guests can browse the folder tree without ever seeing raw Drive IDs.
+  const folderToken = cleanText(b.folderToken || "", 800);
+  let targets;
+  if (folderToken) {
+    const parsedTok = await verifyShareToken(env, folderToken, "ls");
+    if (!parsedTok || parsedTok.slug !== share.slug) {
+      return json({ error: "this folder view expired - reload the page" }, 403);
+    }
+    targets = [[0, parsedTok.fileId]];
+  } else if ("folderIndex" in b) {
+    const folderIndex = clamp(Number(b.folderIndex) || 0, 0, share.folderIds.length - 1);
+    targets = [[folderIndex, share.folderIds[folderIndex]]];
+  } else {
+    targets = share.folderIds.map((id, i) => [i, id]);
+  }
+  const single = !!folderToken || "folderIndex" in b;
 
+  const folders = [];
   for (const [i, folderId] of targets) {
     const page = await driveListFolder(env, folderId, single ? cleanText(b.pageToken || "", 500) : "");
     const files = [];
+    const subfolders = [];
     for (const f of page.files || []) {
-      if (f.mimeType === "application/vnd.google-apps.folder") continue; // v1: flat listing
+      if (f.mimeType === "application/vnd.google-apps.folder") {
+        subfolders.push({
+          name: cleanText(f.name || "folder", 200),
+          ls: await signShareToken(env, "ls", share.slug, f.id, 4 * 3600),
+        });
+        continue;
+      }
       const token = await signShareToken(env, "dl", share.slug, f.id);
+      const img = f.imageMediaMetadata || {};
+      const vid = f.videoMediaMetadata || {};
+      let w = Number(img.width || vid.width) || 0;
+      let h = Number(img.height || vid.height) || 0;
+      // EXIF rotation of 90/270 means the rendered thumb is portrait.
+      if (Number(img.rotation) % 2 === 1) [w, h] = [h, w];
       files.push({
         id: f.id,
         name: cleanText(f.name || "file", 200),
@@ -290,13 +318,17 @@ export async function listShareFiles(request, env) {
         mime: cleanText(f.mimeType || "", 100),
         at: Date.parse(f.modifiedTime || f.createdTime) || 0,
         thumb: f.thumbnailLink || "",
+        w,
+        h,
+        dur: Number(vid.durationMillis) || 0,
         dl: `/api/share/dl/${token}`,
       });
     }
     folders.push({
       index: i,
-      name: share.folderNames[i] || `Folder ${i + 1}`,
+      name: folderToken ? "" : share.folderNames[i] || `Folder ${i + 1}`,
       files,
+      subfolders,
       nextPageToken: page.nextPageToken || "",
     });
   }
@@ -371,37 +403,55 @@ export async function shareDownload(request, env, token) {
   const meta = await driveFileMeta(env, parsed.fileId);
   if (!meta?.id) return json({ error: "file not found" }, 404);
 
+  // ?inline=1 serves the file for in-page viewing (lightbox images, <video>).
+  // Range requests are forwarded to Drive so video seeking works.
+  const inline = new URL(request.url).searchParams.has("inline");
+  const range = request.headers.get("range") || "";
   const tok = await accessToken(env);
+  const driveHeaders = { authorization: `Bearer ${tok}` };
+  if (range) driveHeaders.range = range;
   const r = await fetch(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`,
-    { headers: { authorization: `Bearer ${tok}` } }
+    { headers: driveHeaders }
   );
-  if (!r.ok || !r.body) return json({ error: "Drive download failed" }, 502);
+  if (!(r.status === 200 || r.status === 206) || !r.body) {
+    return json({ error: "Drive download failed" }, 502);
+  }
 
   const bytes = Number(meta.size) || 0;
-  const record = normalizeEvent(
-    { type: "share-dl", slug: share.slug, label: share.label, file: meta.name, bytes },
-    request
-  );
-  if (env.LIVE_TRACKER) {
-    liveStub(env)
-      .fetch("https://live.internal/share-stat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ slug: share.slug, downloads: 1, bytes, record }),
-      })
-      .catch(() => {});
-  } else {
-    await bumpShareStats(env, share.slug, { opens: 0, downloads: 1, bytes });
-    await mergeEventsKV(env, [record]);
+  // Count the transfer once: skip stat bumps for mid-file seeks so scrubbing
+  // a video does not inflate the download counters.
+  const firstChunk = !range || /bytes=0-/.test(range);
+  if (firstChunk) {
+    const record = normalizeEvent(
+      { type: "share-dl", slug: share.slug, label: share.label, file: meta.name, bytes },
+      request
+    );
+    if (env.LIVE_TRACKER) {
+      liveStub(env)
+        .fetch("https://live.internal/share-stat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ slug: share.slug, downloads: 1, bytes, record }),
+        })
+        .catch(() => {});
+    } else {
+      await bumpShareStats(env, share.slug, { opens: 0, downloads: 1, bytes });
+      await mergeEventsKV(env, [record]);
+    }
   }
 
   const headers = new Headers({
     "content-type": meta.mimeType || "application/octet-stream",
-    "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(meta.name || "file")}`,
-    "cache-control": "private, no-store",
+    "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name || "file")}`,
+    "cache-control": inline ? "private, max-age=900" : "private, no-store",
     "x-content-type-options": "nosniff",
+    "accept-ranges": "bytes",
   });
-  if (bytes) headers.set("content-length", String(bytes));
-  return new Response(r.body, { status: 200, headers });
+  for (const h of ["content-range", "content-length"]) {
+    const v = r.headers.get(h);
+    if (v) headers.set(h, v);
+  }
+  if (!headers.has("content-length") && bytes && !range) headers.set("content-length", String(bytes));
+  return new Response(r.body, { status: r.status === 206 ? 206 : 200, headers });
 }
