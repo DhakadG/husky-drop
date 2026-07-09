@@ -1216,6 +1216,102 @@ table.links td b { font-family: var(--font-display); font-weight: 600; font-size
 .budget-bar { margin: 10px 0 4px; display: grid; gap: 4px; }
 
 /* ============================================================
+   Share sign-in gate (Google OAuth + PIN combined)
+   ============================================================ */
+
+.gate-panel { display: grid; gap: 16px; }
+.google-btn {
+  background: #fff;
+  color: #1f1f1f;
+  box-shadow: 0 10px 26px -14px rgba(20, 60, 120, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  gap: 12px;
+}
+.google-btn:hover { transform: translateY(-2px); box-shadow: 0 16px 34px -14px rgba(20, 60, 120, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.1); }
+
+.viewer-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.6);
+}
+.viewer-card img {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  object-fit: cover;
+  box-shadow: 0 0 0 2px var(--glass-border);
+}
+.viewer-card b { display: block; font-size: 14px; }
+.viewer-card span { display: block; font-size: 12.5px; }
+
+/* ============================================================
+   Custom cursor follower (fine pointers only)
+   ============================================================ */
+
+body.has-fx-cursor,
+body.has-fx-cursor * { cursor: none !important; }
+
+.fx-cur-dot,
+.fx-cur-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 999999;
+  pointer-events: none;
+  will-change: transform;
+  transition: opacity 160ms ease;
+}
+.fx-cur-dot {
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.fx-cur-ring {
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in oklab, var(--accent) 70%, white);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fx-cur-ring span {
+  font: 700 9.5px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.fx-cur-ring[data-state="photo"] span,
+.fx-cur-ring[data-state="video"] span,
+.fx-cur-ring[data-state="folder"] span {
+  opacity: 1;
+  color: var(--ink);
+}
+.fx-cur-ring[data-state="photo"],
+.fx-cur-ring[data-state="video"],
+.fx-cur-ring[data-state="folder"] {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: var(--accent);
+}
+.fx-cur-ring[data-state="scrub"] {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.fx-cur-ring.cur-idle { opacity: 0.35; }
+.fx-cur-ring.cur-hidden,
+.fx-cur-dot.cur-hidden { opacity: 0; }
+
+/* ============================================================
    Share gallery — full-width, justified (Google-Photos style)
    ============================================================ */
 
@@ -1426,6 +1522,42 @@ table.links td b { font-family: var(--font-display); font-weight: 600; font-size
   transition: opacity 160ms ease, transform 200ms ease;
 }
 .g-card.previewing .g-video-preview { opacity: 1; }
+.g-card.previewing .g-play { opacity: 0; transition: opacity 140ms ease; }
+
+/* Buffering spinner: keeps the still thumbnail visible underneath instead
+   of a black frame while a hover-previewed video loads its first frame. */
+.g-card.buffering::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  margin: auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: fxSpin 0.8s linear infinite;
+  pointer-events: none;
+}
+@keyframes fxSpin { to { transform: rotate(360deg); } }
+
+/* Buffered/played scrub bar for the hover preview (no native controls there) */
+.buffer-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+  overflow: hidden;
+}
+.buffer-bar i { position: absolute; top: 0; left: 0; bottom: 0; width: 0; }
+.buffer-bar .buffered { background: rgba(255, 255, 255, 0.55); transition: width 160ms linear; }
+.buffer-bar .played { background: var(--accent); z-index: 1; }
+.g-card.scrubbing .buffer-bar { height: 4px; }
 
 .g-card .file-ico {
   position: absolute;
@@ -1582,146 +1714,99 @@ body.selecting .g-check { opacity: 1; }
 }
 .g-card:hover .g-dur { bottom: 34px; }
 
-/* Lightbox */
-.lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  background: rgba(5, 8, 14, 0.96);
-  display: flex;
-  flex-direction: column;
-}
-.lb-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: max(14px, env(safe-area-inset-top)) 18px 10px;
-  color: #fff;
-  z-index: 83;
-}
-.lb-stage {
-  flex: 1;
-  min-height: 0;
+/* ---------- PhotoSwipe viewer (custom video content + UI additions) ---------- */
+.pswp { --pswp-bg: #05080f; }
+.pswp__bg { background: var(--pswp-bg); }
+
+.pswp-video-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 64px 12px;
-  touch-action: pan-y;
+  background: #000;
 }
-.lb-stage img,
-.lb-stage video {
+.pswp-video-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: blur(18px);
+  transform: scale(1.06);
+  opacity: 0.9;
+}
+.pswp-video {
+  position: relative;
+  z-index: 1;
   max-width: 100%;
   max-height: 100%;
-  object-fit: contain;
-  border-radius: 6px;
-  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.8);
-  background: #050910;
+  background: transparent;
 }
-.lb-btn {
-  z-index: 82;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+
+.pswp-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 8px;
   color: #fff;
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 140ms ease;
+  pointer-events: none;
 }
-.lb-btn:hover { background: var(--accent); }
-.lb-close {
-  position: static;
-  font-size: 17px;
-  width: 40px;
-  height: 40px;
-}
-.lb-prev,
-.lb-next {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.lb-prev { left: 16px; }
-.lb-next { right: 16px; }
-.lb-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.lb-meta { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
-.lb-meta b {
-  font: 600 14px var(--font-body);
+.pswp-caption b {
+  font: 600 13.5px var(--font-body);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 46vw;
 }
-.lb-meta .muted { color: rgba(255, 255, 255, 0.6); font-family: var(--font-mono); font-size: 12px; }
-.lb-tools .mini,
-.quality-select {
-  min-height: 40px;
-  background: rgba(255, 255, 255, 0.12);
-  border-color: transparent;
-  color: #fff;
-  text-decoration: none;
-}
-.quality-select {
-  width: auto;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font: 600 12px var(--font-mono);
-}
-.quality-select:disabled { opacity: 0.45; }
-.lb-tools .mini:hover { background: var(--accent); color: #fff; }
+.pswp-caption span { font: 11.5px var(--font-mono); color: rgba(255, 255, 255, 0.65); flex: 0 0 auto; }
+.pswp__icn-download { fill: none; }
+
+/* Swiper thumbstrip docked to the bottom of the PhotoSwipe viewer */
 .lb-strip {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 10px 18px calc(12px + env(safe-area-inset-bottom));
-  scrollbar-width: thin;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100000;
+  padding: 8px 14px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.55), transparent);
 }
+.lb-strip .swiper-wrapper { align-items: flex-end; }
 .lb-thumb {
-  flex: 0 0 auto;
-  width: 58px;
-  height: 46px;
-  border: 2px solid transparent;
-  border-radius: 8px;
+  width: 54px;
+  height: 42px;
+  border-radius: 7px;
   overflow: hidden;
-  padding: 0;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  position: relative;
   cursor: pointer;
+  opacity: 0.55;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.08);
+  transition: opacity 140ms ease, border-color 140ms ease, transform 140ms ease;
 }
-.lb-thumb.active { border-color: var(--accent); }
-.lb-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
+.lb-thumb:hover { opacity: 0.9; transform: translateY(-2px); }
+.lb-thumb.active { opacity: 1; border-color: var(--accent); transform: translateY(-3px); }
+.lb-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .lb-thumb span {
   display: grid;
   place-items: center;
   width: 100%;
   height: 100%;
-  font: 700 10px var(--font-mono);
+  color: #fff;
+  font: 700 9px var(--font-mono);
 }
-.lb-open-ghost {
-  position: fixed;
-  z-index: 120;
-  overflow: hidden;
+.lb-thumb .strip-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
-  transition: left 260ms ease, top 260ms ease, width 260ms ease, height 260ms ease, opacity 260ms ease, border-radius 260ms ease;
-  box-shadow: 0 30px 80px -28px rgba(0, 0, 0, 0.75);
 }
+.lb-thumb .strip-play svg { width: 14px; height: 14px; fill: rgba(255, 255, 255, 0.92); }
 
 .mobile-select-bar {
   position: fixed;
@@ -1936,31 +2021,15 @@ table.uploads .empty-cell { color: var(--muted); text-align: center; padding: 22
   .g-card .g-dl { opacity: 1; width: 32px; height: 32px; }
   .g-card:hover { transform: none; border-radius: 4px; box-shadow: none; }
   .mobile-select-bar { display: flex; }
-  .lb-btn { width: 38px; height: 38px; }
-  .lb-topbar {
-    align-items: flex-start;
-    padding: max(12px, env(safe-area-inset-top)) 10px 8px;
-  }
-  .lb-meta {
-    display: grid;
-    gap: 3px;
-  }
-  .lb-tools { gap: 6px; }
-  .quality-select { max-width: 150px; min-height: 38px; }
-  .lb-stage { padding: 4px 8px 10px; }
-  .lb-prev,
-  .lb-next {
-    top: auto;
-    bottom: calc(76px + env(safe-area-inset-bottom));
-    transform: none;
-  }
-  .lb-prev { left: 10px; }
-  .lb-next { right: 10px; }
+  .pswp-caption b { max-width: 60vw; }
   .lb-strip { padding-inline: 10px; }
-  .lb-thumb { width: 52px; height: 42px; }
+  .lb-thumb { width: 46px; height: 38px; }
   .toast-stack {
     left: max(10px, env(safe-area-inset-left));
     right: max(10px, env(safe-area-inset-right));
     width: auto;
   }
+  /* Fine-pointer-only cursor follower never applies on touch, but guard anyway. */
+  .fx-cur-dot,
+  .fx-cur-ring { display: none !important; }
 }

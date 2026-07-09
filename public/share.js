@@ -1,45 +1,70 @@
-// Share gallery: folder navigation with breadcrumbs, a justified
-// (Google-Photos-style) tile layout that never crops, an image/video
-// lightbox, sorting, selection and streaming zip downloads.
+// Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
+// stable folder id (never on the rotating signed "ls" token), a justified
+// (Google-Photos-style) tile layout, a PhotoSwipe + Swiper media viewer,
+// scrubbable hover previews, accelerated parallel-range downloads, and a
+// batched browsing-analytics beacon.
 
 const $ = (id) => document.getElementById(id);
 const slug = location.pathname.split("/").filter(Boolean).pop();
+const fx = window.shareFx || {
+  reveal() {},
+  crumbSwap() {},
+  toolbar() {},
+  pop() {},
+  fadeIn(el) {
+    if (el) el.style.opacity = "1";
+  },
+  shake() {},
+  setCursorState() {},
+  setScrubbing() {},
+  hasMotion: false,
+  canHoverPreview: matchMedia("(hover: hover) and (pointer: fine)").matches,
+};
 
 let meta = null;
+let viewer = null;
 let pin = sessionStorage.getItem(`lhdb_spin_${slug}`) || "";
 let allowZip = true;
 let listFetchedAt = 0;
 let current = null; // active listing: { folders: [...] }
 let sortMode = localStorage.getItem("lhdb_sort") || "name";
-const crumbs = []; // [{ token, name }]
-const listingCache = new Map(); // token -> { d, at }
+// crumbs: [{ fid, name, token }]. fid "" = root. Navigation is keyed on the
+// stable fid, never on `token` (a signed "ls" token that is re-minted with a
+// new signature on every listing call and therefore compares unequal across
+// requests - keying on it was the root cause of duplicate breadcrumbs).
+const crumbs = [];
+const listingCache = new Map(); // fid -> { d, token, at }
 const selected = new Map(); // fileId -> file
 let lightboxItems = [];
-let lightboxIndex = -1;
 let summarySeq = 0;
-let lightboxVideo = null;
-const MAX_ZIP_BYTES = 3.8 * 1024 ** 3; // no zip64 in microzip
+const MAX_ZIP_BYTES = 3.8 * 1024 ** 3; // no zip64 in microzip fallback
 const TOKEN_REFRESH_MS = 90 * 1000;
-const canHoverPreview = matchMedia("(hover: hover) and (pointer: fine)").matches;
+const ACCEL_THRESHOLD_BYTES = 64 * 1024 * 1024;
+const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
-const cardObserver = "IntersectionObserver" in window
-  ? new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          const file = entry.target._file;
-          if (file && /^video\//.test(file.mime) && !file.aspect && !file.thumb) probeVideoMetadata(file);
-          cardObserver.unobserve(entry.target);
+const cardObserver =
+  "IntersectionObserver" in window
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              const file = entry.target._file;
+              if (file && /^video\//.test(file.mime) && !file.aspect && !file.thumb) probeVideoMetadata(file);
+              cardObserver.unobserve(entry.target);
+            }
+          }
+        },
+        { rootMargin: "700px" }
+      )
+    : null;
+const moreObserver =
+  "IntersectionObserver" in window
+    ? new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder);
         }
-      }
-    }, { rootMargin: "700px" })
-  : null;
-const moreObserver = "IntersectionObserver" in window
-  ? new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder);
-      }
-    }, { rootMargin: "700px" })
-  : null;
+      }, { rootMargin: "700px" })
+    : null;
 
 init();
 
@@ -52,16 +77,16 @@ async function init() {
   document.title = `${meta.label} - LostHusky's DropBox`;
   applyTheme(meta.theme || {});
   logOpenOnce();
+  viewer = meta.viewer || null;
+
+  const needsAuth = !!meta.requiresAuth && !viewer;
+  if (needsAuth) return showGate(true, !!meta.requiresPin);
 
   if (meta.requiresPin) {
-    if (pin && (await verifyPinValue(pin))) return enter();
-    $("pin-label").textContent = meta.label;
-    $("pin-gate").classList.remove("hidden");
-    $("pin-go").addEventListener("click", tryPin);
-    $("pin").addEventListener("keydown", (e) => e.key === "Enter" && tryPin());
-  } else {
-    enter();
+    if (pin && (await verifyPinValue(pin, true))) return enter();
+    return showGate(false, true);
   }
+  enter();
 }
 
 function applyTheme(theme) {
@@ -85,29 +110,74 @@ function logOpenOnce() {
   }).catch(() => {});
 }
 
+// ---- Gate: Google sign-in + PIN combined on one screen ----
+
+function showGate(needsAuth, needsPin) {
+  const gate = $("gate");
+  gate.classList.remove("hidden");
+  fx.fadeIn(gate);
+  $("gate-label").textContent = needsAuth ? "Sign in to continue" : meta.label;
+  $("gate-signed-out").classList.toggle("hidden", !needsAuth);
+  $("gate-signed-in").classList.toggle("hidden", !viewer);
+  if (viewer) {
+    const avatar = $("viewer-avatar");
+    if (viewer.picture) {
+      avatar.src = viewer.picture;
+      avatar.classList.remove("hidden");
+    } else {
+      avatar.classList.add("hidden");
+    }
+    $("viewer-name").textContent = viewer.name || "";
+    $("viewer-email").textContent = viewer.email || "";
+  }
+  $("gate-pin").classList.toggle("hidden", !needsPin);
+  $("pin-go").classList.toggle("hidden", !needsPin || needsAuth);
+  $("google-signin").onclick = () => {
+    location.href = `/api/auth/login?slug=${encodeURIComponent(slug)}`;
+  };
+  $("pin-go").onclick = tryPin;
+  $("pin")?.addEventListener("keydown", (e) => e.key === "Enter" && tryPin());
+  handleSigninError();
+}
+
+function handleSigninError() {
+  const q = new URLSearchParams(location.search);
+  const err = q.get("signinError");
+  if (!err) return;
+  $("gate-err").textContent = err;
+  fx.shake($("gate"));
+  q.delete("signinError");
+  const clean = location.pathname + (q.toString() ? `?${q}` : "");
+  history.replaceState(null, "", clean);
+}
+
 async function tryPin() {
   const candidate = $("pin").value.trim();
   if (!(await verifyPinValue(candidate))) return;
   pin = candidate;
   sessionStorage.setItem(`lhdb_spin_${slug}`, pin);
-  $("pin-gate").classList.add("hidden");
+  $("gate").classList.add("hidden");
   enter();
 }
 
-async function verifyPinValue(candidate) {
-  $("pin-err").textContent = "";
+async function verifyPinValue(candidate, silent = false) {
+  if (!silent) $("gate-err").textContent = "";
   const r = await fetch("/api/share/verify", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ slug, pin: candidate }),
   });
   if (r.ok) return true;
+  if (silent) return false;
   const d = await r.json().catch(() => ({}));
-  if (r.status === 429) {
-    $("pin-err").textContent = `Too many attempts. Try again in ${d.retryAfter || 60}s.`;
+  if (r.status === 401 && d.authRequired) {
+    $("gate-err").textContent = "Please sign in with Google first.";
+  } else if (r.status === 429) {
+    $("gate-err").textContent = `Too many attempts. Try again in ${d.retryAfter || 60}s.`;
   } else {
-    $("pin-err").textContent = d.error || "Wrong password.";
+    $("gate-err").textContent = d.error || "Wrong password.";
   }
+  fx.shake($("gate"));
   return false;
 }
 
@@ -158,12 +228,13 @@ async function showGallery() {
     render();
   });
   window.addEventListener("resize", scheduleLayout);
-  installLightbox();
-  crumbs.push({ token: "", name: meta.label });
-  await navigate("", meta.label, false);
+  window.addEventListener("popstate", onPopState);
+  installTracking();
+  crumbs.push({ fid: "", name: meta.label, token: "" });
+  await navigate(crumbs[0], { push: false });
 }
 
-// ---- Navigation ----
+// ---- Navigation core (stable fid, dedupe, browser history) ----
 
 async function fetchListing(token) {
   const body = { slug, pin };
@@ -175,7 +246,10 @@ async function fetchListing(token) {
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({}));
-    throw new Error(d.error || `HTTP ${r.status}`);
+    const err = new Error(d.error || `HTTP ${r.status}`);
+    err.status = r.status;
+    err.authRequired = !!d.authRequired;
+    throw err;
   }
   return r.json();
 }
@@ -203,42 +277,89 @@ async function loadSummary() {
 }
 
 let navigating = false;
-async function navigate(token, name, push = true) {
-  // Guard against double-clicks / re-entrancy pushing duplicate crumbs.
+
+// Fetches a listing for the given fid, using (and repairing) the cache.
+// When a cached signed token has expired, the parent listing is re-fetched
+// to mint a fresh one for the same fid before retrying once.
+async function resolveListing(entry) {
+  const cached = listingCache.get(entry.fid);
+  if (cached && Date.now() - cached.at < 5 * 60000) return cached.d;
+  try {
+    const d = await fetchListing(entry.token);
+    listingCache.set(entry.fid, { d, token: entry.token, at: Date.now() });
+    return d;
+  } catch (err) {
+    if (err.status !== 403 || !entry.fid) throw err;
+    // The "ls" token for this folder expired. Re-list the parent (which we
+    // do have a live token for) to mint a fresh one for the same fid.
+    const parent = crumbs[crumbs.length - 2] || crumbs[0];
+    const parentListing = await fetchListing(parent.token);
+    listingCache.set(parent.fid, { d: parentListing, token: parent.token, at: Date.now() });
+    const fresh = (parentListing.folders || [])
+      .flatMap((f) => f.subfolders || [])
+      .find((s) => s.fid === entry.fid);
+    if (!fresh) throw err;
+    entry.token = fresh.ls;
+    const d = await fetchListing(fresh.ls);
+    listingCache.set(entry.fid, { d, token: fresh.ls, at: Date.now() });
+    return d;
+  }
+}
+
+async function navigate(entry, { push = true, fromHistory = false } = {}) {
   if (navigating) return;
-  if (push && crumbs.length && crumbs[crumbs.length - 1].token === token) return;
+  const fid = entry.fid || "";
+  if (push && crumbs.length && crumbs[crumbs.length - 1].fid === fid) return;
   navigating = true;
   const host = $("folders");
   host.setAttribute("aria-busy", "true");
   try {
-    const cached = listingCache.get(token);
-    let d;
-    if (cached && Date.now() - cached.at < 5 * 60000) {
-      d = cached.d;
-    } else {
-      d = await fetchListing(token);
-      listingCache.set(token, { d, at: Date.now() });
-      listFetchedAt = Date.now();
+    const d = await resolveListing(entry);
+    if (push) {
+      const dupAt = crumbs.findIndex((c) => c.fid === fid);
+      if (dupAt >= 0) crumbs.splice(dupAt + 1);
+      else crumbs.push({ fid, name: entry.name, token: entry.token });
     }
-    if (push) crumbs.push({ token, name });
+    if (!fromHistory) {
+      const path = crumbs.map((c) => c.fid).filter(Boolean).join("/");
+      history.pushState({ fid }, "", path ? `#${path}` : location.pathname);
+    }
+    listFetchedAt = Date.now();
     current = d;
     current.summary = null;
     allowZip = d.allowZip !== false;
     render();
     loadSummary();
+    trackEvent("nav", entry.name || meta.label);
   } catch (err) {
-    toast("Could not open folder", String(err.message || err).slice(0, 80), "err");
+    if (err.authRequired) {
+      viewer = null;
+      $("main").classList.add("hidden");
+      showGate(true, !!meta.requiresPin);
+    } else {
+      toast("Could not open folder", String(err.message || err).slice(0, 80), "err");
+    }
   } finally {
     navigating = false;
     host.removeAttribute("aria-busy");
   }
 }
 
+function onPopState() {
+  const fids = (location.hash.slice(1) || "").split("/").filter(Boolean);
+  const targetFid = fids.at(-1) || "";
+  let idx = crumbs.findIndex((c) => c.fid === targetFid);
+  if (idx < 0) idx = 0; // unknown state (e.g. reload mid-path) - fall back to root
+  const target = crumbs[idx];
+  crumbs.splice(idx + 1);
+  navigate(target, { push: false, fromHistory: true });
+}
+
 function goToCrumb(index) {
   if (index < 0 || index >= crumbs.length - 1) return;
   const target = crumbs[index];
   crumbs.splice(index + 1);
-  navigate(target.token, target.name, false);
+  navigate(target, { push: true });
 }
 
 function renderCrumbs() {
@@ -254,12 +375,14 @@ function renderCrumbs() {
     const el = document.createElement(i === crumbs.length - 1 ? "span" : "button");
     el.className = "crumb" + (i === crumbs.length - 1 ? " here" : "");
     el.textContent = c.name;
+    el.dataset.cursor = "link";
     if (i < crumbs.length - 1) {
       el.type = "button";
       el.addEventListener("click", () => goToCrumb(i));
     }
     box.appendChild(el);
   });
+  fx.crumbSwap(box);
 }
 
 // ---- Rendering ----
@@ -287,6 +410,7 @@ function render() {
     updateSelInfo();
     return;
   }
+  const revealTargets = [];
   for (const folder of folders) {
     const section = document.createElement("section");
     section.className = "gallery-folder";
@@ -296,13 +420,18 @@ function render() {
       head.textContent = `${folder.name} - ${folder.files.length} file${folder.files.length === 1 ? "" : "s"}`;
       section.appendChild(head);
     }
+    // Folders always render before files within a listing.
     const subs = [...(folder.subfolders || [])].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { numeric: true })
     );
     if (subs.length) {
       const row = document.createElement("div");
       row.className = "folder-row";
-      for (const sub of subs) row.appendChild(folderCard(sub));
+      for (const sub of subs) {
+        const fc = folderCard(sub);
+        row.appendChild(fc);
+        revealTargets.push(fc);
+      }
       section.appendChild(row);
     }
     const files = sortFiles(folder.files || []);
@@ -314,6 +443,7 @@ function render() {
       const el = card(file);
       file._el = el;
       grid.appendChild(el);
+      revealTargets.push(el);
       if (isViewable(file)) {
         file._lbIndex = lightboxItems.length;
         lightboxItems.push(file);
@@ -328,6 +458,7 @@ function render() {
   }
   updateSelInfo();
   scheduleLayout();
+  fx.reveal(revealTargets);
 }
 
 function loadMoreButton(folder) {
@@ -375,7 +506,7 @@ async function loadMore(folder, button) {
     if (!page) throw new Error("No page returned");
     folder.files.push(...page.files);
     for (const sub of page.subfolders || []) {
-      if (!folder.subfolders.some((s) => s.name === sub.name)) folder.subfolders.push(sub);
+      if (!folder.subfolders.some((s) => s.fid === sub.fid)) folder.subfolders.push(sub);
     }
     folder.nextPageToken = page.nextPageToken;
     render();
@@ -389,12 +520,14 @@ async function prefetchMore(folder) {
   if (folder._prefetch) return folder._prefetch;
   if (folder._prefetchPromise) return folder._prefetchPromise;
   if (!folder.nextPageToken) return null;
-  folder._prefetchPromise = fetchMorePage(folder).then((page) => {
-    folder._prefetch = page;
-    return page;
-  }).finally(() => {
-    folder._prefetchPromise = null;
-  });
+  folder._prefetchPromise = fetchMorePage(folder)
+    .then((page) => {
+      folder._prefetch = page;
+      return page;
+    })
+    .finally(() => {
+      folder._prefetchPromise = null;
+    });
   return folder._prefetchPromise;
 }
 
@@ -438,9 +571,10 @@ function folderCard(sub) {
   const el = document.createElement("button");
   el.type = "button";
   el.className = "folder-card";
+  el.dataset.cursor = "folder";
   el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span></span>`;
   el.querySelector("span").textContent = sub.name;
-  el.addEventListener("click", () => navigate(sub.ls, sub.name, true));
+  el.addEventListener("click", () => navigate({ fid: sub.fid, name: sub.name, token: sub.ls }, { push: true }));
   return el;
 }
 
@@ -459,16 +593,18 @@ function card(file) {
   const fig = document.createElement("figure");
   fig._file = file;
   const media = /^(image|video)\//.test(file.mime) && file.thumb;
-  fig.className = `g-card${media ? "" : " plain"}${/^video\//.test(file.mime) ? " video-card" : ""}`;
+  const isVideo = /^video\//.test(file.mime);
+  fig.className = `g-card${media ? "" : " plain"}${isVideo ? " video-card" : ""}`;
+  fig.dataset.cursor = isVideo ? "video" : media ? "photo" : "";
   const dur = file.dur ? `<span class="g-dur">${fmtDur(file.dur)}</span>` : "";
-  const play = /^video\//.test(file.mime)
+  const play = isVideo
     ? `<span class="g-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></span>`
     : "";
   fig.innerHTML = `
-    <button class="g-check" type="button" aria-label="select ${escAttr(file.name)}">
+    <button class="g-check" type="button" aria-label="select ${escAttr(file.name)}" data-cursor="link">
       <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
     </button>
-    <a class="g-dl" href="${escAttr(file.dl)}" download aria-label="download ${escAttr(file.name)}">
+    <a class="g-dl" href="${escAttr(file.dl)}" download aria-label="download ${escAttr(file.name)}" data-cursor="link">
       <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     </a>
     ${play}${dur}
@@ -514,7 +650,7 @@ function card(file) {
   });
   fig.addEventListener("click", () => {
     if (selected.size) return toggleSelect(file, fig);
-    if (file._lbIndex != null) openLightbox(file._lbIndex, fig);
+    if (file._lbIndex != null) openViewer(file._lbIndex, fig);
     else downloadFile(file);
   });
   installHoverPreview(fig, file);
@@ -543,6 +679,8 @@ function iconFor(mime) {
   return "FILE";
 }
 
+// ---- Download tokens + accelerated parallel-range download ----
+
 function tokenFresh(file) {
   return file.dl && file.dlExpiresAt && file.dlExpiresAt - Date.now() > TOKEN_REFRESH_MS;
 }
@@ -566,7 +704,15 @@ async function ensureFreshDownload(file) {
 }
 
 async function downloadFile(file) {
+  trackEvent("download", file.name);
   try {
+    if (file.size > ACCEL_THRESHOLD_BYTES && "showSaveFilePicker" in window) {
+      const handled = await acceleratedDownload(file).catch((err) => {
+        if (err?.name === "AbortError") return true; // user cancelled the save dialog
+        throw err;
+      });
+      if (handled) return;
+    }
     const url = await ensureFreshDownload(file);
     const a = document.createElement("a");
     a.href = url;
@@ -579,15 +725,114 @@ async function downloadFile(file) {
   }
 }
 
+// Splits the file into N byte ranges and fetches them concurrently, each
+// its own HTTP connection to the Worker (which itself streams straight from
+// Drive) - multiplying observed throughput well past what one connection
+// gets on a fast line, and writes straight to disk via the File System
+// Access API so memory use stays flat even for multi-GB files.
+async function acceleratedDownload(file) {
+  const url = await ensureFreshDownload(file);
+  let handle;
+  try {
+    handle = await window.showSaveFilePicker({ suggestedName: file.name });
+  } catch (err) {
+    if (err?.name === "AbortError") return true;
+    throw err;
+  }
+  const writable = await handle.createWritable();
+  const N = 6;
+  const part = Math.ceil(file.size / N);
+  const ranges = [];
+  for (let i = 0; i < N; i++) {
+    const start = i * part;
+    const end = Math.min(file.size - 1, start + part - 1);
+    if (start <= end) ranges.push([start, end]);
+  }
+  const progressToast = toast(`Downloading ${file.name}`, "starting...", "ok", true);
+  let doneBytes = 0;
+  let lastPaint = 0;
+  const paint = () => {
+    const now = Date.now();
+    if (now - lastPaint < 200) return;
+    lastPaint = now;
+    updateToast(progressToast, `${Math.floor((doneBytes / file.size) * 100)}% of ${fmtBytes(file.size)}`);
+  };
+  try {
+    await Promise.all(
+      ranges.map(async ([start, end]) => {
+        const res = await fetch(url, { headers: { range: `bytes=${start}-${end}` } });
+        if (!(res.status === 206 || res.status === 200) || !res.body) {
+          throw new Error(`range ${start}-${end} failed (HTTP ${res.status})`);
+        }
+        const reader = res.body.getReader();
+        let offset = start;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          await writable.write({ type: "write", position: offset, data: value });
+          offset += value.length;
+          doneBytes += value.length;
+          paint();
+        }
+      })
+    );
+    await writable.close();
+    dismissToast(progressToast);
+    toast("Download complete", file.name, "ok");
+  } catch (err) {
+    dismissToast(progressToast);
+    await writable.abort().catch(() => {});
+    throw err;
+  }
+  return true;
+}
+
+// ---- Hover preview: instant thumb, scrub-on-hover, buffered bar ----
+
 function installHoverPreview(fig, file) {
   if (!canHoverPreview || !/^video\//.test(file.mime)) return;
   let hoverTimer = 0;
+  let scrubRaf = 0;
+  let idleTimer = 0;
+  let targetT = 0;
+
   fig.addEventListener("pointerenter", () => {
     if (selected.size) return;
-    hoverTimer = setTimeout(() => startHoverPreview(fig, file), 180);
+    hoverTimer = setTimeout(() => startHoverPreview(fig, file), 150);
   });
+
+  fig.addEventListener("pointermove", (e) => {
+    const video = previewVideos.get(file.id);
+    if (!video || !fig.classList.contains("previewing") || !video.duration) return;
+    const r = fig.getBoundingClientRect();
+    targetT = Math.max(0, Math.min(0.999, (e.clientX - r.left) / r.width)) * video.duration;
+    if (!fig.classList.contains("scrubbing")) {
+      fig.classList.add("scrubbing");
+      fx.setScrubbing(true);
+    }
+    if (!scrubRaf) {
+      scrubRaf = requestAnimationFrame(() => {
+        scrubRaf = 0;
+        if (Math.abs(video.currentTime - targetT) > 0.08) {
+          if (video.fastSeek) video.fastSeek(targetT);
+          else video.currentTime = targetT;
+        }
+      });
+    }
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      fig.classList.remove("scrubbing");
+      fx.setScrubbing(false);
+      video.play().catch(() => {});
+    }, 450);
+  });
+
   fig.addEventListener("pointerleave", () => {
     clearTimeout(hoverTimer);
+    clearTimeout(idleTimer);
+    cancelAnimationFrame(scrubRaf);
+    scrubRaf = 0;
+    fig.classList.remove("scrubbing");
     stopHoverPreview(fig, file);
   });
 }
@@ -596,14 +841,29 @@ async function startHoverPreview(fig, file) {
   if (!fig.isConnected || selected.size) return;
   try {
     const video = await getPreviewVideo(file);
-    if (!fig.isConnected || selected.size || lightboxVideo === video) return;
+    if (!fig.isConnected || selected.size) return;
     const media = fig.querySelector(".g-media") || fig.querySelector(".file-ico");
     video.className = "g-video-preview";
     video.controls = false;
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
-    if (media && video.parentNode !== media) media.appendChild(video);
+    if (media && video.parentNode !== media) {
+      // Keep the still thumbnail visible underneath until the video can
+      // actually play, instead of a black frame while it buffers.
+      fig.classList.add("buffering");
+      video.style.opacity = "0";
+      video.addEventListener(
+        "canplay",
+        () => {
+          video.style.opacity = "";
+          fig.classList.remove("buffering");
+        },
+        { once: true }
+      );
+      media.appendChild(video);
+      attachBufferBar(media, video, fig);
+    }
     fig.classList.add("previewing");
     await video.play().catch(() => {});
   } catch {
@@ -613,9 +873,31 @@ async function startHoverPreview(fig, file) {
 
 function stopHoverPreview(fig, file) {
   const video = previewVideos.get(file.id);
-  if (!video || lightboxVideo === video) return;
+  if (!video) return;
   video.pause();
-  fig.classList.remove("previewing");
+  fig.classList.remove("previewing", "buffering");
+}
+
+// Small buffered/played bar pinned to the bottom of a hovering video tile -
+// there are no native controls in hover mode, so this is the only feedback
+// for "how much of this video has loaded" while scrubbing.
+function attachBufferBar(host, video, fig) {
+  if (host.querySelector(".buffer-bar")) return;
+  const bar = document.createElement("div");
+  bar.className = "buffer-bar";
+  bar.innerHTML = `<i class="buffered"></i><i class="played"></i>`;
+  host.appendChild(bar);
+  const buffered = bar.querySelector(".buffered");
+  const played = bar.querySelector(".played");
+  const paint = () => {
+    const d = video.duration || 0;
+    let buf = 0;
+    for (let i = 0; i < video.buffered.length; i++) buf = Math.max(buf, video.buffered.end(i));
+    buffered.style.width = d ? `${Math.min(100, (buf / d) * 100)}%` : "0%";
+    played.style.width = d ? `${Math.min(100, (video.currentTime / d) * 100)}%` : "0%";
+  };
+  for (const ev of ["progress", "timeupdate", "loadedmetadata", "seeking"]) video.addEventListener(ev, paint);
+  fig?.addEventListener("pointerleave", () => bar.remove(), { once: true });
 }
 
 async function probeVideoMetadata(file) {
@@ -700,157 +982,214 @@ function layoutGallery(grid) {
   }
 }
 
-// ---- Lightbox ----
+// ---- PhotoSwipe viewer + Swiper thumbstrip ----
 
-function installLightbox() {
-  $("lb-close").addEventListener("click", closeLightbox);
-  $("lb-prev").addEventListener("click", () => stepLightbox(-1));
-  $("lb-next").addEventListener("click", () => stepLightbox(1));
-  $("lb-dl").addEventListener("click", () => {
-    const file = lightboxItems[lightboxIndex];
-    if (file) downloadFile(file);
-  });
-  $("lightbox").addEventListener("click", (e) => {
-    if (e.target.id === "lightbox" || e.target.classList.contains("lb-stage")) closeLightbox();
-  });
-  let touchX = 0;
-  $("lb-stage").addEventListener("touchstart", (e) => {
-    touchX = e.changedTouches[0]?.clientX || 0;
-  }, { passive: true });
-  $("lb-stage").addEventListener("touchend", (e) => {
-    const dx = (e.changedTouches[0]?.clientX || 0) - touchX;
-    if (Math.abs(dx) > 48) stepLightbox(dx > 0 ? -1 : 1);
-  }, { passive: true });
-  document.addEventListener("keydown", (e) => {
-    if ($("lightbox").classList.contains("hidden")) return;
-    if (e.key === "Escape") closeLightbox();
-    if (e.key === "ArrowLeft") stepLightbox(-1);
-    if (e.key === "ArrowRight") stepLightbox(1);
-  });
+let pswp = null;
+let pswpModulePromise = null;
+let strip = null;
+
+function loadPswp() {
+  if (!pswpModulePromise) pswpModulePromise = import("/vendor/photoswipe.esm.min.js").then((m) => m.default);
+  return pswpModulePromise;
 }
 
-async function openLightbox(index, sourceEl = null) {
+function pswpItem(file) {
+  const isVideo = /^video\//.test(file.mime);
+  const ratio = file.aspect || (file.w && file.h ? file.w / file.h : 16 / 9);
+  const width = 1600;
+  const height = Math.round(width / Math.min(2.8, Math.max(0.4, ratio)));
+  return {
+    file,
+    type: isVideo ? "video" : "image",
+    width,
+    height,
+    msrc: file.thumb ? thumbUrl(file, 512) : "",
+    src: isVideo ? undefined : thumbUrl(file, 2048),
+  };
+}
+
+async function openViewer(index, sourceEl) {
   if (index < 0 || index >= lightboxItems.length) return;
-  lightboxIndex = index;
+  const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
-  const stage = $("lb-stage");
-  releaseLightboxVideo();
-  stage.innerHTML = "";
-  if (/^video\//.test(file.mime)) {
-    let video = previewVideos.get(file.id);
-    if (!video) video = await getPreviewVideo(file);
-    if (!tokenFresh(file)) {
-      await ensureFreshDownload(file);
-      video.src = `${file.dl}?inline=1`;
-    }
-    lightboxVideo = video;
-    video.controls = true;
-    video.autoplay = true;
-    video.playsInline = true;
-    video.muted = false;
-    video.loop = false;
-    if (file.thumb) video.poster = thumbUrl(file, 1024);
-    stage.appendChild(video);
-    video.play().catch(() => {});
-  } else {
-    const img = document.createElement("img");
-    img.alt = file.name;
-    img.referrerPolicy = "no-referrer";
-    img.decoding = "async";
-    img.src = thumbUrl(file, 2048);
-    stage.appendChild(img);
-  }
-  $("lb-name").textContent = file.name;
-  $("lb-info").textContent = `${fmtBytes(file.size)}${file.at ? ` - ${new Date(file.at).toLocaleDateString()}` : ""} - ${index + 1}/${lightboxItems.length}`;
-  $("lb-quality").disabled = !/^video\//.test(file.mime);
-  $("lb-prev").classList.toggle("hidden", index === 0);
-  $("lb-next").classList.toggle("hidden", index === lightboxItems.length - 1);
-  $("lightbox").classList.remove("hidden");
-  document.body.classList.add("no-scroll");
-  renderLightboxStrip();
-  animateFromTile(sourceEl);
-  // Warm neighbour images for instant arrow navigation.
+  trackEvent("view", file.name);
+
+  pswp = new PhotoSwipe({
+    dataSource: lightboxItems.map(pswpItem),
+    index,
+    bgOpacity: 0.96,
+    showHideAnimationType: sourceEl ? "zoom" : "fade",
+    showAnimationDuration: 320,
+    hideAnimationDuration: 260,
+    wheelToZoom: true,
+    preload: [1, 2],
+    loop: false,
+    paddingFn: () => ({ top: 60, bottom: 88, left: 0, right: 0 }),
+    appendToEl: document.body,
+  });
+
+  registerVideoContent(pswp);
+  registerUi(pswp);
+  pswp.on("change", () => {
+    syncStrip(pswp.currIndex);
+    trackEvent("view", lightboxItems[pswp.currIndex]?.name || "");
+  });
+  pswp.on("destroy", () => {
+    destroyStrip();
+    pswp = null;
+  });
+
+  pswp.init();
+  mountStrip(pswp);
+  // Warm neighbour full-res images so arrow navigation feels instant.
   for (const n of [index - 1, index + 1]) {
     const f = lightboxItems[n];
     if (f && /^image\//.test(f.mime) && f.thumb) new Image().src = thumbUrl(f, 2048);
-    if (f && /^video\//.test(f.mime) && f.thumb) getPreviewVideo(f).catch(() => {});
   }
 }
 
-function stepLightbox(delta) {
-  openLightbox(lightboxIndex + delta);
-}
-
-function closeLightbox() {
-  $("lightbox").classList.add("hidden");
-  $("lb-stage").innerHTML = "";
-  $("lb-strip").innerHTML = "";
-  releaseLightboxVideo();
-  document.body.classList.remove("no-scroll");
-}
-
-function releaseLightboxVideo() {
-  if (!lightboxVideo) return;
-  lightboxVideo.pause();
-  lightboxVideo.controls = false;
-  lightboxVideo.muted = true;
-  lightboxVideo.loop = true;
-  lightboxVideo.removeAttribute("autoplay");
-  lightboxVideo = null;
-}
-
-function renderLightboxStrip() {
-  const strip = $("lb-strip");
-  strip.innerHTML = "";
-  const start = Math.max(0, lightboxIndex - 18);
-  const end = Math.min(lightboxItems.length, lightboxIndex + 19);
-  for (let i = start; i < end; i++) {
-    const file = lightboxItems[i];
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = `lb-thumb${i === lightboxIndex ? " active" : ""}`;
-    btn.setAttribute("aria-label", `open ${file.name}`);
+function registerVideoContent(instance) {
+  instance.on("contentLoad", (e) => {
+    const { content } = e;
+    if (content.data.type !== "video") return;
+    e.preventDefault();
+    const file = content.data.file;
+    const wrap = document.createElement("div");
+    wrap.className = "pswp-video-wrap";
     if (file.thumb) {
-      const img = document.createElement("img");
-      img.src = thumbUrl(file, 160);
-      img.alt = "";
-      img.loading = "lazy";
-      img.referrerPolicy = "no-referrer";
-      btn.appendChild(img);
-    } else {
-      btn.innerHTML = `<span>${iconFor(file.mime)}</span>`;
+      const poster = document.createElement("img");
+      poster.className = "pswp-video-poster";
+      poster.src = thumbUrl(file, 1024);
+      poster.alt = "";
+      wrap.appendChild(poster);
     }
-    btn.addEventListener("click", () => openLightbox(i));
-    strip.appendChild(btn);
-  }
-  strip.querySelector(".active")?.scrollIntoView({ block: "nearest", inline: "center" });
+    const video = document.createElement("video");
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.className = "pswp-video";
+    wrap.appendChild(video);
+    ensureFreshDownload(file).then((dl) => {
+      video.src = `${dl}?inline=1`;
+    });
+    content.element = wrap;
+    content._video = video;
+  });
+  instance.on("contentActivate", (e) => {
+    const video = e.content?._video;
+    if (video) video.play().catch(() => {});
+  });
+  instance.on("contentDeactivate", (e) => {
+    const video = e.content?._video;
+    if (video) video.pause();
+  });
+  instance.on("contentDestroy", (e) => {
+    const video = e.content?._video;
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+  });
 }
 
-function animateFromTile(sourceEl) {
-  if (!sourceEl || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const from = sourceEl.getBoundingClientRect();
-  const to = $("lb-stage").getBoundingClientRect();
-  if (!from.width || !to.width) return;
-  const ghost = sourceEl.cloneNode(true);
-  ghost.className = "lb-open-ghost";
-  Object.assign(ghost.style, {
-    left: `${from.left}px`,
-    top: `${from.top}px`,
-    width: `${from.width}px`,
-    height: `${from.height}px`,
-  });
-  document.body.appendChild(ghost);
-  requestAnimationFrame(() => {
-    Object.assign(ghost.style, {
-      left: `${to.left + to.width * 0.08}px`,
-      top: `${to.top + to.height * 0.08}px`,
-      width: `${to.width * 0.84}px`,
-      height: `${to.height * 0.84}px`,
-      opacity: "0",
-      borderRadius: "14px",
+function registerUi(instance) {
+  instance.on("uiRegister", () => {
+    instance.ui.registerElement({
+      name: "download-button",
+      order: 8,
+      isButton: true,
+      tagName: "button",
+      html: {
+        isCustomSVG: true,
+        inner:
+          '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="7 10 12 15 17 10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
+        outlineID: "pswp__icn-download",
+      },
+      onClick: (_evt, _el, pswpInstance) => {
+        const file = pswpInstance.currSlide?.data?.file;
+        if (file) downloadFile(file);
+      },
+      title: "Download",
+    });
+    instance.ui.registerElement({
+      name: "caption",
+      order: 9,
+      appendTo: "bar",
+      html: "",
+      onInit: (el) => {
+        el.classList.add("pswp-caption");
+      },
     });
   });
-  setTimeout(() => ghost.remove(), 280);
+  instance.on("change", () => {
+    const el = instance.pswp?.element?.querySelector(".pswp-caption") || instance.element?.querySelector(".pswp-caption");
+    const file = instance.currSlide?.data?.file;
+    if (el && file) {
+      const parts = [fmtBytes(file.size)];
+      if (file.at) parts.push(new Date(file.at).toLocaleDateString());
+      el.innerHTML = `<b>${esc(file.name)}</b><span>${esc(parts.join(" - "))}</span>`;
+    }
+  });
+}
+
+function mountStrip(instance) {
+  if (typeof Swiper === "undefined" || lightboxItems.length < 2) return;
+  const host = document.createElement("div");
+  host.className = "swiper lb-strip";
+  host.innerHTML = `<div class="swiper-wrapper"></div>`;
+  instance.element.appendChild(host);
+  strip = new Swiper(host, {
+    slidesPerView: "auto",
+    spaceBetween: 4,
+    freeMode: true,
+    mousewheel: true,
+    slideToClickedSlide: true,
+    centeredSlides: true,
+    centeredSlidesBounds: true,
+    virtual: {
+      slides: lightboxItems.map((f, i) => stripSlideHtml(f, i)),
+      addSlidesAfter: 12,
+      addSlidesBefore: 12,
+      renderExternal: (data) => syncStripActive(host, data),
+    },
+    initialSlide: instance.currIndex,
+    on: {
+      click: (sw) => {
+        const idx = Number(sw.clickedSlide?.dataset?.i);
+        if (Number.isFinite(idx)) instance.goTo(idx);
+      },
+    },
+  });
+  syncStrip(instance.currIndex);
+}
+
+function stripSlideHtml(f, i) {
+  const isVideo = /^video\//.test(f.mime);
+  const play = isVideo
+    ? `<i class="strip-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></i>`
+    : "";
+  const media = f.thumb
+    ? `<img loading="lazy" referrerpolicy="no-referrer" src="${escAttr(thumbUrl(f, 160))}" alt="">`
+    : `<span>${iconFor(f.mime)}</span>`;
+  return `<div class="swiper-slide lb-thumb" data-i="${i}">${media}${play}</div>`;
+}
+
+function syncStripActive(host) {
+  host.querySelectorAll(".lb-thumb").forEach((el) => {
+    el.classList.toggle("active", Number(el.dataset.i) === pswp?.currIndex);
+  });
+}
+
+function syncStrip(index) {
+  if (!strip) return;
+  strip.slideTo(index, 200);
+  syncStripActive(strip.el);
+}
+
+function destroyStrip() {
+  strip?.destroy(true, true);
+  strip = null;
 }
 
 // ---- Selection + zip ----
@@ -859,6 +1198,7 @@ function toggleSelect(file, fig) {
   if (selected.has(file.id)) selected.delete(file.id);
   else selected.set(file.id, file);
   fig.classList.toggle("selected", selected.has(file.id));
+  if (selected.has(file.id)) fx.pop(fig.querySelector(".g-check"));
   document.body.classList.toggle("selecting", selected.size > 0);
   updateSelInfo();
 }
@@ -943,7 +1283,6 @@ async function downloadZip() {
     }));
 
     if ("showSaveFilePicker" in window) {
-      // Stream straight to disk - constant memory even for multi-GB zips.
       const handle = await window.showSaveFilePicker({
         suggestedName: zipName,
         types: [{ description: "Zip archive", accept: { "application/zip": [".zip"] } }],
@@ -1018,6 +1357,42 @@ function dedupeName(f) {
   return dedupe(f);
 }
 
+// ---- Browsing-session analytics beacon ----
+// Batches folder navigation + media-view events and flushes them via
+// sendBeacon (so a closed tab still delivers) rather than a KV write per
+// click - lets the owner see who browsed what and where load is slow.
+
+const trackQueue = [];
+
+function trackEvent(t, name) {
+  trackQueue.push({ t, name: String(name || "").slice(0, 160) });
+  if (trackQueue.length >= 20) flushTrack();
+}
+
+function flushTrack(useBeacon = false) {
+  if (!trackQueue.length) return;
+  const events = trackQueue.splice(0, trackQueue.length);
+  const payload = JSON.stringify({ slug, events });
+  if (useBeacon && navigator.sendBeacon) {
+    navigator.sendBeacon("/api/share/track", new Blob([payload], { type: "application/json" }));
+    return;
+  }
+  fetch("/api/share/track", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {});
+}
+
+function installTracking() {
+  setInterval(() => flushTrack(false), 15000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushTrack(true);
+  });
+  window.addEventListener("pagehide", () => flushTrack(true));
+}
+
 // ---- Utilities ----
 
 function chip(text, cls = "") {
@@ -1027,20 +1402,35 @@ function chip(text, cls = "") {
   return el;
 }
 
-function toast(title, message = "", tone = "") {
+function toast(title, message = "", tone = "", sticky = false) {
   const stack = $("toasts");
-  if (!stack) return;
+  if (!stack) return null;
   const item = document.createElement("div");
   item.className = `toast ${tone}`;
-  item.innerHTML = `<b></b>${message ? `<span></span>` : ""}`;
+  item.innerHTML = `<b></b><span></span>`;
   item.querySelector("b").textContent = title;
-  if (message) item.querySelector("span").textContent = message;
+  item.querySelector("span").textContent = message;
   stack.appendChild(item);
   requestAnimationFrame(() => item.classList.add("show"));
-  setTimeout(() => {
-    item.classList.remove("show");
-    setTimeout(() => item.remove(), 260);
-  }, 4200);
+  if (!sticky) {
+    setTimeout(() => {
+      item.classList.remove("show");
+      setTimeout(() => item.remove(), 260);
+    }, 4200);
+  }
+  return item;
+}
+
+function updateToast(item, message) {
+  if (!item) return;
+  const span = item.querySelector("span");
+  if (span) span.textContent = message;
+}
+
+function dismissToast(item) {
+  if (!item) return;
+  item.classList.remove("show");
+  setTimeout(() => item.remove(), 260);
 }
 
 function fmtBytes(b) {

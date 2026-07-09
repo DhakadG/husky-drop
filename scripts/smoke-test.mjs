@@ -114,6 +114,25 @@ async function withMockedGoogleDrive(fn) {
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.hostname === "oauth2.googleapis.com") {
+      if (url.pathname === "/tokeninfo") {
+        return new Response(
+          JSON.stringify({
+            aud: "google-client",
+            email: "viewer@example.com",
+            name: "Viewer Example",
+            picture: "https://lh3.googleusercontent.com/a/pic",
+          }),
+          { headers: { "content-type": "application/json" } }
+        );
+      }
+      // Drive's own refresh-token exchange and the viewer sign-in's
+      // authorization-code exchange both POST here; tell them apart by body.
+      const bodyText = init.body ? String(init.body) : "";
+      if (bodyText.includes("grant_type=authorization_code")) {
+        return new Response(JSON.stringify({ access_token: "viewer-access-token", id_token: "fake-id-token" }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ access_token: "google-token", expires_in: 3600 }), {
         headers: { "content-type": "application/json" },
       });
@@ -503,6 +522,7 @@ async function main() {
         mode: "gallery",
         pin: "2468",
         expiresDays: 7,
+        requireAuth: false,
       }),
       driveEnv
     );
@@ -578,6 +598,72 @@ async function main() {
       driveEnv
     );
     assert.equal(res.status, 403, "tampered zip selection token is rejected");
+
+    // Google sign-in gate: requireAuth defaults to true, blocks listing until
+    // the guest completes the /api/auth/login -> /api/auth/callback round
+    // trip, and only THEN succeeds once the resulting cookie is attached.
+    res = await worker.fetch(
+      jsonRequest("/api/admin/shares", {
+        label: "Gated Share",
+        slug: "gated-share",
+        folders: "drive-folder",
+        mode: "gallery",
+        expiresDays: 7,
+      }),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "Drive-backed share defaults to requireAuth: true");
+
+    res = await worker.fetch(request("/api/share/meta/gated-share"), driveEnv);
+    const gatedMeta = await res.json();
+    assert.equal(gatedMeta.requiresAuth, true, "share meta reports requireAuth true by default");
+    assert.equal(gatedMeta.viewer, null, "no viewer cookie yet");
+
+    res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "gated-share" }), driveEnv);
+    assert.equal(res.status, 401, "listing without a signed-in viewer is blocked");
+    const gatedErr = await res.json();
+    assert.equal(gatedErr.authRequired, true, "blocked response flags authRequired");
+
+    res = await worker.fetch(request("/api/auth/login?slug=gated-share"), driveEnv);
+    assert.equal(res.status, 302, "login redirects to Google");
+    const authorizeUrl = new URL(res.headers.get("location"));
+    assert.equal(authorizeUrl.hostname, "accounts.google.com");
+    const state = authorizeUrl.searchParams.get("state");
+    assert.ok(state, "login redirect includes a signed state token");
+
+    res = await worker.fetch(
+      request(`/api/auth/callback?code=fake-code&state=${encodeURIComponent(state)}`),
+      driveEnv
+    );
+    assert.equal(res.status, 302, "callback redirects back to the share after sign-in");
+    assert.equal(res.headers.get("location"), "/s/gated-share");
+    const viewerCookie = (res.headers.get("set-cookie") || "").split(";")[0];
+    assert.match(viewerCookie, /^hd_viewer=/, "callback sets the viewer cookie");
+
+    res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "gated-share" }), driveEnv);
+    assert.equal(res.status, 401, "listing without the cookie attached is still blocked");
+
+    res = await worker.fetch(request("/api/share/meta/gated-share", { headers: { cookie: viewerCookie } }), driveEnv);
+    const signedInMeta = await res.json();
+    assert.equal(signedInMeta.viewer?.email, "viewer@example.com", "meta reports the signed-in viewer once cookie is sent");
+
+    res = await worker.fetch(
+      new Request("https://drop.test/api/share/list", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: viewerCookie },
+        body: JSON.stringify({ slug: "gated-share" }),
+      }),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "listing succeeds once the viewer cookie is attached");
+
+    res = await worker.fetch(
+      jsonRequest("/api/admin/shares/gated-share", { requireAuth: false }, "test-admin", "PATCH"),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "admin can turn requireAuth off");
+    res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "gated-share" }), driveEnv);
+    assert.equal(res.status, 200, "listing succeeds without sign-in once requireAuth is off");
   });
 
   res = await worker.fetch(jsonRequest("/api/admin/shares/kareri-album", { disabled: true }, "test-admin", "PATCH"), env);

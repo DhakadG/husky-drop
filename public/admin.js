@@ -421,6 +421,8 @@ function handleAdminAction(e) {
   if (del) return deleteLink(del.dataset.delLink, del.dataset.delLabel);
   const spause = e.target.closest("[data-pause-share]");
   if (spause) return toggleSharePause(spause.dataset.pauseShare, spause.dataset.paused === "1");
+  const sauth = e.target.closest("[data-toggle-share-auth]");
+  if (sauth) return toggleShareAuth(sauth.dataset.toggleShareAuth, sauth.dataset.auth === "1");
   const sdel = e.target.closest("[data-del-share]");
   if (sdel) return deleteShare(sdel.dataset.delShare, sdel.dataset.delLabel);
   const refresh = e.target.closest("[data-refresh-detail]");
@@ -524,6 +526,7 @@ function updateEventRow(el, e) {
   if (e.t === "start") typeIcon = "play";
   if (e.t === "file") typeIcon = "file";
   if (e.t === "open" || e.t === "share-open") typeIcon = "eye";
+  if (e.t === "share-view") typeIcon = "eye";
   if (e.t === "share-dl") typeIcon = "download";
   if (e.t === "lock" || e.t === "global-lock" || e.t === "autopause") typeIcon = "lock";
   if (e.t === "sessionclose") typeIcon = "shield-alert";
@@ -662,15 +665,25 @@ function renderShares(shares) {
 function updateShareRow(tr, s) {
   tr.innerHTML = `
     <td><b>${esc(s.label)}</b> ${stateBadge(s.state)}<br><code>/s/${esc(s.slug)}</code></td>
-    <td>${esc(s.mode)}${s.hasPin ? " - password" : ""}<br><span class="muted">${s.folderNames.map(esc).join(", ") || "-"}</span></td>
+    <td>${esc(s.mode)}${s.hasPin ? " - password" : ""}${s.requireAuth ? ` - <span class="tag">google sign-in</span>` : ""}<br><span class="muted">${s.folderNames.map(esc).join(", ") || "-"}</span></td>
     <td>${s.stats.opens} opens - ${s.stats.downloads} downloads<br><span class="muted">${fmtBytes(s.stats.bytes)}</span></td>
     <td class="actions">
       <button class="mini" data-copy-link="/s/${escAttr(s.slug)}" type="button">copy</button>
       <button class="mini" data-qr-link="/s/${escAttr(s.slug)}" data-qr-label="${escAttr(s.label)}" type="button">qr</button>
       <button class="mini" data-share-link="/s/${escAttr(s.slug)}" type="button">share</button>
+      <button class="mini" data-toggle-share-auth="${escAttr(s.slug)}" data-auth="${s.requireAuth ? "1" : "0"}" type="button">${s.requireAuth ? "require sign-in: on" : "require sign-in: off"}</button>
       <button class="mini" data-pause-share="${escAttr(s.slug)}" data-paused="${s.disabled ? "1" : "0"}" type="button">${s.disabled ? "resume" : "pause"}</button>
       <button class="mini danger" data-del-share="${escAttr(s.slug)}" data-del-label="${escAttr(s.label)}" type="button">delete</button>
     </td>`;
+}
+
+async function toggleShareAuth(slug, isRequired) {
+  await fetch(`/api/admin/shares/${encodeURIComponent(slug)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ requireAuth: !isRequired }),
+  });
+  refreshAll();
 }
 
 async function toggleSharePause(slug, isPaused) {
@@ -699,6 +712,7 @@ async function createShare() {
     pin: value("s-pin"),
     expiresDays: Number(value("s-days")) || 0,
     allowZip: $("s-zip").checked,
+    requireAuth: $("s-auth") ? $("s-auth").checked : true,
   };
   const r = await fetch("/api/admin/shares", {
     method: "POST",

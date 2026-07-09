@@ -20,31 +20,40 @@ Both toggles live in the admin dashboard: **Link detail → Edit settings → No
 
 1. Sign up at https://resend.com (GitHub/Google login works).
 2. Go to **Domains → Add Domain**.
-3. Enter a **subdomain** of your domain, e.g. `send.losthusky.qzz.io`.
-   Using a subdomain (not the bare `losthusky.qzz.io`) is recommended: it keeps
-   your root domain's DNS clean and isolates email reputation.
+3. Enter your **root domain**: `losthusky.qzz.io`.
+   (A subdomain like `send.losthusky.qzz.io` is also fine and keeps root DNS
+   cleaner, but since the domain was added as the bare root here, all records
+   below are relative to the root — that's what's actually configured.)
 4. Pick the region closest to you and click **Add**.
 
-Resend now shows you 3–4 DNS records to add. **Copy them exactly.**
+Resend now shows you 3 DNS records to add. **Copy them exactly.**
 
 ## Step 2 — Add the DNS records in Cloudflare
 
 Your domain `losthusky.qzz.io` is already served through Cloudflare (the Worker
 route proves it), so DNS lives in the Cloudflare dashboard → your zone → **DNS → Records**.
 
-You do **NOT** need MX records to *send* email. MX records are only for
-*receiving*. For sending, Resend asks for:
+You do **NOT** need MX records at the root to *send* email. MX records are only for
+*receiving*. For sending (domain added as root `losthusky.qzz.io`), Resend asks for:
 
 | Type | Name (what Resend calls it) | Purpose |
 |---|---|---|
-| TXT | `send.losthusky.qzz.io` (SPF) | value like `v=spf1 include:amazonses.com ~all` — authorises Resend's servers to send for you |
-| MX | `send.losthusky.qzz.io` | `feedback-smtp.<region>.amazonses.com`, priority 10 — bounce/feedback handling for the *sending* subdomain (this is not inbound mail for you) |
-| TXT | `resend._domainkey.send.losthusky.qzz.io` (DKIM) | long `p=MIGfMA0...` value — cryptographically signs your emails |
-| TXT (optional) | `_dmarc.send.losthusky.qzz.io` | `v=DMARC1; p=none;` — tells receivers what to do with failures; `p=none` is fine to start |
+| TXT | `send.losthusky` (→ `send.losthusky.qzz.io`) | value `v=spf1 include:amazonses.com ~all` (SPF) — authorises Resend's servers to send for you |
+| MX | `send.losthusky` (→ `send.losthusky.qzz.io`), priority 10 | `feedback-smtp.<region>.amazonses.com` — bounce/feedback handling for the *sending* subdomain (this is not inbound mail for you) |
+| TXT | `resend._domainkey.losthusky` (→ `resend._domainkey.losthusky.qzz.io`) | long `p=MIGfMA0...` value (DKIM) — cryptographically signs your emails |
 
-Tips:
-- In Cloudflare, when it asks for the record **name**, you can paste the full name
-  Resend shows; Cloudflare trims the zone automatically.
+**Important — the Name field:** Cloudflare does NOT auto-trim the zone suffix
+the way some registrars do. If your zone in Cloudflare is `losthusky.qzz.io`,
+paste the record name **exactly as Resend shows it, minus the trailing
+`.losthusky.qzz.io`** — e.g. enter `send.losthusky`, not
+`send.losthusky.qzz.io` (which resolves to
+`send.losthusky.qzz.io.losthusky.qzz.io` and silently fails verification).
+This bit us once already — always resolve the final record with
+`Resolve-DnsName -Name resend._domainkey.losthusky.qzz.io -Type TXT -Server 1.1.1.1`
+(or `dig`) after saving, and confirm the DKIM value comes back before trusting
+the Resend dashboard's "pending" status.
+
+Also:
 - Set the records to **DNS only** (grey cloud). Email DNS records must never be proxied.
 - Back in Resend, click **Verify DNS Records**. Propagation is usually < 15 minutes
   on Cloudflare. Status must read **Verified** before sending works.
@@ -65,14 +74,16 @@ npx wrangler secret put RESEND_API_KEY
 # paste: re_xxxxxxxxxxxxxxxx
 
 npx wrangler secret put NOTIFY_FROM
-# paste: LostHusky Drop <notify@send.losthusky.qzz.io>
+# paste: LostHusky Drop <notify@losthusky.qzz.io>
 
 npx wrangler secret put NOTIFY_TO
 # paste: ghanisht.kumawat@gmail.com
 ```
 
 Rules for the values:
-- **NOTIFY_FROM** must use the domain you verified in Resend. The
+- **NOTIFY_FROM** must use the exact domain you verified in Resend — since the
+  domain here is the bare root `losthusky.qzz.io` (not a `send.` subdomain),
+  the address is `notify@losthusky.qzz.io`. The
   `Display Name <address>` format controls the sender name in inboxes.
   The mailbox part (`notify@`) can be anything — it does not need to exist.
 - **NOTIFY_TO** is where notifications are delivered — your personal inbox.

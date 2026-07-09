@@ -9,8 +9,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin />
+<link rel="preconnect" href="https://accounts.google.com" />
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/vendor/photoswipe.css" />
+<link rel="stylesheet" href="/vendor/swiper-bundle.min.css" />
 </head>
 <body class="drop-page share-page">
 <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="true"></div>
@@ -31,15 +34,41 @@
     <p class="muted">It expired, was paused, or the URL is incomplete.</p>
   </section>
 
-  <section id="pin-gate" class="panel center-panel hidden">
+  <section id="gate" class="panel center-panel hidden gate-panel">
     <p class="eyebrow">protected share</p>
-    <h1 id="pin-label">Password required</h1>
-    <div class="field">
+    <h1 id="gate-label">Sign in to continue</h1>
+    <p class="muted">This is a private, personal share. Your Google name/email and
+      activity here (folders opened, files viewed or downloaded) are visible
+      to the owner in their dashboard.</p>
+
+    <div id="gate-signed-out" class="hidden">
+      <button class="btn google-btn" id="google-signin" type="button">
+        <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
+          <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.9 2.4 30.4 0 24 0 14.6 0 6.4 5.4 2.5 13.2l7.9 6.1C12.3 13 17.7 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.2-.4-4.7H24v9h12.7c-.6 3-2.3 5.5-4.9 7.2l7.6 5.9c4.4-4.1 7.1-10.1 7.1-17.4z"/>
+          <path fill="#FBBC05" d="M10.4 19.3c-.5 1.4-.8 3-.8 4.7s.3 3.3.8 4.7l-7.9 6.1C.9 31.6 0 27.9 0 24s.9-7.6 2.5-10.8l7.9 6.1z"/>
+          <path fill="#34A853" d="M24 48c6.4 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.7-3.5-13.6-9.3l-7.9 6.1C6.4 42.6 14.6 48 24 48z"/>
+        </svg>
+        Sign in with Google
+      </button>
+    </div>
+
+    <div id="gate-signed-in" class="hidden">
+      <div class="viewer-card">
+        <img id="viewer-avatar" alt="" />
+        <div>
+          <b id="viewer-name"></b>
+          <span id="viewer-email" class="muted"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="gate-pin" class="field hidden">
       <label for="pin">Password / PIN</label>
       <input id="pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter the shared code" />
     </div>
-    <button class="btn" id="pin-go">Open share</button>
-    <div class="msg-err" id="pin-err"></div>
+    <button class="btn hidden" id="pin-go" type="button">Open share</button>
+    <div class="msg-err" id="gate-err"></div>
   </section>
 
   <section id="redirect-panel" class="panel center-panel hidden">
@@ -88,24 +117,10 @@
   <button class="btn zip-btn" id="mobile-zip" type="button">Download zip</button>
 </div>
 
-<div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
-  <div class="lb-topbar">
-    <div class="lb-meta"><b id="lb-name"></b><span id="lb-info" class="muted"></span></div>
-    <div class="lb-tools">
-      <select id="lb-quality" class="quality-select" aria-label="video quality">
-        <option value="original">Original / Auto</option>
-      </select>
-      <button class="mini" id="lb-dl" type="button">download</button>
-      <button class="lb-btn lb-close" id="lb-close" type="button" aria-label="close">&#10005;</button>
-    </div>
-  </div>
-  <button class="lb-btn lb-prev" id="lb-prev" type="button" aria-label="previous">&#8249;</button>
-  <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="next">&#8250;</button>
-  <div class="lb-stage" id="lb-stage"></div>
-  <div class="lb-strip" id="lb-strip" aria-label="media thumbnails"></div>
-</div>
-
 <script src="/vendor/microzip.js"></script>
-<script src="/share.js"></script>
+<script src="/vendor/swiper-bundle.min.js"></script>
+<script src="/vendor/gsap.min.js"></script>
+<script src="/share-fx.js"></script>
+<script type="module" src="/share.js"></script>
 </body>
 </html>

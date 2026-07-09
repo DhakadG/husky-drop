@@ -74,9 +74,11 @@ import {
   shareDownload,
   shareRedirect,
   shareSummary,
+  shareTrack,
   shareZipDownload,
   verifySharePin,
 } from "./share.js";
+import { authCallback, authLogin, authLogout } from "./auth.js";
 
 export { LiveTracker } from "./live.js";
 
@@ -144,10 +146,11 @@ async function api(request, env, url, ctx) {
 
   // Public share-link endpoints (gallery + redirect modes).
   if (m === "GET" && p.startsWith("/api/share/meta/")) {
-    return getShareMeta(env, p.slice("/api/share/meta/".length));
+    return getShareMeta(request, env, p.slice("/api/share/meta/".length));
   }
   if (m === "POST" && p === "/api/share/verify") return verifySharePin(request, env);
   if (m === "POST" && p === "/api/share/opened") return logShareOpened(request, env);
+  if (m === "POST" && p === "/api/share/track") return shareTrack(request, env);
   if (m === "POST" && p === "/api/share/list") return listShareFiles(request, env);
   if (m === "POST" && p === "/api/share/summary") return shareSummary(request, env);
   if (m === "POST" && p === "/api/share/refresh-dl") return refreshShareDownload(request, env);
@@ -159,6 +162,11 @@ async function api(request, env, url, ctx) {
   if (m === "GET" && p.startsWith("/api/share/zip/")) {
     return shareZipDownload(request, env, p.slice("/api/share/zip/".length));
   }
+
+  // Google sign-in used only to attribute /s/ share-link viewing sessions.
+  if (m === "GET" && p === "/api/auth/login") return authLogin(request, env, url);
+  if (m === "GET" && p === "/api/auth/callback") return authCallback(request, env, url);
+  if (m === "POST" && p === "/api/auth/logout") return authLogout();
 
   if (m === "POST" && p === "/api/admin/login") return adminLogin(request, env);
   if (m === "POST" && p === "/api/admin/logout") return adminLogout();

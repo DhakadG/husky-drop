@@ -21,6 +21,7 @@ import {
   normalizeTheme,
   randomSlug,
   sanitizeFilename,
+  sha256,
   shareState,
   slugify,
   timingSafeEqual,
@@ -33,6 +34,7 @@ import {
   accessToken,
 } from "./drive.js";
 import { bumpShareStats, gatePin, liveStub, logEvent, mergeEventsKV } from "./store.js";
+import { getViewer } from "./auth.js";
 
 export function parseDriveFolderInput(value) {
   const s = String(value || "").trim();
@@ -52,6 +54,7 @@ export function adminShare(share, stats = {}) {
     folderNames: share.folderNames || [],
     hasPin: !!share.pinHash,
     allowZip: share.allowZip !== false,
+    requireAuth: share.requireAuth !== false,
     createdAt: share.createdAt,
     expiresAt: share.expiresAt || null,
     disabled: !!share.disabled,
@@ -119,6 +122,7 @@ export async function createShare(request, env) {
     folderIds,
     folderNames,
     allowZip: b.allowZip !== false,
+    requireAuth: b.requireAuth !== false,
     disabled: false,
     permissionIds: {},
     ...(b.pin ? await makePinFields(b.pin) : { pinSalt: null, pinHash: null, pinAlgo: null }),
@@ -158,6 +162,7 @@ export async function patchShare(request, env, slug) {
     }
   }
   if ("allowZip" in b) share.allowZip = !!b.allowZip;
+  if ("requireAuth" in b) share.requireAuth = !!b.requireAuth;
   if ("expiresDays" in b) {
     const days = clamp(Number(b.expiresDays) || 0, 0, MAX_EXPIRY_DAYS);
     share.expiresAt = days > 0 ? Date.now() + days * 86400_000 : null;
@@ -218,14 +223,18 @@ export async function loadActiveShare(env, slug) {
   return { share, error: null };
 }
 
-export async function getShareMeta(env, slug) {
+export async function getShareMeta(request, env, slug) {
   const raw = await env.KV.get(`share:${slug}`, "json");
   if (!raw) return json({ error: "share not found" }, 404);
+  const requiresAuth = raw.requireAuth !== false && !!env.GOOGLE_CLIENT_ID;
+  const viewer = requiresAuth ? await getViewer(request, env) : null;
   return json({
     slug: raw.slug,
     label: raw.label,
     mode: raw.mode,
     requiresPin: !!raw.pinHash,
+    requiresAuth,
+    viewer,
     allowZip: raw.allowZip !== false,
     state: shareState(raw),
     expiresAt: raw.expiresAt || null,
@@ -234,10 +243,24 @@ export async function getShareMeta(env, slug) {
   });
 }
 
+// Blocks access to gated endpoints until the guest has signed in with
+// Google, when the share owner has required it. Placed before the PIN gate
+// so the flow is "sign in, then enter the PIN" as one combined screen.
+async function requireViewer(request, env, share) {
+  if (share.requireAuth === false || !env.GOOGLE_CLIENT_ID) return { viewer: null, error: null };
+  const viewer = await getViewer(request, env);
+  if (!viewer) {
+    return { viewer: null, error: json({ error: "sign-in required", authRequired: true }, 401) };
+  }
+  return { viewer, error: null };
+}
+
 export async function verifySharePin(request, env) {
   const b = await request.json().catch(() => ({}));
   const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
   if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
   return json({ ok: true });
@@ -248,7 +271,11 @@ export async function logShareOpened(request, env) {
   const slug = cleanText(b.slug || "", 60);
   const share = await env.KV.get(`share:${slug}`, "json");
   if (!share) return json({ error: "share not found" }, 404);
-  const record = normalizeEvent({ type: "share-open", slug, label: share.label }, request);
+  const viewer = await getViewer(request, env);
+  const record = normalizeEvent(
+    { type: "share-open", slug, label: share.label, uploader: viewer?.email || "" },
+    request
+  );
   if (env.LIVE_TRACKER) {
     await liveStub(env)
       .fetch("https://live.internal/share-stat", {
@@ -264,10 +291,63 @@ export async function logShareOpened(request, env) {
   return json({ ok: true });
 }
 
+// Batched browsing-session analytics beacon: the client queues folder
+// navigation and media-view events and flushes them here (via
+// navigator.sendBeacon, so it survives tab close) so the owner can see who
+// viewed what and where load is slow, without a KV write per click.
+export async function shareTrack(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const slug = cleanText(b.slug || "", 60);
+  const share = await env.KV.get(`share:${slug}`, "json");
+  if (!share) return json({ error: "share not found" }, 404);
+  const viewer = await getViewer(request, env);
+  const events = Array.isArray(b.events) ? b.events.slice(0, 40) : [];
+  if (!events.length) return json({ ok: true });
+  const records = events.map((e) =>
+    normalizeEvent(
+      {
+        type: "share-view",
+        slug,
+        label: share.label,
+        uploader: viewer?.email || "anonymous",
+        file: cleanText(e.name || "", 160),
+        message: cleanText(e.t || "view", 40),
+      },
+      request
+    )
+  );
+  if (env.LIVE_TRACKER) {
+    await Promise.all(
+      records.map((record) =>
+        liveStub(env)
+          .fetch("https://live.internal/event", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ record }),
+          })
+          .catch(() => {})
+      )
+    );
+  } else {
+    await mergeEventsKV(env, records);
+  }
+  return json({ ok: true });
+}
+
+// A stable, non-reversible id for a Drive folder, used as the client-side
+// navigation key so breadcrumbs/history/caching never depend on the
+// short-lived signed "ls" token (which is re-minted, with a new signature,
+// on every listing call and therefore compares unequal across requests).
+async function folderFid(env, folderId) {
+  return (await sha256(`fid:${folderId}:${env.SHARE_SIGNING_KEY || env.ADMIN_TOKEN || "dev"}`)).slice(0, 16);
+}
+
 export async function listShareFiles(request, env) {
   const b = await request.json().catch(() => ({}));
   const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
   if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
   if (!env.GOOGLE_CLIENT_ID) return json({ folders: [], allowZip: share.allowZip !== false });
@@ -286,6 +366,7 @@ export async function listShareFiles(request, env) {
     for (const f of page.files || []) {
       if (f.mimeType === "application/vnd.google-apps.folder") {
         subfolders.push({
+          fid: await folderFid(env, f.id),
           name: cleanText(f.name || "folder", 200),
           ls: await signShareToken(env, "ls", share.slug, f.id, 4 * 3600),
         });
@@ -295,6 +376,7 @@ export async function listShareFiles(request, env) {
     }
     folders.push({
       index: i,
+      fid: folderToken ? await folderFid(env, folderId) : "",
       name: folderToken ? "" : share.folderNames[i] || `Folder ${i + 1}`,
       files,
       subfolders,
@@ -358,6 +440,8 @@ export async function shareSummary(request, env) {
   const b = await request.json().catch(() => ({}));
   const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
   if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
   if (!env.GOOGLE_CLIENT_ID) {
@@ -392,6 +476,8 @@ export async function shareRedirect(request, env) {
   const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
   if (error) return error;
   if (share.mode !== "redirect") return json({ error: "not a redirect share" }, 400);
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
   // Make sure the grant still exists (it may have been revoked while paused).
@@ -478,6 +564,8 @@ export async function refreshShareDownload(request, env) {
   if (slug !== parsed.slug) return json({ error: "download token does not belong to this share" }, 403);
   const { share, error } = await loadActiveShare(env, slug);
   if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
   const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, parsed.fileId);
@@ -488,6 +576,8 @@ export async function createShareZipTicket(request, env) {
   const b = await request.json().catch(() => ({}));
   const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
   if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
   if (share.allowZip === false) return json({ error: "zip downloads are disabled for this share" }, 403);
@@ -755,21 +845,75 @@ function dedupeZipName(name, central) {
   return out;
 }
 
+// Files at or under this size get fully fetched and cached at Cloudflare's
+// edge on first inline view; Cloudflare's Cache API then auto-slices Range
+// requests (video seeking, resumed image loads) straight from that cached
+// copy, so a second view - or the second half of a scrub - never touches
+// Drive again. Larger files always stream straight through (uncached).
+const EDGE_CACHEABLE_BYTES = 100 * 1024 * 1024;
+
 export async function shareDownload(request, env, token) {
   const parsed = await verifyShareToken(env, token, "dl");
   if (!parsed) return json({ error: "invalid or expired download token" }, 403);
   const { share, error } = await loadActiveShare(env, parsed.slug);
   if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
+  // Attribution only (who downloaded what) - independent of whether this
+  // share requires sign-in, so shares without requireAuth still show a
+  // viewer's identity in the admin Activity feed when they happen to be
+  // signed in from browsing another gated share.
+  const viewer = gate.viewer || (await getViewer(request, env));
+
+  // ?inline=1 serves the file for in-page viewing (lightbox images, <video>).
+  const inline = new URL(request.url).searchParams.has("inline");
+  const range = request.headers.get("range") || "";
+  const cache = inline ? caches.default : null;
+  const cacheKey = inline
+    ? new Request(`https://media.internal.share/f/${parsed.fileId}`, { headers: range ? { range } : {} })
+    : null;
+
+  if (cache) {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      if (!range) {
+        await bumpDownloadStats(env, share, request, cacheHitName(hit), Number(hit.headers.get("content-length")) || 0, viewer);
+      }
+      return hit;
+    }
+  }
 
   const meta = await driveFileMeta(env, parsed.fileId);
   if (!meta?.id) return json({ error: "file not found" }, 404);
-
-  // ?inline=1 serves the file for in-page viewing (lightbox images, <video>).
-  // Range requests are forwarded to Drive so video seeking works.
-  const inline = new URL(request.url).searchParams.has("inline");
-  const range = request.headers.get("range") || "";
+  const bytes = Number(meta.size) || 0;
   const tok = await accessToken(env);
+
+  // First inline view of a cacheable file: always pull the FULL object from
+  // Drive (ignoring any small probe Range the browser sent) so the edge
+  // cache holds a complete, seekable copy from here on.
+  if (cache && bytes && bytes <= EDGE_CACHEABLE_BYTES) {
+    const full = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`,
+      { headers: { authorization: `Bearer ${tok}` } }
+    );
+    if (!full.ok || !full.body) return json({ error: "Drive download failed" }, 502);
+    const headers = shareMediaHeaders(meta, true);
+    headers.set("content-length", String(bytes));
+    try {
+      await cache.put(new Request(`https://media.internal.share/f/${parsed.fileId}`), new Response(full.body, { status: 200, headers }));
+    } catch (err) {
+      console.error("edge cache put failed", err.message);
+    }
+    const served = await cache.match(cacheKey);
+    if (served) {
+      if (!range) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
+      return served;
+    }
+    // Cache write raced or was rejected (e.g. size limits) - fall through
+    // and serve this one request directly instead of failing it.
+  }
+
   const driveHeaders = { authorization: `Bearer ${tok}` };
   if (range) driveHeaders.range = range;
   const r = await fetch(
@@ -780,40 +924,51 @@ export async function shareDownload(request, env, token) {
     return json({ error: "Drive download failed" }, 502);
   }
 
-  const bytes = Number(meta.size) || 0;
   // Count the transfer once: skip stat bumps for mid-file seeks so scrubbing
   // a video does not inflate the download counters.
   const firstChunk = !range || /bytes=0-/.test(range);
-  if (firstChunk) {
-    const record = normalizeEvent(
-      { type: "share-dl", slug: share.slug, label: share.label, file: meta.name, bytes },
-      request
-    );
-    if (env.LIVE_TRACKER) {
-      liveStub(env)
-        .fetch("https://live.internal/share-stat", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ slug: share.slug, downloads: 1, bytes, record }),
-        })
-        .catch(() => {});
-    } else {
-      await bumpShareStats(env, share.slug, { opens: 0, downloads: 1, bytes });
-      await mergeEventsKV(env, [record]);
-    }
-  }
+  if (firstChunk) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
 
-  const headers = new Headers({
-    "content-type": meta.mimeType || "application/octet-stream",
-    "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name || "file")}`,
-    "cache-control": inline ? "private, max-age=900" : "private, no-store",
-    "x-content-type-options": "nosniff",
-    "accept-ranges": "bytes",
-  });
+  const headers = shareMediaHeaders(meta, inline);
   for (const h of ["content-range", "content-length"]) {
     const v = r.headers.get(h);
     if (v) headers.set(h, v);
   }
   if (!headers.has("content-length") && bytes && !range) headers.set("content-length", String(bytes));
   return new Response(r.body, { status: r.status === 206 ? 206 : 200, headers });
+}
+
+function shareMediaHeaders(meta, inline) {
+  return new Headers({
+    "content-type": meta.mimeType || "application/octet-stream",
+    "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name || "file")}`,
+    "cache-control": inline ? "public, max-age=86400" : "private, no-store",
+    "x-content-type-options": "nosniff",
+    "accept-ranges": "bytes",
+  });
+}
+
+function cacheHitName(response) {
+  const cd = response.headers.get("content-disposition") || "";
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "file";
+}
+
+async function bumpDownloadStats(env, share, request, fileName, bytes, viewer) {
+  const record = normalizeEvent(
+    { type: "share-dl", slug: share.slug, label: share.label, file: fileName, bytes, uploader: viewer?.email || "" },
+    request
+  );
+  if (env.LIVE_TRACKER) {
+    liveStub(env)
+      .fetch("https://live.internal/share-stat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slug: share.slug, downloads: 1, bytes, record }),
+      })
+      .catch(() => {});
+  } else {
+    await bumpShareStats(env, share.slug, { opens: 0, downloads: 1, bytes });
+    await mergeEventsKV(env, [record]);
+  }
 }
