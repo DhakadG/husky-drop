@@ -43,6 +43,8 @@ const TOKEN_REFRESH_MS = 90 * 1000;
 const ACCEL_THRESHOLD_BYTES = 64 * 1024 * 1024;
 const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
+const hoverPreviewControllers = new Set();
+let shiftScrubHeld = false;
 const cardObserver =
   "IntersectionObserver" in window
     ? new IntersectionObserver(
@@ -596,7 +598,8 @@ function card(file) {
   fig._file = file;
   const media = /^(image|video)\//.test(file.mime) && file.thumb;
   const isVideo = /^video\//.test(file.mime);
-  fig.className = `g-card${media ? "" : " plain"}${isVideo ? " video-card" : ""}`;
+  const blocked = !!file.downloadBlocked;
+  fig.className = `g-card${media ? "" : " plain"}${isVideo ? " video-card" : ""}${blocked ? " download-blocked" : ""}`;
   fig.dataset.cursor = isVideo ? "video" : media ? "photo" : "";
   const dur = file.dur ? `<span class="g-dur">${fmtDur(file.dur)}</span>` : "";
   const play = isVideo
@@ -606,7 +609,7 @@ function card(file) {
     <button class="g-check" type="button" aria-label="select ${escAttr(file.name)}" data-cursor="link">
       <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
     </button>
-    <a class="g-dl" href="${escAttr(file.dl)}" download aria-label="download ${escAttr(file.name)}" data-cursor="link">
+    <a class="g-dl${blocked ? " blocked" : ""}" href="${escAttr(file.dl)}" download aria-label="${blocked ? "download blocked for" : "download"} ${escAttr(file.name)}" title="${blocked ? escAttr(file.downloadBlockReason || "Download blocked") : ""}" data-cursor="link">
       <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     </a>
     ${play}${dur}
@@ -710,6 +713,10 @@ async function ensureFreshDownload(file) {
 
 async function downloadFile(file) {
   trackEvent("download", file.name);
+  if (file.downloadBlocked) {
+    toast("Download blocked", file.downloadBlockReason || "This public share blocks risky file types.", "warn");
+    return;
+  }
   try {
     if (file.size > ACCEL_THRESHOLD_BYTES && "showSaveFilePicker" in window) {
       const handled = await acceleratedDownload(file).catch((err) => {
@@ -794,68 +801,124 @@ async function acceleratedDownload(file) {
 
 // ---- Hover preview: play by default, deliberate scrubbing, buffered bar ----
 
+window.addEventListener(
+  "keydown",
+  (e) => {
+    if (e.key === "Shift") setShiftScrubHeld(true);
+  },
+  { passive: true }
+);
+window.addEventListener(
+  "keyup",
+  (e) => {
+    if (e.key === "Shift") setShiftScrubHeld(false);
+  },
+  { passive: true }
+);
+window.addEventListener("blur", () => setShiftScrubHeld(false));
+
+function setShiftScrubHeld(on) {
+  if (shiftScrubHeld === on) return;
+  shiftScrubHeld = on;
+  if (!on) {
+    for (const controller of hoverPreviewControllers) controller.endShiftScrub();
+  }
+}
+
 function installHoverPreview(fig, file) {
   if (!/^video\//.test(file.mime)) return;
   let hoverTimer = 0;
   let scrubRaf = 0;
-  let idleTimer = 0;
-  let targetT = 0;
   let touchHoldTimer = 0;
-  let touchScrubbing = false;
-  let suppressNextClick = false;
   let touchStart = null;
-
-  const endScrub = (resume = true) => {
-    clearTimeout(idleTimer);
-    fig.classList.remove("scrubbing", "touch-scrubbing");
-    fx.setScrubbing(false, fig);
-    const video = previewVideos.get(file.id);
-    if (resume && video && fig.classList.contains("previewing")) video.play().catch(() => {});
+  let startPromise = null;
+  let lastTouchPoint = null;
+  const state = {
+    mode: "",
+    scrubbing: false,
+    targetTime: 0,
+    suppressClickUntil: 0,
+    touchPending: false,
   };
 
-  const scrubAt = (e) => {
+  const requestPreview = (reset = true) => {
+    if (!startPromise) {
+      startPromise = startHoverPreview(fig, file, { reset }).finally(() => {
+        startPromise = null;
+      });
+    }
+    return startPromise;
+  };
+
+  const beginScrub = (mode) => {
     const video = previewVideos.get(file.id);
-    if (!video || !fig.classList.contains("previewing") || !video.duration) return;
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0 || !fig.classList.contains("previewing")) return false;
+    state.mode = mode;
+    state.scrubbing = true;
+    video.pause();
+    fig.classList.add("scrubbing");
+    fig.classList.toggle("touch-scrubbing", mode === "touch");
+    fx.setScrubbing(true, fig);
+    updateScrubBadge(fig, video, video.currentTime);
+    return true;
+  };
+
+  const endScrub = ({ resume = true, stopPreview = false, suppressClick = false } = {}) => {
+    cancelAnimationFrame(scrubRaf);
+    scrubRaf = 0;
+    state.mode = "";
+    state.scrubbing = false;
+    state.touchPending = false;
+    fig.classList.remove("scrubbing", "touch-scrubbing");
+    fig.style.removeProperty("--scrub-x");
+    fx.setScrubbing(false, fig);
+    const video = previewVideos.get(file.id);
+    if (resume && video && fig.classList.contains("previewing") && !stopPreview) video.play().catch(() => {});
+    if (stopPreview) stopHoverPreview(fig, file, { removeBar: true });
+    if (suppressClick) state.suppressClickUntil = performance.now() + 260;
+  };
+
+  const scrubAt = (point, mode) => {
+    if (!state.scrubbing && !beginScrub(mode)) return false;
+    const video = previewVideos.get(file.id);
+    if (!video || !fig.classList.contains("previewing") || !video.duration) return false;
     const r = fig.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(0.999, (e.clientX - r.left) / r.width));
-    targetT = pct * video.duration;
+    const pct = Math.max(0, Math.min(0.999, (point.clientX - r.left) / r.width));
+    state.targetTime = pct * video.duration;
     fig.style.setProperty("--scrub-x", `${pct * 100}%`);
     video.pause();
-    if (!fig.classList.contains("scrubbing")) {
-      fig.classList.add("scrubbing");
-      fx.setScrubbing(true, fig);
-    }
-    updateScrubBadge(fig, video, targetT);
+    updateScrubBadge(fig, video, state.targetTime);
     if (!scrubRaf) {
       scrubRaf = requestAnimationFrame(() => {
         scrubRaf = 0;
-        if (Math.abs(video.currentTime - targetT) > 0.08) {
-          if (video.fastSeek) video.fastSeek(targetT);
-          else video.currentTime = targetT;
+        if (Math.abs(video.currentTime - state.targetTime) > 0.08) {
+          if (video.fastSeek) video.fastSeek(state.targetTime);
+          else video.currentTime = state.targetTime;
         }
       });
     }
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => endScrub(true), 450);
+    return true;
   };
 
   if (canHoverPreview) {
     fig.addEventListener("pointerenter", () => {
       if (selected.size) return;
-      hoverTimer = setTimeout(() => startHoverPreview(fig, file, { reset: true }), 140);
+      hoverTimer = setTimeout(() => requestPreview(true), 140);
     });
 
     fig.addEventListener("pointermove", (e) => {
-      if (e.shiftKey) scrubAt(e);
-      else if (fig.classList.contains("scrubbing")) endScrub(true);
+      if (selected.size || e.pointerType !== "mouse") return;
+      if (shiftScrubHeld) {
+        if (!fig.classList.contains("previewing")) requestPreview(true);
+        scrubAt(e, "shift");
+      } else if (state.mode === "shift") {
+        endScrub({ resume: true });
+      }
     });
 
     fig.addEventListener("pointerleave", () => {
       clearTimeout(hoverTimer);
-      clearTimeout(idleTimer);
-      cancelAnimationFrame(scrubRaf);
-      scrubRaf = 0;
-      endScrub(false);
+      endScrub({ resume: false });
       stopHoverPreview(fig, file);
     });
   }
@@ -864,16 +927,20 @@ function installHoverPreview(fig, file) {
     "pointerdown",
     (e) => {
       if (e.pointerType !== "touch" || selected.size) return;
+      clearTimeout(touchHoldTimer);
       touchStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      lastTouchPoint = { clientX: e.clientX, clientY: e.clientY };
+      state.touchPending = true;
       touchHoldTimer = setTimeout(async () => {
-        touchScrubbing = true;
-        suppressNextClick = true;
-        fig.classList.add("touch-scrubbing");
+        if (!touchStart || !state.touchPending) return;
         try {
           fig.setPointerCapture(e.pointerId);
         } catch {}
-        await startHoverPreview(fig, file, { reset: true });
-        scrubAt(e);
+        await requestPreview(true);
+        const video = previewVideos.get(file.id);
+        if (video && !video.duration) await waitForVideoDuration(video);
+        if (!touchStart || !state.touchPending) return;
+        scrubAt(lastTouchPoint || e, "touch");
       }, 420);
     },
     { passive: true }
@@ -884,10 +951,14 @@ function installHoverPreview(fig, file) {
     (e) => {
       if (e.pointerType !== "touch" || !touchStart) return;
       const moved = Math.hypot(e.clientX - touchStart.x, e.clientY - touchStart.y);
-      if (!touchScrubbing && moved > 12) clearTimeout(touchHoldTimer);
-      if (touchScrubbing) {
+      lastTouchPoint = { clientX: e.clientX, clientY: e.clientY };
+      if (!state.scrubbing && moved > 12) {
+        clearTimeout(touchHoldTimer);
+        state.touchPending = false;
+      }
+      if (state.mode === "touch") {
         e.preventDefault();
-        scrubAt(e);
+        scrubAt(e, "touch");
       }
     },
     { passive: false }
@@ -895,31 +966,39 @@ function installHoverPreview(fig, file) {
 
   const finishTouch = (e) => {
     clearTimeout(touchHoldTimer);
-    if (touchScrubbing) {
+    state.touchPending = false;
+    if (state.mode === "touch") {
       e.preventDefault();
-      endScrub(false);
-      stopHoverPreview(fig, file);
+      endScrub({ resume: false, stopPreview: true, suppressClick: true });
       try {
         fig.releasePointerCapture(touchStart?.id);
       } catch {}
-      setTimeout(() => {
-        suppressNextClick = false;
-      }, 220);
     }
-    touchScrubbing = false;
     touchStart = null;
+    lastTouchPoint = null;
   };
   fig.addEventListener("pointerup", finishTouch, { passive: false });
   fig.addEventListener("pointercancel", finishTouch, { passive: false });
   fig.addEventListener(
     "click",
     (e) => {
-      if (!suppressNextClick) return;
+      if (performance.now() >= state.suppressClickUntil) return;
       e.preventDefault();
       e.stopPropagation();
     },
     true
   );
+
+  const controller = {
+    endShiftScrub() {
+      if (!fig.isConnected) {
+        hoverPreviewControllers.delete(controller);
+        return;
+      }
+      if (state.mode === "shift") endScrub({ resume: true });
+    },
+  };
+  hoverPreviewControllers.add(controller);
 }
 
 async function startHoverPreview(fig, file, opts = {}) {
@@ -951,11 +1030,15 @@ async function startHoverPreview(fig, file, opts = {}) {
   }
 }
 
-function stopHoverPreview(fig, file) {
+function stopHoverPreview(fig, file, opts = {}) {
   const video = previewVideos.get(file.id);
   if (!video) return;
   video.pause();
   fig.classList.remove("previewing", "buffering");
+  if (opts.removeBar) {
+    fig.querySelector(".buffer-bar")?.remove();
+    fig._scrubBadge = null;
+  }
 }
 
 function resetPreviewTime(video) {
@@ -1057,6 +1140,26 @@ function updateScrubBadge(fig, video, time = video.currentTime) {
   const badge = fig?._scrubBadge;
   if (!badge || !video.duration) return;
   badge.textContent = `${fmtDur(time)} / ${fmtDur(video.duration)}`;
+}
+
+function waitForVideoDuration(video, timeoutMs = 1200) {
+  if (video && Number.isFinite(video.duration) && video.duration > 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      video.removeEventListener("loadedmetadata", finish);
+      video.removeEventListener("durationchange", finish);
+      video.removeEventListener("canplay", finish);
+      resolve(Number.isFinite(video.duration) && video.duration > 0);
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    video.addEventListener("loadedmetadata", finish);
+    video.addEventListener("durationchange", finish);
+    video.addEventListener("canplay", finish);
+  });
 }
 
 async function probeVideoMetadata(file) {
@@ -1222,17 +1325,30 @@ function registerVideoContent(instance) {
       poster.alt = "";
       wrap.appendChild(poster);
     }
-    const video = document.createElement("video");
-    video.controls = true;
-    video.playsInline = true;
-    video.preload = "metadata";
-    video.className = "pswp-video";
-    wrap.appendChild(video);
-    ensureFreshDownload(file).then((dl) => {
-      video.src = `${dl}?inline=1`;
-    });
+    const loading = document.createElement("div");
+    loading.className = "pswp-video-loading";
+    loading.textContent = "Loading video";
+    wrap.appendChild(loading);
+    getPreviewVideo(file)
+      .then((video) => {
+        cleanupTilePreview(file);
+        video.pause();
+        video.controls = true;
+        video.muted = false;
+        video.loop = false;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.className = "pswp-video";
+        video.style.opacity = "";
+        loading.remove();
+        wrap.appendChild(video);
+        content._video = video;
+        if (instance.currSlide?.data?.file?.id === file.id) video.play().catch(() => {});
+      })
+      .catch(() => {
+        loading.textContent = "Video could not be loaded";
+      });
     content.element = wrap;
-    content._video = video;
   });
   instance.on("contentActivate", (e) => {
     const video = e.content?._video;
@@ -1246,10 +1362,24 @@ function registerVideoContent(instance) {
     const video = e.content?._video;
     if (video) {
       video.pause();
-      video.removeAttribute("src");
-      video.load();
+      video.controls = false;
+      video.muted = true;
+      video.loop = true;
+      video.className = "g-video-preview";
+      video.style.opacity = "0";
+      video.remove();
     }
   });
+}
+
+function cleanupTilePreview(file) {
+  const fig = file?._el;
+  if (!fig) return;
+  fig.classList.remove("previewing", "buffering", "scrubbing", "touch-scrubbing");
+  fig.style.removeProperty("--scrub-x");
+  fig.querySelector(".buffer-bar")?.remove();
+  fig._scrubBadge = null;
+  fx.setScrubbing(false, fig);
 }
 
 function registerUi(instance) {
@@ -1296,28 +1426,24 @@ function mountStrip(instance) {
   if (typeof Swiper === "undefined" || lightboxItems.length < 2) return;
   const host = document.createElement("div");
   host.className = "swiper lb-strip";
-  host.innerHTML = `<div class="swiper-wrapper"></div>`;
+  host.innerHTML = `<div class="swiper-wrapper">${lightboxItems.map((f, i) => stripSlideHtml(f, i)).join("")}</div>`;
   instance.element.appendChild(host);
   strip = new Swiper(host, {
     slidesPerView: "auto",
-    spaceBetween: 4,
-    freeMode: true,
-    mousewheel: true,
+    spaceBetween: 6,
+    freeMode: { enabled: true, momentumRatio: 0.45 },
+    mousewheel: { forceToAxis: true },
+    grabCursor: true,
     slideToClickedSlide: true,
     centeredSlides: true,
     centeredSlidesBounds: true,
-    virtual: {
-      slides: lightboxItems.map((f, i) => stripSlideHtml(f, i)),
-      addSlidesAfter: 12,
-      addSlidesBefore: 12,
-      renderExternal: (data) => syncStripActive(host, data),
-    },
     initialSlide: instance.currIndex,
     on: {
       click: (sw) => {
         const idx = Number(sw.clickedSlide?.dataset?.i);
         if (Number.isFinite(idx)) instance.goTo(idx);
       },
+      init: () => syncStripActive(host),
     },
   });
   syncStrip(instance.currIndex);
@@ -1396,6 +1522,15 @@ function updateSelInfo() {
 async function downloadZip() {
   let files = [...selected.values()];
   if (!files.length) return;
+  const locallyBlocked = files.filter((f) => f.downloadBlocked);
+  files = files.filter((f) => !f.downloadBlocked);
+  if (!files.length) {
+    toast("Zip blocked", "Every selected file is blocked by the public-download safety policy.", "warn");
+    return;
+  }
+  if (locallyBlocked.length) {
+    toast("Skipped blocked files", `${locallyBlocked.length} risky file${locallyBlocked.length === 1 ? "" : "s"} excluded.`, "warn");
+  }
   const bytes = files.reduce((t, f) => t + f.size, 0);
 
   const btn = $("zip-btn");
@@ -1407,18 +1542,28 @@ async function downloadZip() {
     btn.textContent = "Preparing zip...";
     $("mobile-zip").textContent = "Preparing...";
     const ticket = await createServerZipTicket(files);
+    if (ticket.blocked?.length) {
+      toast("Skipped blocked files", `${ticket.blocked.length} risky file${ticket.blocked.length === 1 ? "" : "s"} excluded.`, "warn");
+    }
     const a = document.createElement("a");
     a.href = ticket.url;
     a.download = zipName;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    toast("Zip download started", `${files.length} files - ${fmtBytes(bytes)}`, "ok");
+    toast("Zip download started", `${ticket.count || files.length} files - ${fmtBytes(bytes)}`, "ok");
     btn.disabled = false;
     $("mobile-zip").disabled = false;
     updateSelInfo();
     return;
   } catch (serverErr) {
+    if (serverErr.downloadBlocked) {
+      toast("Zip blocked", String(serverErr.message || serverErr).slice(0, 100), "err");
+      btn.disabled = false;
+      $("mobile-zip").disabled = false;
+      updateSelInfo();
+      return;
+    }
     if (bytes > MAX_ZIP_BYTES) {
       toast("Zip failed", "Server zip could not start, and this selection is too large for browser zip.", "err");
       return;
@@ -1491,7 +1636,11 @@ async function createServerZipTicket(files) {
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({}));
-    throw new Error(d.error || "server zip failed");
+    const err = new Error(d.error || "server zip failed");
+    err.status = r.status;
+    err.downloadBlocked = r.status === 451;
+    err.blocked = d.blocked || [];
+    throw err;
   }
   return r.json();
 }

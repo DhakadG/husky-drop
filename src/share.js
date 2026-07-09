@@ -36,6 +36,71 @@ import {
 import { bumpShareStats, gatePin, liveStub, logEvent, mergeEventsKV } from "./store.js";
 import { getViewer } from "./auth.js";
 
+const BLOCKED_PUBLIC_DOWNLOAD_EXTS = new Set([
+  "7z",
+  "ace",
+  "apk",
+  "app",
+  "arj",
+  "bat",
+  "bin",
+  "bz2",
+  "cab",
+  "cmd",
+  "com",
+  "cpl",
+  "deb",
+  "dmg",
+  "dll",
+  "docm",
+  "dotm",
+  "exe",
+  "gz",
+  "hta",
+  "img",
+  "ipa",
+  "iso",
+  "jar",
+  "js",
+  "jse",
+  "lnk",
+  "msi",
+  "msp",
+  "pkg",
+  "pl",
+  "pptm",
+  "ps1",
+  "psd1",
+  "psm1",
+  "py",
+  "pyc",
+  "rar",
+  "reg",
+  "rpm",
+  "run",
+  "scr",
+  "sh",
+  "tar",
+  "tgz",
+  "vbe",
+  "vbs",
+  "wsf",
+  "wsh",
+  "xlam",
+  "xlsm",
+  "xz",
+  "zip",
+]);
+
+const BLOCKED_PUBLIC_DOWNLOAD_MIME = [
+  /^application\/(x-)?(7z|gzip|java-archive|vnd\.rar|zip)/i,
+  /^application\/(x-)?(bzip2|cab|compress|compressed|gtar|rar-compressed|tar)/i,
+  /^application\/(x-)?(apple-diskimage|dosexec|executable|iso9660-image|mach-binary|msdownload|msi|ms-installer|msdos-program|sh)/i,
+  /^application\/vnd\.(android\.package-archive|microsoft\.portable-executable)/i,
+  /^application\/x-httpd-php/i,
+  /^text\/x-(shellscript|perl|php|python|ruby)/i,
+];
+
 export function parseDriveFolderInput(value) {
   const s = String(value || "").trim();
   if (!s) return "";
@@ -416,6 +481,7 @@ async function publicShareFile(env, share, f) {
   const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, f.id);
   const img = f.imageMediaMetadata || {};
   const vid = f.videoMediaMetadata || {};
+  const safety = publicDownloadSafety(f);
   let w = Number(img.width || vid.width) || 0;
   let h = Number(img.height || vid.height) || 0;
   // EXIF rotation of 90/270 means the rendered thumb is portrait.
@@ -433,6 +499,8 @@ async function publicShareFile(env, share, f) {
     dur: Number(vid.durationMillis) || 0,
     dl: `/api/share/dl/${token}`,
     dlExpiresAt: expiresAt,
+    downloadBlocked: safety.blocked,
+    downloadBlockReason: safety.reason,
   };
 }
 
@@ -555,6 +623,32 @@ function downloadTokenFrom(value) {
   return token.split(/[?#]/)[0];
 }
 
+function fileExtension(name = "") {
+  const clean = String(name || "").split(/[?#]/)[0].trim().toLowerCase();
+  const leaf = clean.split(/[\\/]/).pop() || "";
+  const dot = leaf.lastIndexOf(".");
+  return dot > 0 && dot < leaf.length - 1 ? leaf.slice(dot + 1) : "";
+}
+
+function publicDownloadSafety(file = {}) {
+  const name = cleanText(file.name || "", 240);
+  const mime = cleanText(file.mimeType || file.mime || "", 140);
+  const ext = fileExtension(name);
+  if (BLOCKED_PUBLIC_DOWNLOAD_EXTS.has(ext)) {
+    return {
+      blocked: true,
+      reason: "This public share blocks executable, script, installer, and archive downloads.",
+    };
+  }
+  if (mime && BLOCKED_PUBLIC_DOWNLOAD_MIME.some((rx) => rx.test(mime))) {
+    return {
+      blocked: true,
+      reason: "This public share blocks executable, script, installer, and archive downloads.",
+    };
+  }
+  return { blocked: false, reason: "" };
+}
+
 export async function refreshShareDownload(request, env) {
   const b = await request.json().catch(() => ({}));
   const oldToken = downloadTokenFrom(b.dl || b.token);
@@ -586,16 +680,31 @@ export async function createShareZipTicket(request, env) {
   const requested = Array.isArray(b.files) ? b.files.slice(0, 1000) : [];
   if (!requested.length) return json({ error: "choose at least one file" }, 400);
   const files = [];
+  const blocked = [];
   for (const item of requested) {
     const token = downloadTokenFrom(item?.dl || item?.token);
     const parsed = await verifyShareToken(env, token, "dl", { allowExpired: true });
     if (!parsed || parsed.slug !== share.slug) return json({ error: "invalid file selection" }, 403);
+    const meta = await driveFileMeta(env, parsed.fileId);
+    if (!meta?.id) return json({ error: "selected file was not found" }, 404);
+    const safety = publicDownloadSafety(meta);
+    if (safety.blocked) {
+      blocked.push(cleanText(meta.name || item?.name || parsed.fileId, 120));
+      continue;
+    }
     files.push({
       fileId: parsed.fileId,
-      name: sanitizeFilename(item?.name || `${parsed.fileId}.bin`),
-      size: Math.max(0, Number(item?.size) || 0),
-      mime: cleanText(item?.mime || "application/octet-stream", 100),
+      name: sanitizeFilename(meta.name || item?.name || `${parsed.fileId}.bin`),
+      size: Math.max(0, Number(meta.size || item?.size) || 0),
+      mime: cleanText(meta.mimeType || item?.mime || "application/octet-stream", 100),
     });
+  }
+  if (!files.length && blocked.length) {
+    return json(
+      { error: "All selected files are blocked by the public-download safety policy.", blocked },
+      451,
+      { "x-robots-tag": "noindex, nofollow, noarchive" }
+    );
   }
 
   const ticket = b64url(crypto.getRandomValues(new Uint8Array(18)));
@@ -606,7 +715,7 @@ export async function createShareZipTicket(request, env) {
     JSON.stringify({ slug: share.slug, label: share.label, zipName, files, expiresAt }),
     { expirationTtl: SHARE_ZIP_TICKET_TTL }
   );
-  return json({ ticket, url: `/api/share/zip/${ticket}`, expiresAt, count: files.length });
+  return json({ ticket, url: `/api/share/zip/${ticket}`, expiresAt, count: files.length, blocked });
 }
 
 export async function shareZipDownload(request, env, ticket) {
@@ -622,17 +731,27 @@ export async function shareZipDownload(request, env, ticket) {
   if (share.allowZip === false) return json({ error: "zip downloads are disabled for this share" }, 403);
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
 
-  const files = (payload.files || []).map((file) => ({
-    ...file,
-    name: sanitizeFilename(file.name || `${file.fileId}.bin`),
-    size: Math.max(0, Number(file.size) || 0),
-    stream: async () => driveMediaStream(env, file.fileId),
-  }));
+  const files = (payload.files || [])
+    .filter((file) => !publicDownloadSafety(file).blocked)
+    .map((file) => ({
+      ...file,
+      name: sanitizeFilename(file.name || `${file.fileId}.bin`),
+      size: Math.max(0, Number(file.size) || 0),
+      stream: async () => driveMediaStream(env, file.fileId),
+    }));
+  if (!files.length) {
+    return json(
+      { error: "This ZIP contains no files allowed by the public-download safety policy." },
+      451,
+      { "x-robots-tag": "noindex, nofollow, noarchive" }
+    );
+  }
   const headers = new Headers({
     "content-type": "application/zip",
     "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(payload.zipName || "share.zip")}`,
     "cache-control": "private, no-store",
     "x-content-type-options": "nosniff",
+    "x-robots-tag": "noindex, nofollow, noarchive",
   });
 
   const { readable, writable } = new TransformStream();
@@ -887,6 +1006,10 @@ export async function shareDownload(request, env, token, ctx) {
   const meta = await driveFileMeta(env, parsed.fileId);
   if (!meta?.id) return json({ error: "file not found" }, 404);
   const bytes = Number(meta.size) || 0;
+  const safety = publicDownloadSafety(meta);
+  if (!inline && safety.blocked) {
+    return json({ error: safety.reason }, 451, { "x-robots-tag": "noindex, nofollow, noarchive" });
+  }
   const tok = await accessToken(env);
 
   // First inline view of a cacheable file: always pull the FULL object from
@@ -951,6 +1074,7 @@ function shareMediaHeaders(meta, inline) {
     "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name || "file")}`,
     "cache-control": inline ? "public, max-age=86400" : "private, no-store",
     "x-content-type-options": "nosniff",
+    "x-robots-tag": "noindex, nofollow, noarchive",
     "accept-ranges": "bytes",
   });
 }

@@ -106,11 +106,19 @@ async function withMockedGoogleDrive(fn) {
       mimeType: "video/quicktime",
       modifiedTime: "2026-07-03T00:00:00.000Z",
     },
+    "file-exe": {
+      id: "file-exe",
+      name: "Setup.exe",
+      size: "8",
+      mimeType: "application/x-msdownload",
+      modifiedTime: "2026-07-04T00:00:00.000Z",
+    },
   };
   const mediaBytes = {
     "file-img": new TextEncoder().encode("IMG!"),
     "file-video": new TextEncoder().encode("VIDEO!"),
     "file-mov": new TextEncoder().encode("MOV!!"),
+    "file-exe": new TextEncoder().encode("EXE!!!!!"),
   };
 
   globalThis.fetch = async (input, init = {}) => {
@@ -174,7 +182,7 @@ async function withMockedGoogleDrive(fn) {
       calls.listPageSizes.push(url.searchParams.get("pageSize"));
       const pageToken = url.searchParams.get("pageToken") || "";
       const body = pageToken === "page-2"
-        ? { files: [files["file-mov"]] }
+        ? { files: [files["file-mov"], files["file-exe"]] }
         : { nextPageToken: "page-2", files: [files["file-img"], files["file-video"]] };
       return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
     }
@@ -566,11 +574,27 @@ async function main() {
     );
     assert.equal(res.status, 200, "share summary endpoint succeeds");
     const summary = await res.json();
-    assert.equal(summary.files, 3, "summary pages through all Drive files");
-    assert.equal(summary.bytes, 15, "summary totals bytes across Drive pages");
+    assert.equal(summary.files, 4, "summary pages through all Drive files");
+    assert.equal(summary.bytes, 23, "summary totals bytes across Drive pages");
     assert.equal(summary.images, 1, "summary counts images");
     assert.equal(summary.videos, 2, "summary counts videos");
     assert.ok(calls.listPageSizes.includes("1000"), "summary uses larger Drive page size");
+
+    res = await worker.fetch(
+      publicJsonRequest("/api/share/list", {
+        slug: "drive-share",
+        pin: "2468",
+        folderIndex: 0,
+        pageToken: listed.folders[0].nextPageToken,
+      }),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "second Drive page is listed");
+    const pageTwo = await res.json();
+    const blockedExe = pageTwo.folders[0].files.find((f) => f.name === "Setup.exe");
+    assert.equal(blockedExe.downloadBlocked, true, "risky executable is flagged in public share listings");
+    res = await worker.fetch(request(blockedExe.dl), driveEnv);
+    assert.equal(res.status, 451, "risky executable public download is blocked");
 
     const firstDl = listed.folders[0].files[0].dl;
     const originalNow = Date.now;
@@ -608,6 +632,32 @@ async function main() {
     assert.match(res.headers.get("content-disposition") || "", /Drive_Share\.zip/);
     const archive = new Uint8Array(await res.arrayBuffer());
     assert.equal(new TextDecoder().decode(archive.slice(0, 2)), "PK", "streamed zip starts with a ZIP header");
+
+    res = await worker.fetch(
+      publicJsonRequest("/api/share/zip-ticket", {
+        slug: "drive-share",
+        pin: "2468",
+        files: [
+          { dl: listed.folders[0].files[0].dl, name: listed.folders[0].files[0].name, size: listed.folders[0].files[0].size, mime: listed.folders[0].files[0].mime },
+          { dl: blockedExe.dl, name: blockedExe.name, size: blockedExe.size, mime: blockedExe.mime },
+        ],
+      }),
+      driveEnv
+    );
+    assert.equal(res.status, 200, "server zip ticket skips blocked source files when safe files remain");
+    const mixedTicket = await res.json();
+    assert.equal(mixedTicket.count, 1, "mixed zip ticket contains only safe files");
+    assert.equal(mixedTicket.blocked.length, 1, "mixed zip ticket reports skipped blocked files");
+
+    res = await worker.fetch(
+      publicJsonRequest("/api/share/zip-ticket", {
+        slug: "drive-share",
+        pin: "2468",
+        files: [{ dl: blockedExe.dl, name: blockedExe.name, size: blockedExe.size, mime: blockedExe.mime }],
+      }),
+      driveEnv
+    );
+    assert.equal(res.status, 451, "server zip ticket refuses all-blocked selections");
 
     const tampered = firstDl.replace(/.$/, firstDl.endsWith("A") ? "B" : "A");
     res = await worker.fetch(

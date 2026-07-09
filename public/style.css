@@ -1502,24 +1502,26 @@ body.has-fx-cursor .mobile-select-bar * { cursor: none !important; }
   background: var(--accent);
 }
 .fx-cur-ring {
-  width: 34px;
-  height: 34px;
-  margin: -17px 0 0 -17px;
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
   border-radius: 999px;
   border: 1.25px solid color-mix(in oklab, var(--accent) 70%, white);
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 18px -12px rgba(4, 12, 24, 0.38);
+  box-shadow: 0 8px 22px -16px rgba(4, 12, 24, 0.4);
+  transform: translateZ(0);
 }
 .fx-cur-ring span {
-  font: 800 8.5px var(--font-mono);
+  font: 900 9px var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
   color: #fff;
   opacity: 0;
   transition: opacity 160ms ease;
+  transform: translateZ(0);
 }
 .fx-cur-ring[data-state="photo"] span,
 .fx-cur-ring[data-state="video"] span,
@@ -1535,7 +1537,7 @@ body.has-fx-cursor .mobile-select-bar * { cursor: none !important; }
 }
 .fx-cur-ring[data-state="scrub"] {
   border-color: var(--accent);
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.92);
 }
 .fx-cur-ring[data-state="scrub"] span {
   opacity: 1;
@@ -1958,6 +1960,25 @@ body.selecting .g-check { opacity: 1; }
 }
 .g-card:hover .g-dl { opacity: 1; }
 .g-dl:hover { background: var(--accent); }
+.g-dl.blocked {
+  background: rgba(240, 85, 107, 0.72);
+  opacity: 1;
+}
+.g-card.download-blocked::before {
+  content: "blocked";
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 5;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(240, 85, 107, 0.88);
+  color: #fff;
+  font: 800 9px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
 
 /* Video hints */
 .g-play {
@@ -2012,6 +2033,17 @@ body.selecting .g-check { opacity: 1; }
   filter: blur(18px);
   transform: scale(1.06);
   opacity: 0.9;
+}
+.pswp-video-loading {
+  position: relative;
+  z-index: 1;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.82);
+  font: 700 11px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .pswp-video {
   position: relative;

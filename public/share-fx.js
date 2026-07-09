@@ -72,12 +72,12 @@
   let ringLabel = null;
   const STATES = {
     default: { scale: 1, label: "" },
-    photo: { scale: 1.42, label: "view" },
-    video: { scale: 1.42, label: "play" },
-    folder: { scale: 1.34, label: "open" },
-    link: { scale: 1.16, label: "" },
-    scrub: { scale: 1.55, label: "scrub" },
-    zoom: { scale: 1.62, label: "" },
+    photo: { scale: 1.04, label: "view" },
+    video: { scale: 1.04, label: "play" },
+    folder: { scale: 1.02, label: "open" },
+    link: { scale: 0.92, label: "" },
+    scrub: { scale: 1.08, label: "scrub" },
+    zoom: { scale: 1.08, label: "" },
   };
   let lastPointer = { x: 0, y: 0 };
 
@@ -139,8 +139,7 @@
     document.addEventListener(
       "pointerover",
       (e) => {
-        const el = e.target.closest?.("[data-cursor]");
-        setCursorState(el ? el.dataset.cursor : "default");
+        setCursorState(cursorStateForTarget(e.target));
       },
       { passive: true }
     );
@@ -167,9 +166,14 @@
   }
 
   function cursorStateForTarget(target) {
-    const el =
-      target?.closest?.("[data-cursor]") ||
-      document.elementFromPoint(lastPointer.x, lastPointer.y)?.closest?.("[data-cursor]");
+    const node = target || document.elementFromPoint(lastPointer.x, lastPointer.y);
+    if (node?.closest?.(".g-dl, .g-check, button, a, select, input, textarea")) {
+      return node.closest("[data-cursor]")?.dataset?.cursor || "link";
+    }
+    const card = node?.closest?.(".g-card");
+    if (card?.classList?.contains("video-card")) return "video";
+    if (card && !card.classList.contains("plain")) return "photo";
+    const el = node?.closest?.("[data-cursor]");
     return el?.dataset?.cursor || "default";
   }
 

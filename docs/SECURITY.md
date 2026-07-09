@@ -67,6 +67,10 @@ distributed guessing where every IP stays below its own limit.
   (signed with `SHARE_SIGNING_KEY`, falling back to a key derived from
   `ADMIN_TOKEN`). Redirect mode grants Drive `anyone` reader permissions that
   are revoked on pause, delete, and (lazily) on expiry.
+- Public share downloads block risky executable, installer, script, macro
+  document, disk image, and archive source files by Drive metadata before bytes
+  are streamed. Server ZIP tickets re-check Drive metadata and exclude the same
+  risky source files; all-blocked ZIP selections fail with `451`.
 - Client error reports (`/api/client-error`) are rate limited 5/min/IP.
 - Secrets live in Worker secrets or `.dev.vars`; both are excluded from GitHub.
 - `wrangler.jsonc` is local-only. `wrangler.example.jsonc` is the committed
