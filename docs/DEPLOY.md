@@ -23,7 +23,7 @@ Run the checks locally. Never deploy red.
 npm test            # smoke tests (worker logic, dedup, security headers)
 node --check public/drop.js
 node --check public/admin.js
-node --check src/index.js
+node --check src/worker.js
 ```
 
 All four must pass. `npm test` must print `smoke tests passed`.
@@ -63,7 +63,8 @@ What this uploads:
 
 - **Static assets** in `public/` (`drop.html`, `drop.js`, `admin.html`,
   `admin.js`, `style.css`) — Wrangler only re-uploads changed files.
-- **The Worker** `src/index.js` (control plane + `LiveTracker` Durable Object).
+- **The Worker** `src/worker.js` (control plane + `LiveTracker` Durable Object).
+- **The Worker** `src/worker.js` (control plane + `LiveTracker` Durable Object).
 
 A successful deploy prints `Deployed husky-drop triggers`, the custom domain
 `dropbox.losthusky.qzz.io`, and a new **Version ID**. Note that Version ID in
@@ -86,6 +87,8 @@ wrangler secret put GOOGLE_CLIENT_ID
 wrangler secret put GOOGLE_CLIENT_SECRET
 wrangler secret put GOOGLE_REFRESH_TOKEN
 wrangler secret put ADMIN_TOKEN
+# enables /admin Google sign-in; token login remains as fallback
+wrangler secret put ADMIN_EMAIL
 # optional email notifications
 wrangler secret put RESEND_API_KEY
 wrangler secret put NOTIFY_TO
@@ -93,6 +96,16 @@ wrangler secret put NOTIFY_FROM
 ```
 
 Secrets persist across deploys; you only re-run these when rotating a value.
+
+Optional non-secret analytics vars can live in `wrangler.jsonc` under `vars`:
+
+```jsonc
+"CF_BEACON_TOKEN": "cloudflare-web-analytics-token",
+"CLARITY_PROJECT_ID": "microsoft-clarity-project-id"
+```
+
+For admin Google sign-in, add this authorized redirect URI in Google Cloud:
+`https://dropbox.losthusky.qzz.io/api/admin/auth/callback`.
 
 ---
 

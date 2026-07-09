@@ -463,6 +463,9 @@ async function main() {
   res = await worker.fetch(request("/api/admin/overview", { headers: { cookie: cookieValue } }), env);
   assert.equal(res.status, 200, "cookie session authorizes admin APIs");
 
+  res = await worker.fetch(request("/api/admin/auth/login"), env);
+  assert.equal(res.status, 503, "admin Google sign-in is unavailable until configured");
+
   res = await worker.fetch(request("/api/admin/overview", { headers: { authorization: "Bearer test-admin" } }), env);
   assert.equal(res.status, 200, "bearer token still works for scripts");
   const overview = await res.json();
@@ -555,6 +558,27 @@ async function main() {
   );
   assert.equal(res.status, 200, "correct share PIN accepted");
 
+  res = await worker.fetch(
+    publicJsonRequest("/api/share/track", {
+      slug: "kareri-album",
+      sessionId: "share-session-1",
+      events: [
+        { t: "view", name: "IMG_001.jpg" },
+        { t: "nav", name: "Day 1" },
+        { t: "view", name: "IMG_002.jpg" },
+        { t: "download", name: "IMG_002.jpg" },
+      ],
+    }),
+    env
+  );
+  assert.equal(res.status, 200, "share tracking batch succeeds");
+  const tracked = (await env.KV.get("events:recent", "json")).filter((e) => e.si === "share-session-1");
+  assert.equal(tracked.length, 2, "share tracking collapses view/nav events but keeps download event");
+  const browseRow = tracked.find((e) => e.t === "share-browse");
+  assert.ok(browseRow, "share tracking writes one browse rollup row");
+  assert.equal(browseRow.m, "viewed 2 file(s), browsed 1 folder(s)");
+  assert.ok(tracked.some((e) => e.t === "share-dl"), "share tracking keeps high-value download event");
+
   res = await worker.fetch(request("/api/share/dl/garbage-token"), env);
   assert.equal(res.status, 403, "invalid download token rejected");
 
@@ -563,7 +587,45 @@ async function main() {
       GOOGLE_CLIENT_ID: "google-client",
       GOOGLE_CLIENT_SECRET: "google-secret",
       GOOGLE_REFRESH_TOKEN: "google-refresh",
+      ADMIN_EMAIL: "viewer@example.com",
     });
+
+    res = await worker.fetch(request("/api/admin/auth/login"), driveEnv);
+    assert.equal(res.status, 302, "configured admin Google sign-in redirects to Google");
+    let authorizeUrl = new URL(res.headers.get("location"));
+    assert.equal(authorizeUrl.hostname, "accounts.google.com");
+    assert.equal(authorizeUrl.searchParams.get("redirect_uri"), "https://drop.test/api/admin/auth/callback");
+    const adminState = authorizeUrl.searchParams.get("state");
+    assert.ok(adminState, "admin auth redirect includes a signed state token");
+
+    res = await worker.fetch(
+      request(`/api/admin/auth/callback?code=fake-code&state=${encodeURIComponent(adminState)}`),
+      driveEnv
+    );
+    assert.equal(res.status, 302, "allowed admin Google account returns to the dashboard");
+    assert.equal(res.headers.get("location"), "/admin");
+    const adminCookie = (res.headers.get("set-cookie") || "").split(";")[0];
+    assert.match(adminCookie, /^hd_admin=/, "admin OAuth callback sets the admin cookie");
+    res = await worker.fetch(request("/api/admin/overview", { headers: { cookie: adminCookie } }), driveEnv);
+    assert.equal(res.status, 200, "admin OAuth cookie authorizes admin APIs");
+
+    const wrongAdminEnv = makeEnv({
+      GOOGLE_CLIENT_ID: "google-client",
+      GOOGLE_CLIENT_SECRET: "google-secret",
+      GOOGLE_REFRESH_TOKEN: "google-refresh",
+      ADMIN_EMAIL: "owner@example.com",
+    });
+    res = await worker.fetch(request("/api/admin/auth/login"), wrongAdminEnv);
+    authorizeUrl = new URL(res.headers.get("location"));
+    const wrongAdminState = authorizeUrl.searchParams.get("state");
+    res = await worker.fetch(
+      request(`/api/admin/auth/callback?code=fake-code&state=${encodeURIComponent(wrongAdminState)}`),
+      wrongAdminEnv
+    );
+    assert.equal(res.status, 302, "wrong admin Google account is redirected back");
+    assert.match(res.headers.get("location") || "", /adminSigninError=/);
+    assert.equal(res.headers.get("set-cookie"), null, "wrong admin Google account does not receive an admin cookie");
+
     res = await worker.fetch(
       jsonRequest("/api/admin/shares", {
         label: "Drive Share",
@@ -722,7 +784,7 @@ async function main() {
 
     res = await worker.fetch(request("/api/auth/login?slug=gated-share"), driveEnv);
     assert.equal(res.status, 302, "login redirects to Google");
-    const authorizeUrl = new URL(res.headers.get("location"));
+    authorizeUrl = new URL(res.headers.get("location"));
     assert.equal(authorizeUrl.hostname, "accounts.google.com");
     const state = authorizeUrl.searchParams.get("state");
     assert.ok(state, "login redirect includes a signed state token");
@@ -782,9 +844,11 @@ async function main() {
   assert.equal(res.headers.get("x-content-type-options"), "nosniff");
   assert.match(res.headers.get("content-security-policy") || "", /connect-src[^;]*googleapis\.com/);
   assert.match(res.headers.get("content-security-policy") || "", /cloudflareinsights\.com/);
+  assert.match(res.headers.get("content-security-policy") || "", /clarity\.ms/);
   assert.match(res.headers.get("permissions-policy") || "", /camera=\(\)/);
   let body = await res.text();
   assert.ok(!body.includes("cloudflareinsights"), "no beacon without a token");
+  assert.ok(!body.includes("clarity.ms/tag"), "no Clarity script without a project id");
 
   const beaconEnv = makeEnv({ CF_BEACON_TOKEN: "beacon-token-123" });
   res = await worker.fetch(request("/"), beaconEnv);
@@ -793,6 +857,11 @@ async function main() {
     body.includes("static.cloudflareinsights.com/beacon.min.js") && body.includes("beacon-token-123"),
     "beacon script injected when CF_BEACON_TOKEN is set"
   );
+
+  const clarityEnv = makeEnv({ CLARITY_PROJECT_ID: "xjtpz5cm04" });
+  res = await worker.fetch(request("/"), clarityEnv);
+  body = await res.text();
+  assert.ok(body.includes("https://www.clarity.ms/tag/") && body.includes("xjtpz5cm04"), "Clarity script injected when CLARITY_PROJECT_ID is set");
 
   // Unauthorized admin access still blocked.
   res = await worker.fetch(request("/api/admin/overview"), env);

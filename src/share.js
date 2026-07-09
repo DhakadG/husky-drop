@@ -26,13 +26,7 @@ import {
   slugify,
   timingSafeEqual,
 } from "./util.js";
-import {
-  driveFileMeta,
-  driveGrantAnyoneReader,
-  driveListFolder,
-  driveRevokePermission,
-  accessToken,
-} from "./drive.js";
+import { driveFileMeta, driveGrantAnyoneReader, driveListFolder, driveRevokePermission, accessToken } from "./drive.js";
 import { bumpShareStats, gatePin, liveStub, logEvent, mergeEventsKV } from "./store.js";
 import { getViewer } from "./auth.js";
 
@@ -337,10 +331,7 @@ export async function logShareOpened(request, env) {
   const share = await env.KV.get(`share:${slug}`, "json");
   if (!share) return json({ error: "share not found" }, 404);
   const viewer = await getViewer(request, env);
-  const record = normalizeEvent(
-    { type: "share-open", slug, label: share.label, uploader: viewer?.email || "" },
-    request
-  );
+  const record = normalizeEvent({ type: "share-open", slug, label: share.label, uploader: viewer?.email || "" }, request);
   if (env.LIVE_TRACKER) {
     await liveStub(env)
       .fetch("https://live.internal/share-stat", {
@@ -367,20 +358,47 @@ export async function shareTrack(request, env) {
   if (!share) return json({ error: "share not found" }, 404);
   const viewer = await getViewer(request, env);
   const events = Array.isArray(b.events) ? b.events.slice(0, 40) : [];
+  const sessionId = cleanText(b.sessionId || "", 40);
   if (!events.length) return json({ ok: true });
-  const records = events.map((e) =>
-    normalizeEvent(
-      {
-        type: "share-view",
-        slug,
-        label: share.label,
-        uploader: viewer?.email || "anonymous",
-        file: cleanText(e.name || "", 160),
-        message: cleanText(e.t || "view", 40),
-      },
-      request
-    )
-  );
+  const navEvents = events.filter((e) => e?.t === "nav");
+  const viewEvents = events.filter((e) => e?.t === "view");
+  const otherEvents = events.filter((e) => e?.t !== "nav" && e?.t !== "view");
+  const records = [];
+  if (navEvents.length || viewEvents.length) {
+    const last = viewEvents[viewEvents.length - 1] || navEvents[navEvents.length - 1] || {};
+    records.push(
+      normalizeEvent(
+        {
+          type: "share-browse",
+          slug,
+          label: share.label,
+          uploader: viewer?.email || "anonymous",
+          file: cleanText(last.name || "", 160),
+          message: `viewed ${viewEvents.length} file(s), browsed ${navEvents.length} folder(s)`,
+          sessionId,
+        },
+        request,
+      ),
+    );
+  }
+  for (const e of otherEvents) {
+    const rawType = cleanText(e?.t || "event", 20);
+    records.push(
+      normalizeEvent(
+        {
+          type: rawType === "download" || rawType === "dl" ? "share-dl" : rawType.startsWith("share-") ? rawType : `share-${rawType}`,
+          slug,
+          label: share.label,
+          uploader: viewer?.email || "anonymous",
+          file: cleanText(e?.name || "", 160),
+          message: rawType,
+          sessionId,
+        },
+        request,
+      ),
+    );
+  }
+  if (!records.length) return json({ ok: true });
   if (env.LIVE_TRACKER) {
     await Promise.all(
       records.map((record) =>
@@ -390,8 +408,8 @@ export async function shareTrack(request, env) {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ record }),
           })
-          .catch(() => {})
-      )
+          .catch(() => {}),
+      ),
     );
   } else {
     await mergeEventsKV(env, records);
@@ -635,7 +653,10 @@ function downloadTokenFrom(value) {
 }
 
 function fileExtension(name = "") {
-  const clean = String(name || "").split(/[?#]/)[0].trim().toLowerCase();
+  const clean = String(name || "")
+    .split(/[?#]/)[0]
+    .trim()
+    .toLowerCase();
   const leaf = clean.split(/[\\/]/).pop() || "";
   const dot = leaf.lastIndexOf(".");
   return dot > 0 && dot < leaf.length - 1 ? leaf.slice(dot + 1) : "";
@@ -711,21 +732,13 @@ export async function createShareZipTicket(request, env) {
     });
   }
   if (!files.length && blocked.length) {
-    return json(
-      { error: "All selected files are blocked by the public-download safety policy.", blocked },
-      451,
-      { "x-robots-tag": "noindex, nofollow, noarchive" }
-    );
+    return json({ error: "All selected files are blocked by the public-download safety policy.", blocked }, 451, { "x-robots-tag": "noindex, nofollow, noarchive" });
   }
 
   const ticket = b64url(crypto.getRandomValues(new Uint8Array(18)));
   const expiresAt = Date.now() + SHARE_ZIP_TICKET_TTL * 1000;
   const zipName = sanitizeFilename(`${share.label.replace(/[^\w-]+/g, "_") || "share"}.zip`);
-  await env.KV.put(
-    `sharezip:${ticket}`,
-    JSON.stringify({ slug: share.slug, label: share.label, zipName, files, expiresAt }),
-    { expirationTtl: SHARE_ZIP_TICKET_TTL }
-  );
+  await env.KV.put(`sharezip:${ticket}`, JSON.stringify({ slug: share.slug, label: share.label, zipName, files, expiresAt }), { expirationTtl: SHARE_ZIP_TICKET_TTL });
   return json({ ticket, url: `/api/share/zip/${ticket}`, expiresAt, count: files.length, blocked });
 }
 
@@ -751,11 +764,7 @@ export async function shareZipDownload(request, env, ticket) {
       stream: async () => driveMediaStream(env, file.fileId),
     }));
   if (!files.length) {
-    return json(
-      { error: "This ZIP contains no files allowed by the public-download safety policy." },
-      451,
-      { "x-robots-tag": "noindex, nofollow, noarchive" }
-    );
+    return json({ error: "This ZIP contains no files allowed by the public-download safety policy." }, 451, { "x-robots-tag": "noindex, nofollow, noarchive" });
   }
   const headers = new Headers({
     "content-type": "application/zip",
@@ -775,10 +784,7 @@ export async function shareZipDownload(request, env, ticket) {
 
 async function driveMediaStream(env, fileId) {
   const tok = await accessToken(env);
-  const r = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
-    { headers: { authorization: `Bearer ${tok}` } }
-  );
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`, { headers: { authorization: `Bearer ${tok}` } });
   if (!r.ok || !r.body) throw new Error("Drive download failed");
   return r.body;
 }
@@ -886,9 +892,7 @@ async function zipStoreStream(files, write) {
     offset += size;
 
     const zip64 = localZip64 || size > ZIP32_MAX || lfhOffset > ZIP32_MAX;
-    const descriptor = zip64
-      ? concatBytes([u32(0x08074b50), u32(crc), u64(size), u64(size)])
-      : concatBytes([u32(0x08074b50), u32(crc), u32(Number(size)), u32(Number(size))]);
+    const descriptor = zip64 ? concatBytes([u32(0x08074b50), u32(crc), u64(size), u64(size)]) : concatBytes([u32(0x08074b50), u32(crc), u32(Number(size)), u32(Number(size))]);
     await write(descriptor);
     offset += BigInt(descriptor.length);
 
@@ -931,18 +935,7 @@ async function zipStoreStream(files, write) {
   const needsZip64 = central.length >= 0xffff || cdSize > ZIP32_MAX || cdStart > ZIP32_MAX;
   if (needsZip64) {
     const zip64EocdStart = offset;
-    const zip64Eocd = concatBytes([
-      u32(0x06064b50),
-      u64(44n),
-      u16(45),
-      u16(45),
-      u32(0),
-      u32(0),
-      u64(BigInt(central.length)),
-      u64(BigInt(central.length)),
-      u64(cdSize),
-      u64(cdStart),
-    ]);
+    const zip64Eocd = concatBytes([u32(0x06064b50), u64(44n), u16(45), u16(45), u32(0), u32(0), u64(BigInt(central.length)), u64(BigInt(central.length)), u64(cdSize), u64(cdStart)]);
     await write(zip64Eocd);
     offset += BigInt(zip64Eocd.length);
     const locator = concatBytes([u32(0x07064b50), u32(0), u64(zip64EocdStart), u32(1)]);
@@ -1000,9 +993,7 @@ export async function shareDownload(request, env, token, ctx) {
   const inline = new URL(request.url).searchParams.has("inline");
   const range = request.headers.get("range") || "";
   const cache = inline ? caches.default : null;
-  const cacheKey = inline
-    ? new Request(`https://media.internal.share/f/${parsed.fileId}`, { headers: range ? { range } : {} })
-    : null;
+  const cacheKey = inline ? new Request(`https://media.internal.share/f/${parsed.fileId}`, { headers: range ? { range } : {} }) : null;
 
   if (cache) {
     const hit = await cache.match(cacheKey);
@@ -1027,10 +1018,7 @@ export async function shareDownload(request, env, token, ctx) {
   // Drive (ignoring any small probe Range the browser sent) so the edge
   // cache holds a complete, seekable copy from here on.
   if (cache && bytes && bytes <= EDGE_CACHEABLE_BYTES) {
-    const full = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`,
-      { headers: { authorization: `Bearer ${tok}` } }
-    );
+    const full = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`, { headers: { authorization: `Bearer ${tok}` } });
     if (!full.ok || !full.body) return json({ error: "Drive download failed" }, 502);
     const headers = shareMediaHeaders(meta, true);
     headers.set("content-length", String(bytes));
@@ -1057,10 +1045,7 @@ export async function shareDownload(request, env, token, ctx) {
 
   const driveHeaders = { authorization: `Bearer ${tok}` };
   if (range) driveHeaders.range = range;
-  const r = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`,
-    { headers: driveHeaders }
-  );
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`, { headers: driveHeaders });
   if (!(r.status === 200 || r.status === 206) || !r.body) {
     return json({ error: "Drive download failed" }, 502);
   }
@@ -1097,10 +1082,7 @@ function cacheHitName(response) {
 }
 
 async function bumpDownloadStats(env, share, request, fileName, bytes, viewer) {
-  const record = normalizeEvent(
-    { type: "share-dl", slug: share.slug, label: share.label, file: fileName, bytes, uploader: viewer?.email || "" },
-    request
-  );
+  const record = normalizeEvent({ type: "share-dl", slug: share.slug, label: share.label, file: fileName, bytes, uploader: viewer?.email || "" }, request);
   if (env.LIVE_TRACKER) {
     liveStub(env)
       .fetch("https://live.internal/share-stat", {

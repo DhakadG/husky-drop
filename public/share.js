@@ -54,16 +54,19 @@ const cardObserver =
             }
           }
         },
-        { rootMargin: "700px" }
+        { rootMargin: "700px" },
       )
     : null;
 const moreObserver =
   "IntersectionObserver" in window
-    ? new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder);
-        }
-      }, { rootMargin: "700px" })
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder);
+          }
+        },
+        { rootMargin: "700px" },
+      )
     : null;
 
 init();
@@ -295,9 +298,7 @@ async function resolveListing(entry) {
     const parent = crumbs[crumbs.length - 2] || crumbs[0];
     const parentListing = await fetchListing(parent.token);
     listingCache.set(parent.fid, { d: parentListing, token: parent.token, at: Date.now() });
-    const fresh = (parentListing.folders || [])
-      .flatMap((f) => f.subfolders || [])
-      .find((s) => s.fid === entry.fid);
+    const fresh = (parentListing.folders || []).flatMap((f) => f.subfolders || []).find((s) => s.fid === entry.fid);
     if (!fresh) throw err;
     entry.token = fresh.ls;
     const d = await fetchListing(fresh.ls);
@@ -321,7 +322,10 @@ async function navigate(entry, { push = true, fromHistory = false } = {}) {
       else crumbs.push({ fid, name: entry.name, token: entry.token });
     }
     if (!fromHistory) {
-      const path = crumbs.map((c) => c.fid).filter(Boolean).join("/");
+      const path = crumbs
+        .map((c) => c.fid)
+        .filter(Boolean)
+        .join("/");
       history.pushState({ fid }, "", path ? `#${path}` : location.pathname);
     }
     listFetchedAt = Date.now();
@@ -426,9 +430,7 @@ function render() {
       section.appendChild(head);
     }
     // Folders always render before files within a listing.
-    const subs = [...(folder.subfolders || [])].sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { numeric: true })
-    );
+    const subs = [...(folder.subfolders || [])].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     if (subs.length) {
       const row = document.createElement("div");
       row.className = "folder-row";
@@ -494,11 +496,8 @@ function updateLoadMoreCopy(button, folder, state = "") {
   const next = Math.min(200, remaining || 200);
   button.classList.toggle("loading", state === "loading");
   button.classList.toggle("error", state === "error");
-  button.querySelector(".load-more-main").textContent =
-    state === "loading" ? "Loading more files..." : state === "error" ? "Could not load. Try again" : `Load next ${next}`;
-  button.querySelector(".load-more-sub").textContent = total
-    ? `${loaded} of ${total} shown`
-    : `${loaded} shown - counting total`;
+  button.querySelector(".load-more-main").textContent = state === "loading" ? "Loading more files..." : state === "error" ? "Could not load. Try again" : `Load next ${next}`;
+  button.querySelector(".load-more-sub").textContent = total ? `${loaded} of ${total} shown` : `${loaded} shown - counting total`;
 }
 
 async function loadMore(folder, button) {
@@ -604,9 +603,7 @@ function card(file) {
   fig.className = `g-card${media ? "" : " plain"}${isVideo ? " video-card" : ""}${blocked ? " download-blocked" : ""}`;
   fig.dataset.cursor = isVideo ? "video" : media ? "photo" : "";
   const dur = file.dur ? `<span class="g-dur">${fmtDur(file.dur)}</span>` : "";
-  const play = isVideo
-    ? `<span class="g-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></span>`
-    : "";
+  const play = isVideo ? `<span class="g-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></span>` : "";
   fig.innerHTML = `
     <button class="g-check" type="button" aria-label="select ${escAttr(file.name)}" data-cursor="link">
       <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
@@ -865,7 +862,7 @@ function installHoverPreview(fig, file) {
         if (beginScrub()) scrubTo(touchStart.x);
       }, 420);
     },
-    { passive: true }
+    { passive: true },
   );
 
   fig.addEventListener(
@@ -883,7 +880,7 @@ function installHoverPreview(fig, file) {
       e.preventDefault();
       scrubTo(e.clientX);
     },
-    { passive: false }
+    { passive: false },
   );
 
   const finishTouch = (e) => {
@@ -908,7 +905,7 @@ function installHoverPreview(fig, file) {
       e.preventDefault();
       e.stopPropagation();
     },
-    true
+    true,
   );
 }
 
@@ -1370,10 +1367,7 @@ function registerUi(instance) {
     if (panel) return closePanel();
     panel = document.createElement("div");
     panel.className = "pswp-shortcuts";
-    panel.innerHTML =
-      `<b>Shortcuts</b><ul>` +
-      SHORTCUTS.map(([key, desc]) => `<li><span>${key}</span>${esc(desc)}</li>`).join("") +
-      `</ul>`;
+    panel.innerHTML = `<b>Shortcuts</b><ul>` + SHORTCUTS.map(([key, desc]) => `<li><span>${key}</span>${esc(desc)}</li>`).join("") + `</ul>`;
     instance.element.appendChild(panel);
   };
 
@@ -1435,6 +1429,7 @@ function updateCaption(file) {
 function mountBottomBar(instance) {
   const bar = document.createElement("div");
   bar.className = "pswp-bottom-bar";
+  bar.addEventListener("wheel", (e) => e.stopPropagation(), { capture: true, passive: true });
   captionEl = document.createElement("div");
   captionEl.className = "pswp-caption";
   bar.appendChild(captionEl);
@@ -1454,11 +1449,7 @@ function mountStrip(instance, bar) {
   strip = new Swiper(host, {
     slidesPerView: "auto",
     spaceBetween: 6,
-    // No freeMode: drag/swipe still works natively either way (that part of
-    // Swiper is always on), but without it a release always snaps cleanly
-    // to the nearest slide - fewer edge cases with centeredSlides than
-    // freeMode's own momentum/snap-grid logic, which is what was making
-    // slideTo() an unreliable way to follow the active image/video.
+    freeMode: { enabled: true, sticky: false, momentumRatio: 0.7, momentumBounce: false },
     grabCursor: true,
     simulateTouch: true,
     slideToClickedSlide: true,
@@ -1505,10 +1496,7 @@ function stripSlide(f, i) {
     el.appendChild(span);
   }
   if (isVideo) {
-    el.insertAdjacentHTML(
-      "beforeend",
-      `<i class="strip-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></i>`
-    );
+    el.insertAdjacentHTML("beforeend", `<i class="strip-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></i>`);
   }
   return el;
 }
@@ -1522,12 +1510,25 @@ function syncStripActive() {
 
 function syncStrip(index) {
   if (!strip) return;
-  // Force Swiper to recompute slide/snap metrics before centering - cheap,
-  // and a defensive guard against slideTo() silently targeting a stale
-  // layout (e.g. right after the bottom bar's own size settles).
   strip.update();
-  strip.slideTo(index, 220);
+  strip.slideTo(index, 220, false);
+  requestAnimationFrame(() => centerStripSlide(index));
   syncStripActive();
+}
+
+function centerStripSlide(index) {
+  if (!strip || strip.destroyed) return;
+  const slide = strip.slides?.[index];
+  const host = strip.el;
+  const wrapper = strip.wrapperEl;
+  if (!slide || !host || !wrapper || !host.clientWidth) return;
+  const max = Math.max(0, wrapper.scrollWidth - host.clientWidth);
+  const target = Math.max(0, Math.min(max, slide.offsetLeft - host.clientWidth / 2 + slide.clientWidth / 2));
+  strip.setTransition(220);
+  strip.setTranslate(-target);
+  strip.updateProgress(-target);
+  strip.updateActiveIndex(index);
+  strip.updateSlidesClasses();
 }
 
 function destroyStrip() {
@@ -1730,6 +1731,8 @@ function dedupeName(f) {
 // click - lets the owner see who browsed what and where load is slow.
 
 const trackQueue = [];
+const trackSessionId =
+  window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function trackEvent(t, name) {
   trackQueue.push({ t, name: String(name || "").slice(0, 160) });
@@ -1739,7 +1742,7 @@ function trackEvent(t, name) {
 function flushTrack(useBeacon = false) {
   if (!trackQueue.length) return;
   const events = trackQueue.splice(0, trackQueue.length);
-  const payload = JSON.stringify({ slug, events });
+  const payload = JSON.stringify({ slug, sessionId: trackSessionId, events });
   if (useBeacon && navigator.sendBeacon) {
     navigator.sendBeacon("/api/share/track", new Blob([payload], { type: "application/json" }));
     return;
@@ -1808,13 +1811,17 @@ function fmtDur(ms) {
 }
 
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[c]);
+  return String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
+  );
 }
 
 function escAttr(s) {

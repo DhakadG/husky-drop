@@ -11,7 +11,7 @@
 // verification review, and viewer identity is used solely so the owner can
 // see who viewed/downloaded what in their own admin dashboard.
 
-import { b64url, b64urlDecode, cleanText, json, safeUrl, timingSafeEqual } from "./util.js";
+import { ADMIN_SESSION_TTL, b64url, b64urlDecode, cleanText, json, safeUrl, timingSafeEqual } from "./util.js";
 
 const VIEWER_COOKIE = "hd_viewer";
 const VIEWER_TTL = 30 * 86400; // seconds a signed-in viewer session lives
@@ -139,6 +139,104 @@ export function authLogout() {
     200,
     { "set-cookie": `${VIEWER_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax` }
   );
+}
+
+// ---- Admin session + Google OAuth ----
+
+async function adminSessionKey(env) {
+  const seed = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${env.ADMIN_TOKEN}:hd-admin-session-v1`));
+  return crypto.subtle.importKey("raw", seed, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+
+export async function mintAdminSession(env) {
+  const exp = Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL;
+  const key = await adminSessionKey(env);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(exp)));
+  return `${exp}.${b64url(new Uint8Array(mac))}`;
+}
+
+export async function verifyAdminSession(env, value) {
+  const dot = String(value || "").indexOf(".");
+  if (dot < 1) return false;
+  const exp = Number(value.slice(0, dot));
+  if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return false;
+  const key = await adminSessionKey(env);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(exp)));
+  return timingSafeEqual(value.slice(dot + 1), b64url(new Uint8Array(mac)));
+}
+
+export function adminAuthLogin(request, env, url) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.ADMIN_EMAIL) {
+    return json({ error: "Admin Google sign-in is not configured" }, 503);
+  }
+  return signPayload(env, { purpose: "admin", exp: Math.floor(Date.now() / 1000) + STATE_TTL }).then((state) => {
+    const p = new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      redirect_uri: `${url.origin}/api/admin/auth/callback`,
+      response_type: "code",
+      scope: "openid email profile",
+      prompt: "select_account",
+      access_type: "online",
+      state,
+    });
+    return Response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`, 302);
+  });
+}
+
+export async function adminAuthCallback(request, env, url) {
+  const stateToken = url.searchParams.get("state") || "";
+  const code = url.searchParams.get("code") || "";
+  const stateData = await verifyPayload(env, stateToken);
+  if (!stateData || stateData.purpose !== "admin" || stateData.exp < Math.floor(Date.now() / 1000)) {
+    return redirectAdminWithError(url, "sign-in expired, please try again");
+  }
+  if (!code) return redirectAdminWithError(url, "sign-in was cancelled");
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.ADMIN_EMAIL) {
+    return redirectAdminWithError(url, "admin sign-in is not configured");
+  }
+
+  try {
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: `${url.origin}/api/admin/auth/callback`,
+        grant_type: "authorization_code",
+      }),
+    });
+    if (!tokenRes.ok) return redirectAdminWithError(url, "Google sign-in failed");
+    const tokenData = await tokenRes.json();
+    if (!tokenData.id_token) return redirectAdminWithError(url, "Google sign-in failed");
+
+    const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokenData.id_token)}`);
+    if (!infoRes.ok) return redirectAdminWithError(url, "Google sign-in failed");
+    const info = await infoRes.json();
+    const email = cleanText(info.email || "", 160).toLowerCase();
+    const allowed = String(env.ADMIN_EMAIL || "").trim().toLowerCase();
+    if (info.aud !== env.GOOGLE_CLIENT_ID || !email || email !== allowed) {
+      return redirectAdminWithError(url, "unauthorized Google account");
+    }
+
+    const session = await mintAdminSession(env);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: "/admin",
+        "set-cookie": `hd_admin=${session}; Path=/; Max-Age=${ADMIN_SESSION_TTL}; HttpOnly; Secure; SameSite=Strict`,
+      },
+    });
+  } catch (err) {
+    console.error("admin auth callback failed", err.message);
+    return redirectAdminWithError(url, "sign-in failed, please try again");
+  }
+}
+
+function redirectAdminWithError(url, message) {
+  const q = new URLSearchParams({ adminSigninError: message });
+  return Response.redirect(`${url.origin}/admin?${q.toString()}`, 302);
 }
 
 // Resolves the signed-in viewer (if any) from the request cookie. Returns

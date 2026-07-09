@@ -18,10 +18,10 @@ export const PBKDF2_ITERATIONS = 100000;
 export const SECURITY_HEADERS = {
   "content-security-policy": [
     "default-src 'self'",
-    "script-src 'self' https://static.cloudflareinsights.com",
+    "script-src 'self' https://static.cloudflareinsights.com https://www.clarity.ms",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com",
-    "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://api.resend.com https://cloudflareinsights.com",
+    "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://api.resend.com https://cloudflareinsights.com https://www.clarity.ms https://c.clarity.ms",
     "img-src 'self' data: https:",
     "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
     "base-uri 'none'",
@@ -118,13 +118,17 @@ export function driveQueryEscape(value) {
 }
 
 export function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[c]);
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
+  );
 }
 
 export function fmtBytesServer(b) {
@@ -157,9 +161,7 @@ export function randomSlug(n = 8) {
 }
 
 export function randomHex(n = 16) {
-  return [...crypto.getRandomValues(new Uint8Array(n))]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return [...crypto.getRandomValues(new Uint8Array(n))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export async function sha256(text) {
@@ -201,18 +203,8 @@ export function hexToBytes(hex) {
 // with salted (or unsalted) single SHA-256 still verify and are transparently
 // re-hashed to PBKDF2 on the next successful entry (see gatePin in store.js).
 export async function pinHashPbkdf2(pin, saltHex) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(String(pin)),
-    "PBKDF2",
-    false,
-    ["deriveBits"]
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt: hexToBytes(saltHex), iterations: PBKDF2_ITERATIONS },
-    key,
-    256
-  );
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(pin)), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: hexToBytes(saltHex), iterations: PBKDF2_ITERATIONS }, key, 256);
   return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -249,11 +241,7 @@ export function shareState(share) {
 }
 
 export function clientIp(request) {
-  return (
-    request?.headers?.get("cf-connecting-ip") ||
-    request?.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    "0.0.0.0"
-  );
+  return request?.headers?.get("cf-connecting-ip") || request?.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
 }
 
 export function extractClientInfo(request) {
@@ -261,11 +249,22 @@ export function extractClientInfo(request) {
   const ua = request.headers.get("user-agent") || "";
   let os = "Unknown";
   let icon = "monitor";
-  if (/android/i.test(ua)) { os = "Android"; icon = "smartphone"; }
-  else if (/iphone|ipad|ipod/i.test(ua)) { os = "iOS"; icon = "smartphone"; }
-  else if (/mac os x/i.test(ua)) { os = "macOS"; icon = "laptop"; }
-  else if (/windows/i.test(ua)) { os = "Windows"; icon = "monitor"; }
-  else if (/linux/i.test(ua)) { os = "Linux"; icon = "terminal"; }
+  if (/android/i.test(ua)) {
+    os = "Android";
+    icon = "smartphone";
+  } else if (/iphone|ipad|ipod/i.test(ua)) {
+    os = "iOS";
+    icon = "smartphone";
+  } else if (/mac os x/i.test(ua)) {
+    os = "macOS";
+    icon = "laptop";
+  } else if (/windows/i.test(ua)) {
+    os = "Windows";
+    icon = "monitor";
+  } else if (/linux/i.test(ua)) {
+    os = "Linux";
+    icon = "terminal";
+  }
 
   const cf = request.cf || {};
   let loc = "";
@@ -285,6 +284,7 @@ export function normalizeEvent(event, request) {
     f: cleanText(event.file || "", 160),
     b: Number(event.bytes) || 0,
     m: cleanText(event.message || "", 160),
+    si: cleanText(event.sessionId || "", 40),
     c: extractClientInfo(request),
   };
 }

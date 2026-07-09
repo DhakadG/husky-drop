@@ -16,7 +16,6 @@ import {
   MAX_EXPIRY_DAYS,
   QUOTA_RESERVE,
   SECURITY_HEADERS,
-  b64url,
   clamp,
   cleanText,
   clientIp,
@@ -36,29 +35,8 @@ import {
   slugify,
   timingSafeEqual,
 } from "./util.js";
-import {
-  accessToken,
-  driveFileMeta,
-  driveQuota,
-  ensureLinkFolderDirect,
-  quotaFree,
-  resolvePathFolderDirect,
-  resolveUploaderFolderDirect,
-} from "./drive.js";
-import {
-  bumpStats,
-  gatePin,
-  getUploads,
-  liveProgress,
-  liveSnapshot,
-  liveStub,
-  logEvent,
-  mergeEventsKV,
-  rateLimitRemote,
-  recentEvents,
-  recordCompletion,
-  sendNotify,
-} from "./store.js";
+import { accessToken, driveFileMeta, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
+import { bumpStats, gatePin, getUploads, liveProgress, liveSnapshot, liveStub, logEvent, mergeEventsKV, rateLimitRemote, recentEvents, recordCompletion, sendNotify } from "./store.js";
 import {
   adminShare,
   createShareZipTicket,
@@ -78,7 +56,7 @@ import {
   shareZipDownload,
   verifySharePin,
 } from "./share.js";
-import { authCallback, authLogin, authLogout } from "./auth.js";
+import { adminAuthCallback, adminAuthLogin, authCallback, authLogin, authLogout, mintAdminSession, verifyAdminSession } from "./auth.js";
 
 export { LiveTracker } from "./live.js";
 
@@ -105,12 +83,19 @@ export default {
 async function servePage(env, url, assetPath) {
   const res = await env.ASSETS.fetch(new Request(url.origin + assetPath));
   const type = res.headers.get("content-type") || "";
-  if (env.CF_BEACON_TOKEN && type.includes("text/html")) {
-    // Inject the Cloudflare Web Analytics beacon only when a token is
-    // configured, keeping pages dependency-free otherwise.
+  if (type.includes("text/html") && (env.CF_BEACON_TOKEN || env.CLARITY_PROJECT_ID)) {
     let html = await res.text();
-    const beacon = `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"${escapeHtml(env.CF_BEACON_TOKEN)}"}'></script>`;
-    html = html.includes("</body>") ? html.replace("</body>", `${beacon}</body>`) : html + beacon;
+    const scripts = [];
+    if (env.CF_BEACON_TOKEN) {
+      // Inject the Cloudflare Web Analytics beacon only when a token is
+      // configured, keeping pages dependency-free otherwise.
+      scripts.push(`<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"${escapeHtml(env.CF_BEACON_TOKEN)}"}'></script>`);
+    }
+    if (env.CLARITY_PROJECT_ID) {
+      scripts.push(`<script>(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y)})(window,document,"clarity","script","${escapeHtml(env.CLARITY_PROJECT_ID)}");</script>`);
+    }
+    const injection = scripts.join("");
+    html = html.includes("</body>") ? html.replace("</body>", `${injection}</body>`) : html + injection;
     return secureAsset(new Response(html, { status: res.status, headers: { "content-type": type } }));
   }
   return secureAsset(res);
@@ -170,6 +155,8 @@ async function api(request, env, url, ctx) {
   if (m === "GET" && p === "/api/auth/callback") return authCallback(request, env, url);
   if (m === "POST" && p === "/api/auth/logout") return authLogout();
 
+  if (m === "GET" && p === "/api/admin/auth/login") return adminAuthLogin(request, env, url);
+  if (m === "GET" && p === "/api/admin/auth/callback") return adminAuthCallback(request, env, url);
   if (m === "POST" && p === "/api/admin/login") return adminLogin(request, env);
   if (m === "POST" && p === "/api/admin/logout") return adminLogout();
 
@@ -232,31 +219,6 @@ function getCookie(request, name) {
     if (eq > 0 && part.slice(0, eq) === name) return part.slice(eq + 1);
   }
   return "";
-}
-
-async function adminSessionKey(env) {
-  const seed = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${env.ADMIN_TOKEN}:hd-admin-session-v1`)
-  );
-  return crypto.subtle.importKey("raw", seed, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-}
-
-async function mintAdminSession(env) {
-  const exp = Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL;
-  const key = await adminSessionKey(env);
-  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(exp)));
-  return `${exp}.${b64url(new Uint8Array(mac))}`;
-}
-
-async function verifyAdminSession(env, value) {
-  const dot = value.indexOf(".");
-  if (dot < 1) return false;
-  const exp = Number(value.slice(0, dot));
-  if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return false;
-  const key = await adminSessionKey(env);
-  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(exp)));
-  return timingSafeEqual(value.slice(dot + 1), b64url(new Uint8Array(mac)));
 }
 
 async function adminLogin(request, env) {
@@ -540,25 +502,22 @@ async function createSession(request, env) {
   // appProperties key+value pairs are limited to 124 bytes; keep it short.
   if (relPath && relPath !== safeName) appProperties.relPath = relPath.slice(0, 100);
 
-  const r = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true",
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${tok}`,
-        "content-type": "application/json; charset=UTF-8",
-        "x-upload-content-type": mimeType || "application/octet-stream",
-        "x-upload-content-length": String(size),
-        origin,
-      },
-      body: JSON.stringify({
-        name: safeName,
-        parents: [folderId],
-        description: `Uploaded by ${uploader} via ${APP_NAME} (${linkId})${relPath ? ` from ${relPath}` : ""}`,
-        appProperties,
-      }),
-    }
-  );
+  const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${tok}`,
+      "content-type": "application/json; charset=UTF-8",
+      "x-upload-content-type": mimeType || "application/octet-stream",
+      "x-upload-content-length": String(size),
+      origin,
+    },
+    body: JSON.stringify({
+      name: safeName,
+      parents: [folderId],
+      description: `Uploaded by ${uploader} via ${APP_NAME} (${linkId})${relPath ? ` from ${relPath}` : ""}`,
+      appProperties,
+    }),
+  });
   if (!r.ok) {
     return json({ error: "Drive session failed: " + (await r.text()).slice(0, 300) }, 502);
   }
@@ -639,7 +598,7 @@ async function logClientError(request, env) {
       uploader: cleanText(b.uploader || "", 60),
       message: cleanText(`${b.name || ""} ${b.message || ""} ${b.stack || ""}`, 160),
     },
-    request
+    request,
   );
   return json({ ok: true });
 }
@@ -693,9 +652,7 @@ async function createLink(request, env, ctx) {
   await logEvent(env, { type: "linknew", slug, label: link.label }, request);
 
   if (link.folderPending && ctx && typeof ctx.waitUntil === "function") {
-    ctx.waitUntil(
-      ensureLinkFolder(env, link).catch((err) => console.error("bg folder create failed", err.message))
-    );
+    ctx.waitUntil(ensureLinkFolder(env, link).catch((err) => console.error("bg folder create failed", err.message)));
   }
   return json({ ok: true, slug, folderId: link.folderId, folderPending: link.folderPending, url: `/d/${slug}` });
 }
@@ -795,9 +752,7 @@ async function adminTimeseries(env, url) {
   if (!env.LIVE_TRACKER) return json({ rows: [] });
   const days = clamp(Number(url.searchParams.get("days")) || 30, 1, 120);
   const slug = cleanText(url.searchParams.get("slug") || "", 66);
-  const res = await liveStub(env).fetch(
-    `https://live.internal/timeseries?days=${days}${slug ? `&slug=${encodeURIComponent(slug)}` : ""}`
-  );
+  const res = await liveStub(env).fetch(`https://live.internal/timeseries?days=${days}${slug ? `&slug=${encodeURIComponent(slug)}` : ""}`);
   if (!res.ok) return json({ rows: [] });
   return json(await res.json());
 }

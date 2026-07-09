@@ -32,7 +32,9 @@
     "DRIVE_PARENT_ID": "REPLACE_WITH_OPTIONAL_PARENT_FOLDER_ID",
     "LINK_SLUGS": "comma,separated,existing,slugs",
     // Optional: Cloudflare Web Analytics beacon token (Worker injects it).
-    "CF_BEACON_TOKEN": ""
+    "CF_BEACON_TOKEN": "",
+    // Optional: Microsoft Clarity project id (Worker injects it).
+    "CLARITY_PROJECT_ID": ""
   },
   "routes": [{ "pattern": "dropbox.example.com", "custom_domain": true }]
 }

@@ -28,18 +28,44 @@ Notes on this deploy:
 
 You get: page views per link page, referrers, countries, Core Web Vitals — useful for spotting which drop links get opened and when friends hit errors (pair with the new `clienterror` events in the admin Activity feed, which capture actual JS errors + "Report a problem" taps from friends' phones).
 
-## 3. New secret (recommended)
+## 3. Microsoft Clarity (optional)
+
+Set the project id as a normal Worker var, then deploy:
+
+```jsonc
+"CLARITY_PROJECT_ID": "xjtpz5cm04"
+```
+
+The Worker injects the official Clarity snippet only when this value is present. CSP already allows `www.clarity.ms` and `c.clarity.ms`; without the var, no Clarity script is added.
+
+## 4. Admin Google sign-in (recommended)
+
+Set the admin email as an environment secret or protected var:
+
+```powershell
+wrangler secret put ADMIN_EMAIL
+```
+
+Then add this redirect URI to the same Google OAuth client:
+
+```text
+https://dropbox.losthusky.qzz.io/api/admin/auth/callback
+```
+
+Only the server compares the returned Google email with `ADMIN_EMAIL`. The existing admin token login remains available as a fallback.
+
+## 5. New secret (recommended)
 
 ```powershell
 wrangler secret put SHARE_SIGNING_KEY     # any long random string, e.g. 64 hex chars
 ```
 Signs share-gallery download tokens. If you skip it, a key is derived from `ADMIN_TOKEN` (works, but a dedicated key means rotating one never breaks the other).
 
-## 4. First login after deploy (one-time)
+## 6. First login after deploy (one-time)
 
 The admin now uses an HttpOnly session cookie. Your old saved token in the browser's localStorage is ignored — open `/admin`, enter `ADMIN_TOKEN` once, done for 7 days per browser. Login is rate-limited (5 tries / 15 min / IP). The old `Bearer` header still works for scripts/tests.
 
-## 5. Try the new features (nothing to configure, just use)
+## 7. Try the new features (nothing to configure, just use)
 
 - **Pause / budgets**: Links tab → pause button; Create/Detail → "Budgets" (max GB / files / sessions; 0 = unlimited). A breached budget auto-pauses the link. Suggest setting a byte budget (~free Drive space) on every link you hand out.
 - **QR + share**: qr button on any link/share row, and after creating a link (URL is also auto-copied).
@@ -53,12 +79,12 @@ The admin now uses an HttpOnly session cookie. Your old saved token in the brows
 - **Drive space**: drop pages show "~N GB free in Drive"; sessions are refused when a file can't fit (5 GB reserve); admin Overview shows a "Drive free" card.
 - **Charts**: Overview → "Last 30 days" (bytes/files/opens/downloads) from the Durable Object's SQLite rollups — data starts accumulating from this deploy.
 
-## 6. Optional Cloudflare dashboard hardening (5 minutes, free)
+## 8. Optional Cloudflare dashboard hardening (5 minutes, free)
 
 - Security → Bots → enable **Bot Fight Mode**.
 - Security → WAF → Rate limiting rules → e.g. 100 req / 10 s per IP on `dropbox.losthusky.qzz.io/api/*`.
 
-## 7. Post-deploy checklist
+## 9. Post-deploy checklist
 
 1. `/admin` → login with token → Overview loads, "Drive free" card appears.
 2. Create a test drop link → QR modal pops → open `/d/<slug>` on your phone → upload 2 photos → live view shows them → Drive folder has them.
@@ -68,7 +94,7 @@ The admin now uses an HttpOnly session cookie. Your old saved token in the brows
 6. Check Activity feed shows: open / start / file / share-open / share-dl events.
 7. After ~24h, the 30-day chart shows its first bar, and Web Analytics shows visits.
 
-## 8. Known limits (by design, documented for later)
+## 10. Known limits (by design, documented for later)
 
 - Zip download: no zip64 → 3.8 GB cap per zip; use "Open in Drive"/individual downloads beyond that.
 - Gallery lists files flat (subfolders inside a shared folder are skipped in v1).

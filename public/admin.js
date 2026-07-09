@@ -15,6 +15,10 @@ const openSettings = new Set();
 init();
 
 async function init() {
+  handleAdminSigninError();
+  $("admin-google")?.addEventListener("click", () => {
+    location.href = "/api/admin/auth/login";
+  });
   $("tok-go").addEventListener("click", tryToken);
   $("tok").addEventListener("keydown", (e) => e.key === "Enter" && tryToken());
   document.querySelectorAll(".tab").forEach((tab) => {
@@ -35,6 +39,13 @@ async function init() {
   });
   // A previous session cookie may still be valid.
   if (await ping()) unlock();
+}
+
+function handleAdminSigninError() {
+  const msg = new URLSearchParams(location.search).get("adminSigninError");
+  if (!msg) return;
+  if ($("tok-err")) $("tok-err").textContent = msg;
+  history.replaceState(null, "", location.pathname);
 }
 
 async function ping() {
@@ -59,8 +70,7 @@ async function tryToken() {
     return;
   }
   const d = await r.json().catch(() => ({}));
-  $("tok-err").textContent =
-    r.status === 429 ? `Too many attempts. Wait ${d.retryAfter || 60}s.` : d.error || "Wrong token.";
+  $("tok-err").textContent = r.status === 429 ? `Too many attempts. Wait ${d.retryAfter || 60}s.` : d.error || "Wrong token.";
 }
 
 async function logout() {
@@ -277,12 +287,8 @@ function renderChart() {
     bars += `<rect class="${p.v ? "" : "zero"}" x="${x.toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="2"><title>${esc(p.day)}: ${esc(String(label))}</title></rect>`;
   });
   const totalLabel = seriesMetric === "bytes" ? fmtBytes(total) : total;
-  const note = total
-    ? `${totalLabel} ${seriesMetric} in the last 30 days`
-    : `No ${seriesMetric} in the last 30 days yet - the chart fills in as activity happens.`;
-  const labels = [points[0], points[10], points[20], points[29]]
-    .map((p) => `<span>${esc(p.day.slice(5))}</span>`)
-    .join("");
+  const note = total ? `${totalLabel} ${seriesMetric} in the last 30 days` : `No ${seriesMetric} in the last 30 days yet - the chart fills in as activity happens.`;
+  const labels = [points[0], points[10], points[20], points[29]].map((p) => `<span>${esc(p.day.slice(5))}</span>`).join("");
   host.innerHTML = `
     <div class="chart-note muted">${esc(note)}</div>
     <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="30 day ${escAttr(seriesMetric)}">${bars}</svg>
@@ -306,11 +312,7 @@ function renderLive() {
   if (mini) {
     const top = liveActive.slice(0, 3);
     reconcile(mini, top, (s) => `m:${s.id}`, makeLiveRow, updateLiveRow);
-    setEmpty(
-      mini,
-      top.length === 0,
-      "No active uploads right now."
-    );
+    setEmpty(mini, top.length === 0, "No active uploads right now.");
     if (mini._more) mini._more.remove();
     if (liveActive.length > top.length) {
       mini._more = document.createElement("div");
@@ -336,7 +338,7 @@ function renderMetrics(sessions) {
       ["Throughput", speed ? `${fmtBytes(speed)}/s` : "-"],
       ["ETA - all done", speed ? fmtTime(eta) : "-"],
     ],
-    "live-metric"
+    "live-metric",
   );
   const hot = sessions.length > 0;
   for (const [, card] of el._cards) card.classList.toggle("hot", hot);
@@ -371,10 +373,7 @@ function liveRowInner(s) {
         </div>`;
     })
     .join("");
-  const more =
-    s.count > s.done + inFlight.length
-      ? `<div class="list-note">${s.count - s.done - inFlight.length} more queued</div>`
-      : "";
+  const more = s.count > s.done + inFlight.length ? `<div class="list-note">${s.count - s.done - inFlight.length} more queued</div>` : "";
   const age = Math.max(0, Math.round((Date.now() - Number(s.lastSeen || Date.now())) / 1000));
   const state = s.state === "stale" ? "abandoned" : s.state === "done" ? "complete" : "uploading";
   const tags = [];
@@ -518,7 +517,7 @@ async function closeLiveSession(id, slug) {
 }
 
 function renderEvents() {
-  const events = overview?.events || [];
+  const events = groupEventsForRender(overview?.events || []);
   const box = $("events");
   if (box) {
     reconcile(box, events, eventKey, makeEventRow, updateEventRow);
@@ -532,7 +531,36 @@ function renderEvents() {
   }
 }
 
+function groupEventsForRender(events) {
+  const groups = new Map();
+  const rows = [];
+  for (const e of events) {
+    if (!e?.si) {
+      rows.push(e);
+      continue;
+    }
+    let group = groups.get(e.si);
+    if (!group) {
+      group = {
+        ...e,
+        t: "session",
+        _session: true,
+        _events: [],
+        _firstAt: e.at,
+        _lastAt: e.at,
+      };
+      groups.set(e.si, group);
+      rows.push(group);
+    }
+    group._events.push(e);
+    group._firstAt = Math.min(group._firstAt, e.at || group._firstAt);
+    group._lastAt = Math.max(group._lastAt, e.at || group._lastAt);
+  }
+  return rows;
+}
+
 function eventKey(e) {
+  if (e._session) return `session:${e.si}`;
   return `${e.at}:${e.t}:${e.s}:${e.u}:${e.f}`;
 }
 
@@ -543,6 +571,8 @@ function makeEventRow() {
 }
 
 function updateEventRow(el, e) {
+  if (e._session) return updateSessionEventRow(el, e);
+  el.classList.remove("session-row");
   const c = e.c || {};
   const hasDetails = c.o || c.l || e.m;
 
@@ -554,28 +584,62 @@ function updateEventRow(el, e) {
     el.onclick = null;
   }
 
-  let typeIcon = "list";
-  if (e.t === "start") typeIcon = "play";
-  if (e.t === "file") typeIcon = "file";
-  if (e.t === "open" || e.t === "share-open") typeIcon = "eye";
-  if (e.t === "share-view") typeIcon = "eye";
-  if (e.t === "share-dl") typeIcon = "download";
-  if (e.t === "lock" || e.t === "global-lock" || e.t === "autopause") typeIcon = "lock";
-  if (e.t === "sessionclose") typeIcon = "shield-alert";
-  if (e.t === "clienterror") typeIcon = "shield-alert";
+  const typeIcon = eventTypeIcon(e.t);
 
   el.innerHTML = `
     <code class="${escAttr(e.t)}">${icon(typeIcon)}${esc(e.t)}</code>
     <span>${esc(e.l || e.s || "")}${e.u ? " - " + esc(e.u) : ""}${e.f ? " - " + esc(e.f) : ""}</span>
     <time>${new Date(e.at).toLocaleString()}</time>
-    ${hasDetails ? `
+    ${
+      hasDetails
+        ? `
       <div class="event-row-details">
         ${e.m ? `<div class="detail-item">${icon("list")}${esc(e.m)}</div>` : ""}
         ${c.o ? `<div class="detail-item">${icon(c.i || "laptop")}${esc(c.o)}</div>` : ""}
         ${c.l ? `<div class="detail-item">${icon("globe")}${esc(c.l)}</div>` : ""}
       </div>
-    ` : ""}
+    `
+        : ""
+    }
   `;
+}
+
+function updateSessionEventRow(el, e) {
+  const expanded = el.classList.contains("expanded");
+  el.className = `event-row session-row expandable${expanded ? " expanded" : ""}`;
+  el.onclick = () => el.classList.toggle("expanded");
+  const items = e._events || [];
+  const newest = items[0] || e;
+  const oldest = items[items.length - 1] || e;
+  const actor = newest.u || "anonymous";
+  const place = newest.l || newest.s || "share";
+  const files = new Set(items.map((item) => item.f).filter(Boolean)).size;
+  const range =
+    items.length > 1
+      ? `${new Date(oldest.at).toLocaleTimeString()} - ${new Date(newest.at).toLocaleTimeString()}`
+      : new Date(newest.at).toLocaleTimeString();
+  const details = items
+    .map((item) => {
+      const label = [item.m, item.f].filter(Boolean).join(" - ") || item.t;
+      return `<div class="detail-item">${icon(eventTypeIcon(item.t))}<span><b>${esc(item.t)}</b> ${esc(label)}</span><time>${new Date(item.at).toLocaleTimeString()}</time></div>`;
+    })
+    .join("");
+  el.innerHTML = `
+    <code class="session">${icon("list")}session</code>
+    <span>${esc(items.length)} activity item${items.length === 1 ? "" : "s"} - ${esc(actor)}, ${esc(place)}${files ? ` - ${files} file${files === 1 ? "" : "s"}` : ""}</span>
+    <time>${esc(range)}</time>
+    <div class="event-row-details">${details}</div>
+  `;
+}
+
+function eventTypeIcon(type) {
+  if (type === "start") return "play";
+  if (type === "file") return "file";
+  if (type === "open" || type === "share-open" || type === "share-view" || type === "share-browse") return "eye";
+  if (type === "share-dl") return "download";
+  if (type === "lock" || type === "global-lock" || type === "autopause") return "lock";
+  if (type === "sessionclose" || type === "clienterror") return "shield-alert";
+  return "list";
 }
 
 // ---- Drop links table ----
@@ -595,9 +659,7 @@ function stateBadge(state) {
 }
 
 function updateLinkRow(tr, l) {
-  const budget = l.settings.maxTotalBytes
-    ? `<br><span class="muted">budget ${fmtBytes(l.stats.bytes)} / ${fmtBytes(l.settings.maxTotalBytes)}</span>`
-    : "";
+  const budget = l.settings.maxTotalBytes ? `<br><span class="muted">budget ${fmtBytes(l.stats.bytes)} / ${fmtBytes(l.settings.maxTotalBytes)}</span>` : "";
   tr.innerHTML = `
     <td><b>${esc(l.label)}</b> ${stateBadge(l.state)}<br><code>/d/${esc(l.slug)}</code></td>
     <td>${l.hasPin ? "password" : "open"} - ${l.settings.concurrency}x - ${l.settings.chunkMB} MB<br>
@@ -678,7 +740,23 @@ async function createLink() {
   const d = await r.json().catch(() => ({}));
   if (!r.ok) return ($("create-err").textContent = d.error || "failed");
   navigator.clipboard?.writeText(`${location.origin}/d/${d.slug}`).catch(() => {});
-  ["f-label", "f-slug", "f-pin", "f-folder", "f-budget-gb", "f-budget-files", "f-budget-sessions", "f-logo", "f-bg", "f-welcome", "f-promo-title", "f-promo-text", "f-video", "f-cta-label", "f-cta-url"].forEach((id) => {
+  [
+    "f-label",
+    "f-slug",
+    "f-pin",
+    "f-folder",
+    "f-budget-gb",
+    "f-budget-files",
+    "f-budget-sessions",
+    "f-logo",
+    "f-bg",
+    "f-welcome",
+    "f-promo-title",
+    "f-promo-text",
+    "f-video",
+    "f-cta-label",
+    "f-cta-url",
+  ].forEach((id) => {
     if ($(id)) $(id).value = "";
   });
   showTab("links");
@@ -783,10 +861,7 @@ function renderDetail(d) {
   const uploads = d.uploads || [];
   const settingsOpen = openSettings.has(l.slug);
   const budgetGb = l.settings.maxTotalBytes ? (l.settings.maxTotalBytes / 1024 ** 3).toFixed(0) : "";
-  const maxTransferGb =
-    l.settings.maxTransferBytes && l.settings.maxTransferBytes < 5 * 1024 ** 4
-      ? (l.settings.maxTransferBytes / 1024 ** 3).toFixed(0)
-      : "";
+  const maxTransferGb = l.settings.maxTransferBytes && l.settings.maxTransferBytes < 5 * 1024 ** 4 ? (l.settings.maxTransferBytes / 1024 ** 3).toFixed(0) : "";
   const leaders = leaderboard(uploads);
   const expiryDays = l.expiresAt ? Math.max(0, Math.ceil((l.expiresAt - Date.now()) / 86400_000)) : 0;
   $("detail-view").innerHTML = `
@@ -945,9 +1020,7 @@ function renderUploadRows() {
   let ups = all;
   const q = detailSearch.trim().toLowerCase();
   if (q) {
-    ups = all.filter(
-      (u) => (u.n || "").toLowerCase().includes(q) || (u.u || "").toLowerCase().includes(q)
-    );
+    ups = all.filter((u) => (u.n || "").toLowerCase().includes(q) || (u.u || "").toLowerCase().includes(q));
   }
   const cmp = {
     new: (a, b) => b.at - a.at,
@@ -1115,13 +1188,17 @@ function fmtTime(seconds) {
 }
 
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[c]);
+  return String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
+  );
 }
 
 function escAttr(s) {
