@@ -35,7 +35,10 @@
     "LINK_SLUGS": "kareri-lake-trek",
     // Cloudflare Web Analytics beacon token; the Worker injects the snippet
     // into every HTML page when set. Public by design, not a secret.
-    "CF_BEACON_TOKEN": "5e7e086782714160804ea9afc63dedc8"
+    "CF_BEACON_TOKEN": "5e7e086782714160804ea9afc63dedc8",
+    // Microsoft Clarity project id; the Worker injects the snippet into
+    // every HTML page when set. Public by design, not a secret.
+    "CLARITY_PROJECT_ID": "xjtpz5cm04"
   },
   "routes": [{ "pattern": "dropbox.losthusky.qzz.io", "custom_domain": true }]
 }

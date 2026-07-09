@@ -18,10 +18,10 @@ export const PBKDF2_ITERATIONS = 100000;
 export const SECURITY_HEADERS = {
   "content-security-policy": [
     "default-src 'self'",
-    "script-src 'self' https://static.cloudflareinsights.com https://www.clarity.ms",
+    "script-src 'self' https://static.cloudflareinsights.com https://*.clarity.ms",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com",
-    "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://api.resend.com https://cloudflareinsights.com https://www.clarity.ms https://c.clarity.ms",
+    "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://api.resend.com https://cloudflareinsights.com https://*.clarity.ms",
     "img-src 'self' data: https:",
     "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
     "base-uri 'none'",

@@ -92,19 +92,30 @@ async function servePage(env, url, assetPath) {
       // configured, keeping pages dependency-free otherwise.
       scripts.push(`<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"${escapeHtml(env.CF_BEACON_TOKEN)}"}'></script>`);
     }
+    // The Clarity bootstrap is inline (not src=), so a strict CSP blocks it
+    // outright unless the script carries a nonce - host-allowlisting
+    // clarity.ms in script-src only covers the *fetched* tag it creates.
+    let scriptNonce = "";
     if (env.CLARITY_PROJECT_ID) {
-      scripts.push(`<script>(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y)})(window,document,"clarity","script","${escapeHtml(env.CLARITY_PROJECT_ID)}");</script>`);
+      scriptNonce = crypto.randomUUID();
+      scripts.push(`<script nonce="${scriptNonce}">(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y)})(window,document,"clarity","script","${escapeHtml(env.CLARITY_PROJECT_ID)}");</script>`);
     }
     const injection = scripts.join("");
     html = html.includes("</body>") ? html.replace("</body>", `${injection}</body>`) : html + injection;
-    return secureAsset(new Response(html, { status: res.status, headers: { "content-type": type } }));
+    return secureAsset(new Response(html, { status: res.status, headers: { "content-type": type } }), scriptNonce);
   }
   return secureAsset(res);
 }
 
-function secureAsset(response) {
+function secureAsset(response, scriptNonce) {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) headers.set(key, value);
+  if (scriptNonce) {
+    headers.set(
+      "content-security-policy",
+      SECURITY_HEADERS["content-security-policy"].replace("script-src 'self'", `script-src 'self' 'nonce-${scriptNonce}'`),
+    );
+  }
   headers.set("cache-control", "no-store");
   return new Response(response.body, {
     status: response.status,

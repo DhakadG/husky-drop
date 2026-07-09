@@ -1736,6 +1736,7 @@ const trackSessionId =
 function trackEvent(t, name) {
   trackQueue.push({ t, name: String(name || "").slice(0, 160) });
   if (trackQueue.length >= 20) flushTrack();
+  window.clarity?.("event", t);
 }
 
 function flushTrack(useBeacon = false) {
@@ -1760,6 +1761,8 @@ function installTracking() {
     if (document.visibilityState === "hidden") flushTrack(true);
   });
   window.addEventListener("pagehide", () => flushTrack(true));
+  window.clarity?.("identify", viewer?.email || `anon-${trackSessionId}`, trackSessionId, slug, viewer?.name);
+  window.clarity?.("set", "slug", slug);
 }
 
 // ---- Utilities ----
