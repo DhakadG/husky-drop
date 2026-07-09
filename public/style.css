@@ -1552,7 +1552,7 @@ body.has-fx-cursor .mobile-select-bar * { cursor: none !important; }
    ============================================================ */
 
 .share-shell {
-  width: min(1920px, calc(100% - 24px));
+  width: min(2800px, calc(100% - 32px));
   margin: 0 auto;
   padding: 18px 0 80px;
 }
@@ -1739,8 +1739,9 @@ body.has-fx-cursor .mobile-select-bar * { cursor: none !important; }
   z-index: 6;
   border-radius: 8px;
   box-shadow:
-    0 6px 8px -2px rgba(4, 12, 24, 0.28),
-    0 18px 34px -8px rgba(4, 12, 24, 0.42);
+    0 4px 10px -2px rgba(4, 12, 24, 0.3),
+    0 16px 30px -8px rgba(4, 12, 24, 0.4),
+    0 34px 64px -18px rgba(4, 12, 24, 0.48);
 }
 .g-media {
   position: absolute;
@@ -1749,23 +1750,28 @@ body.has-fx-cursor .mobile-select-bar * { cursor: none !important; }
   background: rgba(8, 16, 28, 0.08);
 }
 .g-media.session-thumb { background: rgba(8, 16, 28, 0.04); }
+/* No independent scale on the image/video itself - it rides along with the
+   card's own transform for free (a transform on a parent already scales
+   every descendant pixel-for-pixel). A separate, differently-timed scale
+   used to run here for a parallax-zoom effect, but its transition duration
+   and easing didn't match the card's, so the two fell out of sync during
+   the hover transition and the image visibly overshot past the tile's
+   edges for a moment. Simplest fix that makes them exactly equal: only one
+   of them scales at all now. */
 .g-card img,
 .g-video-preview {
   width: 100%;
   height: 100%;
   object-fit: cover; /* tile is already aspect-matched, so nothing is cropped */
   display: block;
-  transition: transform 160ms ease;
 }
-.g-card:hover img,
-.g-card.previewing .g-video-preview { transform: scale(1.02); }
 .g-video-preview {
   position: absolute;
   inset: 0;
   z-index: 1;
   background: #050910;
   opacity: 0;
-  transition: opacity 160ms ease, transform 200ms ease;
+  transition: opacity 160ms ease;
 }
 .g-card.previewing .g-video-preview { opacity: 1; }
 .g-card.previewing .g-play { opacity: 0; transition: opacity 140ms ease; }
@@ -2058,7 +2064,50 @@ body.selecting .g-check { opacity: 1; }
   background: transparent;
 }
 
-.pswp__icn-download { fill: none; }
+.pswp__icn-download,
+.pswp__icn-info { fill: none; }
+
+/* Keyboard-shortcuts popover, toggled from the "i" button in the top bar. */
+.pswp .pswp-shortcuts {
+  position: absolute;
+  top: 58px;
+  right: 12px;
+  z-index: 110;
+  width: 250px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(10, 14, 22, 0.92);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 44px -18px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  animation: pswpFadeIn 140ms ease;
+}
+.pswp .pswp-shortcuts b {
+  display: block;
+  margin-bottom: 8px;
+  font: 700 12px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.6);
+}
+.pswp .pswp-shortcuts ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.pswp .pswp-shortcuts li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font: 500 12.5px var(--font-body);
+  color: rgba(255, 255, 255, 0.88);
+}
+.pswp .pswp-shortcuts li span {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  font: 600 11px var(--font-mono);
+  color: #fff;
+  white-space: nowrap;
+}
 
 /* A very short, opacity-only fade applied to the active slide's own content
    on every prev/next - layered on top of PhotoSwipe's own horizontal pan so

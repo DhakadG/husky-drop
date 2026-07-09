@@ -357,9 +357,14 @@ function onPopState() {
 
 function goToCrumb(index) {
   if (index < 0 || index >= crumbs.length - 1) return;
-  const target = crumbs[index];
-  crumbs.splice(index + 1);
-  navigate(target, { push: true });
+  // Do NOT trim crumbs here first: navigate()'s own dedupe check compares
+  // the target against the *current last* crumb, and only trims down to
+  // the target once the fetch succeeds. Pre-trimming made that check see
+  // the target as already-current (since it had just become the last
+  // crumb) and return immediately without ever navigating - clicking a
+  // breadcrumb silently did nothing, while browser back/forward (which
+  // calls navigate with push:false, skipping that check) worked fine.
+  navigate(crumbs[index], { push: true });
 }
 
 function renderCrumbs() {
@@ -1237,7 +1242,18 @@ async function openViewer(index, sourceEl) {
     animateSlideIn(pswp.currSlide?.content?.element);
     trackEvent("view", current?.name || "");
   });
+  const onViewerKeydown = (e) => {
+    if (e.key === "Home") {
+      e.preventDefault();
+      pswp.goTo(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      pswp.goTo(lightboxItems.length - 1);
+    }
+  };
+  window.addEventListener("keydown", onViewerKeydown);
   pswp.on("destroy", () => {
+    window.removeEventListener("keydown", onViewerKeydown);
     destroyStrip();
     pswp = null;
   });
@@ -1335,8 +1351,47 @@ function cleanupTilePreview(file) {
   fx.setScrubbing(false, fig);
 }
 
+const SHORTCUTS = [
+  ["&larr; &rarr;", "Previous / next"],
+  ["Home / End", "First / last file"],
+  ["Esc", "Close"],
+  ["Scroll wheel or drag", "Browse the filmstrip"],
+  ["Shift + hover a tile", "Scrub a video (desktop)"],
+  ["Touch + hold a tile", "Scrub a video (touch)"],
+];
+
 function registerUi(instance) {
+  let panel = null;
+  const closePanel = () => {
+    panel?.remove();
+    panel = null;
+  };
+  const togglePanel = () => {
+    if (panel) return closePanel();
+    panel = document.createElement("div");
+    panel.className = "pswp-shortcuts";
+    panel.innerHTML =
+      `<b>Shortcuts</b><ul>` +
+      SHORTCUTS.map(([key, desc]) => `<li><span>${key}</span>${esc(desc)}</li>`).join("") +
+      `</ul>`;
+    instance.element.appendChild(panel);
+  };
+
   instance.on("uiRegister", () => {
+    instance.ui.registerElement({
+      name: "shortcuts-button",
+      order: 7,
+      isButton: true,
+      tagName: "button",
+      html: {
+        isCustomSVG: true,
+        inner:
+          '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><line x1="12" y1="11" x2="12" y2="16.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="7.4" r="1.15" fill="currentColor"/>',
+        outlineID: "pswp__icn-info",
+      },
+      onClick: togglePanel,
+      title: "Keyboard shortcuts",
+    });
     instance.ui.registerElement({
       name: "download-button",
       order: 8,
@@ -1355,6 +1410,8 @@ function registerUi(instance) {
       title: "Download",
     });
   });
+  instance.on("change", closePanel);
+  instance.on("destroy", closePanel);
 }
 
 // Caption lives in its own bottom info bar now, not PhotoSwipe's cramped top
@@ -1397,12 +1454,22 @@ function mountStrip(instance, bar) {
   strip = new Swiper(host, {
     slidesPerView: "auto",
     spaceBetween: 6,
-    freeMode: { enabled: true, momentumRatio: 0.45 },
-    mousewheel: { forceToAxis: true },
+    // No freeMode: drag/swipe still works natively either way (that part of
+    // Swiper is always on), but without it a release always snaps cleanly
+    // to the nearest slide - fewer edge cases with centeredSlides than
+    // freeMode's own momentum/snap-grid logic, which is what was making
+    // slideTo() an unreliable way to follow the active image/video.
     grabCursor: true,
+    simulateTouch: true,
     slideToClickedSlide: true,
     centeredSlides: true,
     centeredSlidesBounds: true,
+    watchOverflow: true,
+    // Swiper's mousewheel module defaults to disabled; { forceToAxis: true }
+    // alone does NOT turn it on - enabled: true is required. Without it,
+    // scrolling the wheel over the strip silently did nothing.
+    mousewheel: { enabled: true, forceToAxis: true, sensitivity: 0.7 },
+    keyboard: false, // PhotoSwipe already owns arrow keys for the main image
     initialSlide: instance.currIndex,
     on: {
       click: (sw) => {
@@ -1455,6 +1522,10 @@ function syncStripActive() {
 
 function syncStrip(index) {
   if (!strip) return;
+  // Force Swiper to recompute slide/snap metrics before centering - cheap,
+  // and a defensive guard against slideTo() silently targeting a stale
+  // layout (e.g. right after the bottom bar's own size settles).
+  strip.update();
   strip.slideTo(index, 220);
   syncStripActive();
 }

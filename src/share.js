@@ -518,14 +518,25 @@ export async function shareSummary(request, env) {
   const resolved = await resolveShareTargets(env, share, b);
   if (resolved.error) return resolved.error;
 
+  // Recurses into every subfolder rather than only counting the immediate
+  // level: driveListFolder() is a flat, single-level listing, so a share
+  // whose root only contains subfolders (no direct files) previously always
+  // summarized as "0 files, 0 B" - the counts from inside those subfolders
+  // were never walked at all.
   const summary = { files: 0, folders: 0, bytes: 0, images: 0, videos: 0, allowZip: share.allowZip !== false };
-  for (const [, folderId] of resolved.targets) {
+  const MAX_FOLDERS_WALKED = 500; // safety cap for pathologically large/deep trees
+  const queue = resolved.targets.map(([, folderId]) => folderId);
+  let visited = 0;
+  while (queue.length && visited < MAX_FOLDERS_WALKED) {
+    const folderId = queue.shift();
+    visited++;
     let pageToken = "";
     do {
       const page = await driveListFolder(env, folderId, pageToken, { pageSize: 1000 });
       for (const f of page.files || []) {
         if (f.mimeType === "application/vnd.google-apps.folder") {
           summary.folders++;
+          queue.push(f.id);
           continue;
         }
         summary.files++;

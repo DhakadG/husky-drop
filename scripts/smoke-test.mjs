@@ -113,12 +113,25 @@ async function withMockedGoogleDrive(fn) {
       mimeType: "application/x-msdownload",
       modifiedTime: "2026-07-04T00:00:00.000Z",
     },
+    "nested-folder": {
+      id: "nested-folder",
+      name: "Nested",
+      mimeType: "application/vnd.google-apps.folder",
+    },
+    "file-nested": {
+      id: "file-nested",
+      name: "D Nested.jpg",
+      size: "11",
+      mimeType: "image/jpeg",
+      modifiedTime: "2026-07-05T00:00:00.000Z",
+    },
   };
   const mediaBytes = {
     "file-img": new TextEncoder().encode("IMG!"),
     "file-video": new TextEncoder().encode("VIDEO!"),
     "file-mov": new TextEncoder().encode("MOV!!"),
     "file-exe": new TextEncoder().encode("EXE!!!!!"),
+    "file-nested": new TextEncoder().encode("NESTED!!!!!"),
   };
 
   globalThis.fetch = async (input, init = {}) => {
@@ -181,8 +194,16 @@ async function withMockedGoogleDrive(fn) {
 
       calls.listPageSizes.push(url.searchParams.get("pageSize"));
       const pageToken = url.searchParams.get("pageToken") || "";
+      const qParam = url.searchParams.get("q") || "";
+      // A folder one level down from the share root, so the recursive
+      // summary walk has something real to descend into.
+      if (qParam.includes("'nested-folder' in parents")) {
+        return new Response(JSON.stringify({ files: [files["file-nested"]] }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
       const body = pageToken === "page-2"
-        ? { files: [files["file-mov"], files["file-exe"]] }
+        ? { files: [files["file-mov"], files["file-exe"], files["nested-folder"]] }
         : { nextPageToken: "page-2", files: [files["file-img"], files["file-video"]] };
       return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
     }
@@ -574,10 +595,14 @@ async function main() {
     );
     assert.equal(res.status, 200, "share summary endpoint succeeds");
     const summary = await res.json();
-    assert.equal(summary.files, 4, "summary pages through all Drive files");
-    assert.equal(summary.bytes, 23, "summary totals bytes across Drive pages");
-    assert.equal(summary.images, 1, "summary counts images");
+    // 4 files across both pages of the share root (img, video, mov, exe)
+    // plus 1 more inside "nested-folder", which the summary must recurse
+    // into rather than only counting the root level.
+    assert.equal(summary.files, 5, "summary recurses into subfolders instead of stopping at the current level");
+    assert.equal(summary.bytes, 34, "summary totals bytes across the whole tree, including subfolders");
+    assert.equal(summary.images, 2, "summary counts images found inside subfolders too");
     assert.equal(summary.videos, 2, "summary counts videos");
+    assert.equal(summary.folders, 1, "summary counts the subfolder it walked into");
     assert.ok(calls.listPageSizes.includes("1000"), "summary uses larger Drive page size");
 
     res = await worker.fetch(
