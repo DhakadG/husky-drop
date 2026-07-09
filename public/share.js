@@ -26,7 +26,6 @@ const listingCache = new Map(); // fid -> { d, token, at }
 const selected = new Map(); // fileId -> file
 let lightboxItems = [];
 let summarySeq = 0;
-const MAX_ZIP_BYTES = 3.8 * 1024 ** 3; // no zip64 in microzip fallback
 const TOKEN_REFRESH_MS = 90 * 1000;
 const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
@@ -1595,7 +1594,6 @@ async function downloadZip() {
   const btn = $("zip-btn");
   btn.disabled = true;
   $("mobile-zip").disabled = true;
-  dedupe = null; // fresh name-dedupe per zip
   const zipName = `${meta.label.replace(/[^\w-]+/g, "_") || "share"}.zip`;
   try {
     btn.textContent = "Preparing zip...";
@@ -1611,71 +1609,8 @@ async function downloadZip() {
     a.click();
     a.remove();
     toast("Zip download started", `${ticket.count || files.length} files - ${fmtBytes(bytes)}`, "ok");
-    btn.disabled = false;
-    $("mobile-zip").disabled = false;
-    updateSelInfo();
-    return;
-  } catch (serverErr) {
-    if (serverErr.downloadBlocked) {
-      toast("Zip blocked", String(serverErr.message || serverErr).slice(0, 100), "err");
-      btn.disabled = false;
-      $("mobile-zip").disabled = false;
-      updateSelInfo();
-      return;
-    }
-    if (bytes > MAX_ZIP_BYTES) {
-      toast("Zip failed", "Server zip could not start, and this selection is too large for browser zip.", "err");
-      return;
-    }
-    if (typeof microzip === "undefined") {
-      toast("Zip failed", String(serverErr.message || serverErr).slice(0, 80), "err");
-      return;
-    }
-    toast("Using browser zip fallback", "Keeping this tab open while the archive is built.", "warn");
-  }
-
-  try {
-    const entries = files.map((f) => ({
-      name: dedupeName(f),
-      stream: async () => {
-        await ensureFreshDownload(f);
-        const r = await fetch(f.dl);
-        if (!r.ok || !r.body) throw new Error(`download failed: ${f.name}`);
-        return r.body;
-      },
-    }));
-
-    if ("showSaveFilePicker" in window) {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: zipName,
-        types: [{ description: "Zip archive", accept: { "application/zip": [".zip"] } }],
-      });
-      const writable = await handle.createWritable();
-      let doneBytes = 0;
-      await microzip.zipStream(entries, async (chunk) => {
-        await writable.write(chunk);
-        doneBytes += chunk.length;
-        btn.textContent = `zipping... ${fmtBytes(doneBytes)}`;
-      });
-      await writable.close();
-      toast("Zip saved", zipName, "ok");
-    } else {
-      if (bytes > 1024 ** 3) {
-        toast("Zip too large for this browser", "Use Chrome/Edge for streaming zips, or download files individually.", "warn");
-        return;
-      }
-      const parts = [];
-      await microzip.zipStream(entries, async (chunk) => parts.push(chunk));
-      const blob = new Blob(parts, { type: "application/zip" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = zipName;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
-      toast("Zip ready", zipName, "ok");
-    }
   } catch (err) {
-    if (err?.name !== "AbortError") toast("Zip failed", String(err.message || err).slice(0, 80), "err");
+    toast(err.downloadBlocked ? "Zip blocked" : "Zip failed", String(err.message || err).slice(0, 100), "err");
   } finally {
     btn.disabled = false;
     $("mobile-zip").disabled = false;
@@ -1702,26 +1637,6 @@ async function createServerZipTicket(files) {
     throw err;
   }
   return r.json();
-}
-
-const usedNames = () => {
-  const s = new Set();
-  return (f) => {
-    let name = f.name;
-    let i = 1;
-    while (s.has(name)) {
-      const dot = f.name.lastIndexOf(".");
-      name = dot > 0 ? `${f.name.slice(0, dot)} (${i})${f.name.slice(dot)}` : `${f.name} (${i})`;
-      i++;
-    }
-    s.add(name);
-    return name;
-  };
-};
-let dedupe = null;
-function dedupeName(f) {
-  if (!dedupe) dedupe = usedNames();
-  return dedupe(f);
 }
 
 // ---- Browsing-session analytics beacon ----
