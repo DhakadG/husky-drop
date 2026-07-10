@@ -242,15 +242,21 @@
               <div class="field"><label for="f-label">Link label</label><input id="f-label" type="text" placeholder="Spiti Trip — June 2026" maxlength="90" required autofocus /></div>
               <div class="folder-picker">
                 <div class="field"><label for="f-folder">Destination Drive folder</label><input id="f-folder" type="text" placeholder="Blank creates a new folder automatically" /></div>
-                <button class="mini" id="folder-browse" type="button">Browse Drive</button>
+                <button class="mini folder-browse-button" id="folder-browse" type="button">Browse Drive</button>
               </div>
+              <p id="folder-selection" class="folder-selection muted">No folder selected — a new Drive folder will be created.</p>
               <div id="folder-picker-panel" class="folder-picker-panel hidden">
-                <div class="folder-picker-head"><button class="mini" id="folder-up" type="button">← Parent</button><span id="folder-path">Drive root</span></div>
+                <div class="folder-picker-head">
+                  <button class="mini" id="folder-up" type="button">← Parent</button>
+                  <nav id="folder-breadcrumbs" class="folder-breadcrumbs" aria-label="Drive folder path"></nav>
+                  <button class="mini folder-select-current" id="folder-select-current" type="button">Select this folder</button>
+                </div>
+                <p class="folder-picker-hint">Click a folder name to open it. Use <b>Select</b> to choose it as the upload destination.</p>
                 <div id="folder-list" class="folder-list"></div>
                 <div class="msg-err" id="folder-err"></div>
               </div>
               <div class="create-quick-actions">
-                <button class="btn" id="create" type="submit">Create with defaults</button>
+                <button class="btn" id="create" type="submit">Create and make Drive folder</button>
                 <button class="btn ghost" id="create-next" type="button">Add optional settings →</button>
               </div>
               <p class="muted create-enter-note">Press Enter from the label field to create immediately with safe defaults.</p>
@@ -266,12 +272,15 @@
               </div>
               <fieldset class="preset-fieldset">
                 <legend>Parallelism preset</legend>
-                <label class="preset-card"><input type="radio" name="transfer-preset" value="simple" /><span><b>Simple</b><small>2 files · 16 MB chunks</small></span></label>
-                <label class="preset-card"><input type="radio" name="transfer-preset" value="fast" checked /><span><b>Fast</b><small>4 files · 32 MB chunks</small></span></label>
-                <label class="preset-card"><input type="radio" name="transfer-preset" value="aggressive" /><span><b>Aggressive</b><small>8 files · 64 MB chunks</small></span></label>
+                <label class="preset-card preset-auto"><input type="radio" name="transfer-preset" value="auto" checked /><span><b>Auto <em>recommended</em></b><small>Adapts 2–8 files to live network performance</small></span></label>
+                <label class="preset-card"><input type="radio" name="transfer-preset" value="steady" /><span><b>Steady</b><small>2 files · 16 MB chunks</small></span></label>
+                <label class="preset-card"><input type="radio" name="transfer-preset" value="balanced" /><span><b>Balanced</b><small>4 files · 32 MB chunks</small></span></label>
+                <label class="preset-card"><input type="radio" name="transfer-preset" value="fast" /><span><b>Fast</b><small>6 files · 32 MB chunks</small></span></label>
+                <label class="preset-card"><input type="radio" name="transfer-preset" value="maximum" /><span><b>Maximum</b><small>8 files · 64 MB chunks</small></span></label>
               </fieldset>
               <input id="f-conc" type="hidden" value="4" />
               <input id="f-chunk" type="hidden" value="32" />
+              <input id="f-adaptive" type="hidden" value="1" />
               <details class="optional-advanced">
                 <summary>More options</summary>
                 <div class="grid-3">

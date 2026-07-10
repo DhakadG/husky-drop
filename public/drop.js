@@ -7,6 +7,8 @@ let link = null;
 let pin = sessionStorage.getItem(`lhdb_pin_${slug}`) || "";
 let concurrency = 4;
 let chunkSize = 32 * 1024 * 1024;
+let adaptiveController = null;
+let adaptiveErrors = 0;
 let active = 0;
 let wakeLock = null;
 let liveSocket = null;
@@ -98,6 +100,10 @@ function showGone(eyebrow = "closed", title = "This link is not available.", sub
 function applySettings(settings) {
   concurrency = clamp(Number(settings.concurrency) || 4, 1, 8);
   chunkSize = clamp((Number(settings.chunkMB) || 32) * 1024 * 1024, MIN_CHUNK, MAX_CHUNK);
+  adaptiveController = settings.adaptiveConcurrency && typeof createAdaptiveConcurrency === "function"
+    ? createAdaptiveConcurrency({ min: 2, max: 8, initial: concurrency })
+    : null;
+  if (adaptiveController) concurrency = adaptiveController.seed(navigator.connection || {});
 }
 
 function applyTheme(theme) {
@@ -157,6 +163,7 @@ function showMain() {
   meta.innerHTML = "";
   meta.append(chip(link.requiresPin ? "password protected" : "open link", "", link.requiresPin ? "lock-small" : "gallery"));
   meta.append(chip(`up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`, "", "image"));
+  if (link.settings?.adaptiveConcurrency) meta.append(chip("smart 2–8× parallel", "", "sliders"));
   if (link.settings?.perUploaderFolders) meta.append(chip("your own subfolder", "", "folder-add"));
   if (link.driveFreeGB != null) {
     meta.append(chip(`~${link.driveFreeGB} GB free in Drive`, link.driveFreeGB < 30 ? "warn" : "", "folder"));
@@ -479,6 +486,7 @@ async function uploadFile(item) {
         }
       } catch (err) {
         if (item.canceled) return;
+        adaptiveErrors++;
         if (err.dead) {
           item.uri = null;
           setSent(item, 0);
@@ -875,6 +883,18 @@ function updateSpeed() {
   if (dt < 1) return;
   const inst = Math.max(0, (totals.sent - speedSent) / dt);
   speedBps = speedBps ? speedBps * 0.6 + inst * 0.4 : inst;
+  if (adaptiveController) {
+    const nextLimit = adaptiveController.observe({
+      bps: speedBps,
+      errors: adaptiveErrors,
+      saturated: active > 0 && queue.some((item) => item.state === "queued"),
+    });
+    adaptiveErrors = 0;
+    if (nextLimit !== concurrency) {
+      concurrency = nextLimit;
+      pump();
+    }
+  }
   speedAt = now;
   speedSent = totals.sent;
 }

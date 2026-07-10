@@ -116,6 +116,27 @@ export async function driveListFolders(env, parentId) {
   return (d.files || []).map((f) => ({ id: f.id, name: f.name }));
 }
 
+// A navigable folder listing with a bounded ancestor chain for the admin picker.
+export async function driveBrowseFolders(env, parentId) {
+  const currentId = String(parentId || "root").replace(/[^a-zA-Z0-9_-]/g, "") || "root";
+  const folders = await driveListFolders(env, currentId);
+  const ancestors = [];
+  const seen = new Set();
+  let cursor = currentId;
+  for (let depth = 0; cursor !== "root" && depth < 24 && !seen.has(cursor); depth++) {
+    seen.add(cursor);
+    const meta = await driveFileMeta(env, cursor);
+    if (!meta?.id) break;
+    ancestors.unshift({ id: meta.id, name: cleanText(meta.name || "Folder", 120) });
+    cursor = meta.parents?.[0] || "root";
+  }
+  return {
+    currentId,
+    folders,
+    breadcrumbs: [{ id: "root", name: "My Drive" }, ...ancestors],
+  };
+}
+
 export async function driveFileMeta(env, fileId) {
   const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
   if (!id) return null;

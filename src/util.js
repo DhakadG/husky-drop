@@ -307,6 +307,7 @@ export function normalizeSettings(input = {}) {
   return {
     concurrency,
     chunkMB,
+    adaptiveConcurrency: !!input.adaptiveConcurrency,
     perUploaderFolders: !!input.perUploaderFolders,
     maxTransferBytes,
     // Budgets: 0 = unlimited. When a budget is crossed the link auto-pauses.

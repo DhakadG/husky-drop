@@ -363,12 +363,16 @@ async function main() {
       slug: "inbox",
       expiresDays: 0,
       folderId: "folder-456",
-      settings: { concurrency: 4, chunkMB: 32, perUploaderFolders: true, maxTotalFiles: 2 },
+      settings: { concurrency: 4, chunkMB: 32, adaptiveConcurrency: true, perUploaderFolders: true, maxTotalFiles: 2 },
       theme: { accentColor: "#ff8800", welcome: "Send everything here." },
     }),
     env
   );
   assert.equal(res.status, 200, "admin can create a no-PIN link with v2 settings");
+  const adaptiveLink = await env.KV.get("link:inbox", "json");
+  assert.equal(adaptiveLink.settings.adaptiveConcurrency, true, "smart parallelism is persisted on the link");
+  res = await worker.fetch(request("/api/link/inbox"), env);
+  assert.equal((await res.json()).settings.adaptiveConcurrency, true, "uploader receives smart parallelism mode");
 
   res = await worker.fetch(
     request("/api/opened", {
@@ -626,6 +630,11 @@ async function main() {
     assert.match(adminCookie, /^hd_admin=/, "admin OAuth callback sets the admin cookie");
     res = await worker.fetch(request("/api/admin/overview", { headers: { cookie: adminCookie } }), driveEnv);
     assert.equal(res.status, 200, "admin OAuth cookie authorizes admin APIs");
+
+    res = await worker.fetch(request("/api/admin/drive/folders?parent=nested-folder", { headers: { cookie: adminCookie } }), driveEnv);
+    assert.equal(res.status, 200, "admin can browse a nested Drive folder");
+    const folderBrowse = await res.json();
+    assert.deepEqual(folderBrowse.breadcrumbs.map((crumb) => crumb.id), ["root", "nested-folder"], "Drive browser returns a usable breadcrumb chain");
 
     const wrongAdminEnv = makeEnv({
       GOOGLE_CLIENT_ID: "google-client",

@@ -44,8 +44,10 @@ async function init() {
   });
   $("create-next")?.addEventListener("click", () => showCreateStep(2));
   $("create-back")?.addEventListener("click", () => showCreateStep(1));
-  $("folder-browse")?.addEventListener("click", () => openFolderPicker("root", "Drive root"));
-  $("folder-up")?.addEventListener("click", () => openFolderPicker("root", "Drive root"));
+  $("folder-browse")?.addEventListener("click", () => openFolderPicker(folderParentId || "root"));
+  $("folder-up")?.addEventListener("click", openParentFolder);
+  $("folder-select-current")?.addEventListener("click", () => selectDriveFolder(folderParentId, folderParentLabel));
+  $("f-folder")?.addEventListener("input", handleFolderInput);
   $("expired-links-toggle")?.addEventListener("click", toggleExpiredLinks);
   document.querySelectorAll('[name="transfer-preset"]').forEach((radio) => radio.addEventListener("change", applyTransferPreset));
   $("create-copy")?.addEventListener("click", () => copyCreatedLink());
@@ -766,7 +768,7 @@ function updateLinkCard(article, link) {
   article.className = `link-card panel ${escAttr(link.state || "active")}`;
   article.innerHTML = `
     <div class="link-card-head">
-      <div><button class="link-card-title" data-open-detail="${escAttr(link.slug)}" type="button">${esc(link.label)}</button><div class="link-meta"><code>/d/${esc(link.slug)}</code><span>·</span><span>${esc(expires)}</span><span>·</span><span>${link.settings.concurrency}× parallel</span><span>·</span><span>${link.settings.chunkMB} MB chunks</span><span>·</span><span>${link.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</span></div></div>
+      <div><button class="link-card-title" data-open-detail="${escAttr(link.slug)}" type="button">${esc(link.label)}</button><div class="link-meta"><code>/d/${esc(link.slug)}</code><span>·</span><span>${esc(expires)}</span><span>·</span><span>${link.settings.adaptiveConcurrency ? `auto 2–8× parallel` : `${link.settings.concurrency}× parallel`}</span><span>·</span><span>${link.settings.chunkMB} MB chunks</span><span>·</span><span>${link.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</span></div></div>
       <span class="link-status ${escAttr(link.state || "active")}">${esc(access)}${link.state === "expired" ? " · expired" : link.disabled ? " · paused" : ""}</span>
     </div>
     <div class="link-action-row" aria-label="Actions for ${escAttr(link.label)}">
@@ -794,7 +796,9 @@ function linkActionButton(name, label, attributes, danger = false) {
 }
 
 let folderParentId = "root";
-let folderParentLabel = "Drive root";
+let folderParentLabel = "My Drive";
+let folderBreadcrumbs = [{ id: "root", name: "My Drive" }];
+let selectedFolderName = "";
 
 function showCreateStep(step) {
   if (step === 2 && !value("f-label")) {
@@ -807,10 +811,17 @@ function showCreateStep(step) {
 }
 
 function applyTransferPreset(event) {
-  const values = { simple: [2, 16], fast: [4, 32], aggressive: [8, 64] };
-  const [concurrency, chunkMB] = values[event.target.value] || values.fast;
+  const values = {
+    auto: [4, 32, true],
+    steady: [2, 16, false],
+    balanced: [4, 32, false],
+    fast: [6, 32, false],
+    maximum: [8, 64, false],
+  };
+  const [concurrency, chunkMB, adaptive] = values[event.target.value] || values.auto;
   $("f-conc").value = concurrency;
   $("f-chunk").value = chunkMB;
+  $("f-adaptive").value = adaptive ? "1" : "0";
 }
 
 function toggleExpiredLinks() {
@@ -820,30 +831,74 @@ function toggleExpiredLinks() {
   $("expired-rows").classList.toggle("expanded", !expanded);
 }
 
-async function openFolderPicker(parentId, label) {
+async function openFolderPicker(parentId) {
   folderParentId = parentId || "root";
-  folderParentLabel = label || "Drive root";
   $("folder-picker-panel").classList.remove("hidden");
-  $("folder-path").textContent = folderParentLabel;
   $("folder-list").innerHTML = '<div class="empty">Loading Drive folders…</div>';
   $("folder-err").textContent = "";
   try {
     const response = await fetch(`/api/admin/drive/folders?parent=${encodeURIComponent(folderParentId)}`);
     const data = await response.json().catch(() => ({ folders: [] }));
     if (!response.ok) throw new Error(data.error || "Drive folder list failed.");
+    folderBreadcrumbs = data.breadcrumbs?.length ? data.breadcrumbs : [{ id: "root", name: "My Drive" }];
+    const current = folderBreadcrumbs.at(-1);
+    folderParentId = current?.id || folderParentId;
+    folderParentLabel = current?.name || "My Drive";
+    renderFolderBreadcrumbs();
+    $("folder-up").disabled = folderBreadcrumbs.length <= 1;
     $("folder-list").innerHTML = (data.folders || []).length
-      ? data.folders.map((folder) => `<div class="folder-option"><button type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg><span>${esc(folder.name)}</span></button><button class="mini" type="button" data-open-folder-picker="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}">Open</button></div>`).join("")
+      ? data.folders.map((folder) => `<div class="folder-option"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg><span>${esc(folder.name)}</span><span class="folder-open-cue">Open →</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}">Select</button></div>`).join("")
       : '<div class="empty">No child folders here.</div>';
     $("folder-list").querySelectorAll("[data-pick-folder]").forEach((button) => button.addEventListener("click", () => {
-      $("f-folder").value = button.dataset.pickFolder;
-      $("folder-path").textContent = `Selected: ${button.dataset.folderName}`;
-      $("folder-picker-panel").classList.add("hidden");
+      selectDriveFolder(button.dataset.pickFolder, button.dataset.folderName);
     }));
-    $("folder-list").querySelectorAll("[data-open-folder-picker]").forEach((button) => button.addEventListener("click", () => openFolderPicker(button.dataset.openFolderPicker, button.dataset.folderName)));
+    $("folder-list").querySelectorAll("[data-open-folder-picker]").forEach((button) => button.addEventListener("click", () => openFolderPicker(button.dataset.openFolderPicker)));
   } catch (error) {
     $("folder-list").innerHTML = "";
     $("folder-err").textContent = error.message;
   }
+}
+
+function renderFolderBreadcrumbs() {
+  $("folder-breadcrumbs").innerHTML = folderBreadcrumbs.map((crumb, index) => {
+    const current = index === folderBreadcrumbs.length - 1;
+    return `${index ? '<span aria-hidden="true">/</span>' : ""}<button type="button" data-folder-crumb="${escAttr(crumb.id)}" ${current ? 'aria-current="page" disabled' : ""}>${esc(crumb.name)}</button>`;
+  }).join("");
+  $("folder-breadcrumbs").querySelectorAll("[data-folder-crumb]:not([disabled])").forEach((button) => button.addEventListener("click", () => openFolderPicker(button.dataset.folderCrumb)));
+}
+
+function openParentFolder() {
+  if (folderBreadcrumbs.length <= 1) return;
+  openFolderPicker(folderBreadcrumbs.at(-2).id);
+}
+
+function selectDriveFolder(id, name) {
+  $("f-folder").value = id || "root";
+  selectedFolderName = name || "My Drive";
+  if (folderBreadcrumbs.at(-1)?.id !== (id || "root")) {
+    folderBreadcrumbs = [...folderBreadcrumbs, { id: id || "root", name: selectedFolderName }];
+  }
+  folderParentId = id || "root";
+  folderParentLabel = selectedFolderName;
+  $("folder-selection").textContent = `Selected destination: ${selectedFolderName}`;
+  $("folder-selection").classList.add("selected");
+  $("folder-picker-panel").classList.add("hidden");
+  updateCreateButtonLabel();
+}
+
+function handleFolderInput() {
+  selectedFolderName = "";
+  const hasFolder = !!value("f-folder");
+  $("folder-selection").textContent = hasFolder ? "Using the Drive folder ID entered above." : "No folder selected — a new Drive folder will be created.";
+  $("folder-selection").classList.toggle("selected", hasFolder);
+  updateCreateButtonLabel();
+}
+
+function updateCreateButtonLabel() {
+  const button = $("create");
+  if (!button) return;
+  if (selectedFolderName) button.textContent = `Create in ${selectedFolderName.length > 28 ? `${selectedFolderName.slice(0, 27)}…` : selectedFolderName}`;
+  else button.textContent = value("f-folder") ? "Create in selected folder" : "Create and make Drive folder";
 }
 
 function copyCreatedLink() {
@@ -855,6 +910,9 @@ function resetCreateFlow() {
   $("drop-create-form").reset();
   $("f-conc").value = "4";
   $("f-chunk").value = "32";
+  $("f-adaptive").value = "1";
+  selectedFolderName = "";
+  handleFolderInput();
   $("f-accent").value = "#2f6bff";
   $("f-bgcolor").value = "#eaf0f9";
   $("create-success").classList.add("hidden");
@@ -899,6 +957,7 @@ async function createLink() {
     settings: {
       concurrency: Number(value("f-conc")) || 4,
       chunkMB: Number(value("f-chunk")) || 32,
+      adaptiveConcurrency: value("f-adaptive") === "1",
       perUploaderFolders: $("f-folders").checked,
       maxTotalBytes: gb > 0 ? Math.round(gb * 1024 ** 3) : 0,
       maxTotalFiles: Number(value("f-budget-files")) || 0,
@@ -1105,7 +1164,7 @@ function renderDetail(d) {
       <div class="section-title"><div><p class="eyebrow">configuration</p><h2>${icon("sliders")} Settings</h2></div><span class="muted">Changes apply to this link only.</span></div>
       <div class="settings-accordion">
         <details open><summary><span class="settings-summary-copy">${icon("lock", "settings-role-icon")}<span><b>Access</b><small>${l.hasPin ? "PIN protected" : "Open"} · ${l.expiresAt ? `expires ${new Date(l.expiresAt).toLocaleDateString()}` : "never expires"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Label</label><input id="d-label" type="text" value="${escAttr(l.label)}" /></div><div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" autocomplete="new-password" /></div><div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="${expiryDays}" /></div></div></details>
-        <details><summary><span class="settings-summary-copy">${icon("sliders", "settings-role-icon")}<span><b>Transfer</b><small>${l.settings.concurrency}× parallel · ${l.settings.chunkMB} MB chunks · ${l.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Parallel files</label><select id="d-conc">${opts([1, 2, 3, 4, 6, 8], l.settings.concurrency)}</select></div><div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8, 16, 32, 64], l.settings.chunkMB, " MB")}</select></div><div class="field"><label>Max single file GB</label><input id="d-maxgb" type="number" min="0" value="${escAttr(maxTransferGb)}" /></div></div><label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Create subfolders per uploader</label></div></details>
+        <details><summary><span class="settings-summary-copy">${icon("sliders", "settings-role-icon")}<span><b>Transfer</b><small>${l.settings.adaptiveConcurrency ? "auto 2–8× parallel" : `${l.settings.concurrency}× parallel`} · ${l.settings.chunkMB} MB chunks · ${l.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Starting parallel files</label><select id="d-conc">${opts([1, 2, 3, 4, 6, 8], l.settings.concurrency)}</select></div><div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8, 16, 32, 64], l.settings.chunkMB, " MB")}</select></div><div class="field"><label>Max single file GB</label><input id="d-maxgb" type="number" min="0" value="${escAttr(maxTransferGb)}" /></div></div><div class="check-row"><label class="check"><input id="d-adaptive" type="checkbox" ${l.settings.adaptiveConcurrency ? "checked" : ""} /> Adapt parallelism to live network performance</label><label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Create subfolders per uploader</label></div></div></details>
         <details><summary><span class="settings-summary-copy">${icon("budget", "settings-role-icon")}<span><b>Budgets</b><small>${l.settings.maxTotalBytes ? `${fmtBytes(l.stats.bytes)} of ${fmtBytes(l.settings.maxTotalBytes)}` : "Unlimited"} · auto-pause at limit</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Max total GB</label><input id="d-budget-gb" type="number" min="0" value="${escAttr(budgetGb)}" /></div><div class="field"><label>Max files</label><input id="d-budget-files" type="number" min="0" value="${l.settings.maxTotalFiles || ""}" /></div><div class="field"><label>Max sessions</label><input id="d-budget-sessions" type="number" min="0" value="${l.settings.maxSessions || ""}" /></div></div></details>
         <details><summary><span class="settings-summary-copy">${icon("bell", "settings-role-icon")}<span><b>Notifications</b><small>${l.notify.enabled ? "Email enabled" : "Email disabled"} · ${l.notify.start ? "start alerts" : "no start alerts"} · ${l.notify.complete ? "completion digest" : "no completion digest"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body check-row"><label class="check"><input id="d-notify" type="checkbox" ${l.notify.enabled ? "checked" : ""} /> Email enabled</label><label class="check"><input id="d-notify-start" type="checkbox" ${l.notify.start ? "checked" : ""} /> On upload start</label><label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Session digest when done</label></div></details>
         <details><summary><span class="settings-summary-copy">${icon("palette", "settings-role-icon")}<span><b>Branding & promo</b><small>${l.theme.logoUrl || l.theme.backgroundUrl || l.theme.promoTitle ? "Custom theme configured" : "Default losthusky/drop theme"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-2"><div class="field"><label>Logo URL</label><input id="d-logo" type="url" value="${escAttr(l.theme.logoUrl)}" /></div><div class="field"><label>Background image URL</label><input id="d-bg" type="url" value="${escAttr(l.theme.backgroundUrl)}" /></div><div class="field"><label>Accent</label><input id="d-accent" type="color" value="${escAttr(l.theme.accentColor)}" /></div><div class="field"><label>Background</label><input id="d-bgcolor" type="color" value="${escAttr(l.theme.backgroundColor)}" /></div><div class="field wide"><label>Welcome message</label><input id="d-welcome" type="text" value="${escAttr(l.theme.welcome)}" /></div><div class="field"><label>Promo title</label><input id="d-promo-title" type="text" value="${escAttr(l.theme.promoTitle)}" /></div><div class="field"><label>Promo text</label><input id="d-promo-text" type="text" value="${escAttr(l.theme.promoText)}" /></div><div class="field"><label>YouTube/Vimeo URL</label><input id="d-video" type="url" value="${escAttr(l.theme.videoUrl)}" /></div><div class="field"><label>CTA label</label><input id="d-cta-label" type="text" value="${escAttr(l.theme.ctaLabel)}" /></div><div class="field"><label>CTA URL</label><input id="d-cta-url" type="url" value="${escAttr(l.theme.ctaUrl)}" /></div></div></details>
@@ -1207,6 +1266,7 @@ async function saveDetail(slug, clearPin) {
     settings: {
       concurrency: Number(value("d-conc")) || 4,
       chunkMB: Number(value("d-chunk")) || 32,
+      adaptiveConcurrency: $("d-adaptive").checked,
       perUploaderFolders: $("d-folders").checked,
       maxTransferBytes: maxGb > 0 ? Math.round(maxGb * 1024 ** 3) : 0,
       maxTotalBytes: gb > 0 ? Math.round(gb * 1024 ** 3) : 0,
@@ -1250,10 +1310,9 @@ function uploadRow(u) {
       <td class="num">${new Date(u.at).toLocaleString()}</td>
       <td class="num"><button class="mini" data-preview="${escAttr(u.f)}" ${u.f ? "" : "disabled"} type="button">open</button></td>
     </tr>`;
+}
 function detailStatCard(label, value, iconName, accent = false) {
   return `<div class="stat-card v3${accent ? " accent" : ""}"><span class="stat-ico">${icon(iconName)}</span><div><b>${esc(String(value))}</b><span class="stat-label">${esc(label)}</span></div></div>`;
-}
-
 }
 
 function staticCard(label, value) {

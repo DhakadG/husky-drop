@@ -37,7 +37,7 @@ import {
   slugify,
   timingSafeEqual,
 } from "./util.js";
-import { accessToken, driveFileMeta, driveListFolders, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
+import { accessToken, driveBrowseFolders, driveFileMeta, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
 import { bumpStats, gatePin, getUploads, liveProgress, liveSnapshot, liveStub, logEvent, mergeEventsKV, rateLimitRemote, recentEvents, recordCompletion, sendNotify } from "./store.js";
 import {
   adminShare,
@@ -206,10 +206,10 @@ async function api(request, env, url, ctx) {
       return driveThumbMeta(env, p.slice("/api/admin/thumb/".length));
     }
     if (m === "GET" && p === "/api/admin/drive/folders") {
-      if (!env.GOOGLE_CLIENT_ID) return json({ folders: [] });
+      if (!env.GOOGLE_CLIENT_ID) return json({ currentId: "root", folders: [], breadcrumbs: [{ id: "root", name: "My Drive" }] });
       const parent = cleanText(url.searchParams.get("parent") || "root", 80);
       try {
-        return json({ folders: await driveListFolders(env, parent) });
+        return json(await driveBrowseFolders(env, parent));
       } catch (err) {
         return json({ error: err.message }, 502);
       }
