@@ -13,116 +13,42 @@
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body class="drop-page">
-<div class="ambient"></div>
+<div class="bg-fx" aria-hidden="true"><i></i><i></i><i></i></div>
 <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="true"></div>
-<main class="drop-shell">
-  <header class="topbar">
-    <a class="brand" href="/"><i class="brand-mark"></i>losthusky<span>/</span>drop</a>
-    <div class="status-pill" id="ws-state">secure drop</div>
-  </header>
+<main class="drop-shell drop-v3">
+  <header class="topbar drop-topbar"><a class="brand" href="/"><i class="brand-mark"></i>losthusky<span class="brand-slash">/</span>drop</a><div class="status-pill secure-pill" id="ws-state"><i aria-hidden="true"></i>secure drop</div></header>
 
-  <section id="loading" class="panel center-panel">
-    <p class="eyebrow">loading link</p>
-    <h1>Finding this drop...</h1>
-  </section>
+  <section id="loading" class="panel edge-card"><span class="edge-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"></path></svg></span><p class="eyebrow">loading link</p><h1>Finding this drop…</h1></section>
 
-  <section id="gone" class="panel center-panel hidden">
-    <p class="eyebrow">closed</p>
-    <h1>This link is not available.</h1>
-    <p class="muted">It expired, was deleted, or the URL is incomplete.</p>
-  </section>
+  <section id="gone" class="panel edge-card hidden"><span class="edge-icon warn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z" fill="currentColor" opacity=".16"></path><path d="M12 8v5M12 17h.01" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"></path></svg></span><p class="eyebrow">closed</p><h1>This link is not available.</h1><p class="muted">It expired, was deleted, or the URL is incomplete.</p><a class="btn ghost" href="/">Back to losthusky/drop</a></section>
 
-  <section id="pin-gate" class="panel center-panel hidden">
-    <p class="eyebrow">protected link</p>
-    <h1 id="pin-label">Password required</h1>
-    <div class="field">
-      <label for="pin">Password / PIN</label>
-      <input id="pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter the shared code" />
-    </div>
-    <button class="btn" id="pin-go">Open drop</button>
-    <div class="msg-err" id="pin-err"></div>
-  </section>
+  <section id="pin-gate" class="grad-border edge-gate hidden"><div class="edge-card-inner"><span class="edge-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3" fill="currentColor" opacity=".16"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" fill="none" stroke="currentColor" stroke-width="2"></path></svg></span><p class="eyebrow">protected drop</p><h1 id="pin-label">Password required</h1><p class="muted">Enter the code the collector shared with you.</p><div class="field"><label for="pin">Password / PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter shared code" /></div><button class="btn" id="pin-go">Open secure drop</button><div class="msg-err" id="pin-err"></div></div></section>
 
   <section id="main" class="hidden">
-    <div id="resume-banner" class="panel resume-banner hidden">
-      <b>You have unfinished uploads from a previous visit.</b>
-      <span class="muted">Re-select the same files below and they will continue from where they stopped instead of starting over.</span>
-    </div>
-    <div class="drop-hero panel">
-      <div>
-        <img id="link-logo" class="link-logo hidden" alt="" />
-        <p class="eyebrow">receive files</p>
-        <h1 id="label">Trip drop</h1>
-        <p id="welcome" class="hero-copy">Send original photos and videos here.</p>
-        <div class="meta-row" id="meta"></div>
-      </div>
-    </div>
+    <div id="resume-banner" class="resume-banner-v3 hidden"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6M20 20v-6h-6M5.5 15A8 8 0 0 0 19 8M18.5 9A8 8 0 0 0 5 16" fill="none" stroke="currentColor" stroke-width="2"></path></svg><span><b>Interrupted before? It resumes.</b><small>Re-select the same files and they continue instead of restarting.</small></span></div>
 
-    <div class="grid-main">
-      <section class="panel">
-        <div class="field">
-          <label for="who">Your name</label>
-          <input id="who" type="text" autocomplete="name" placeholder="e.g. Riya" maxlength="60" />
-        </div>
+    <section class="panel collector-hero"><img id="link-logo" class="link-logo hidden" alt="" /><p class="eyebrow" id="collector-name">Your files are being collected</p><h1 id="label">Trip drop</h1><p id="welcome" class="hero-copy">Send original photos and videos here.</p><div class="meta-row" id="meta"></div></section>
 
-        <div class="dropzone" id="zone" role="button" tabindex="0" aria-label="Add photos and videos">
-          <div class="big">Tap to add photos and videos</div>
-          <div class="sub">Original size, HEIC, MOV, folders, and large files are fine.</div>
-          <button class="mini hidden" id="folder-btn" type="button">or add a whole folder</button>
-        </div>
-        <input id="picker" type="file" multiple class="hidden" />
-        <input id="folderpicker" type="file" webkitdirectory multiple class="hidden" />
+    <section class="drop-step name-step"><span class="step-number">1</span><div class="field"><label for="who">What should we call you?</label><input id="who" type="text" autocomplete="name" placeholder="e.g. Riya" maxlength="60" /><small>This name helps the collector find your files.</small></div></section>
 
-        <div class="security-grid" aria-label="Security notes">
-          <div>
-            <b>Password gate</b>
-            <span>Protected links verify before upload sessions are created.</span>
-          </div>
-          <div>
-            <b>Direct encrypted route</b>
-            <span>Uploads move over HTTPS straight to Google Drive.</span>
-          </div>
-          <div>
-            <b>Admin live progress</b>
-            <span>Upload progress streams through a live relay, not KV heartbeats.</span>
-          </div>
-          <div>
-            <b>Keep this page open</b>
-            <span>iPhones pause long uploads when the browser is closed.</span>
-          </div>
-        </div>
-        <button class="mini report-btn" id="report-btn" type="button">Something not working? Report a problem</button>
-      </section>
+    <section class="drop-step upload-step"><span class="step-number">2</span><div class="grad-border dropzone-wrap"><div class="dropzone" id="zone" role="button" tabindex="0" aria-label="Add photos and videos"><span class="dropzone-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><div class="big">Add photos, videos or folders</div><div class="sub">HEIC, MOV, RAW, whole folders and multi-GB files are welcome. Keep adding while uploads run.</div><button class="mini hidden" id="folder-btn" type="button">Add a whole folder</button></div></div></section>
+    <input id="picker" type="file" multiple class="hidden" /><input id="folderpicker" type="file" webkitdirectory multiple class="hidden" />
 
-      <aside class="panel promo hidden" id="promo">
-        <p class="eyebrow">message</p>
-        <h2 id="promo-title"></h2>
-        <p id="promo-text"></p>
-        <div id="promo-video" class="promo-video hidden"></div>
-        <a id="promo-cta" class="btn ghost hidden" target="_blank" rel="noreferrer">Open</a>
-      </aside>
-    </div>
+    <aside class="panel promo hidden" id="promo"><p class="eyebrow">message from collector</p><h2 id="promo-title"></h2><p id="promo-text"></p><div id="promo-video" class="promo-video hidden"></div><a id="promo-cta" class="btn ghost hidden" target="_blank" rel="noreferrer">Open</a></aside>
 
-    <section class="panel transfer-panel hidden" id="transfer-panel">
-      <div class="transfer-head">
-        <div>
-          <p class="eyebrow">transfer queue</p>
-          <h2><span id="pct">0</span>% complete</h2>
-        </div>
-        <div class="transfer-side">
-          <div class="muted" id="detail">waiting</div>
-          <div class="transfer-actions">
-            <button class="mini hidden" id="retry-all" type="button">retry failed</button>
-            <button class="mini danger hidden" id="cancel-all" type="button">cancel all</button>
-          </div>
-        </div>
-      </div>
-      <div class="trail total"><i id="totalbar"></i></div>
-      <div class="filelist" id="list"></div>
+    <section class="panel transfer-panel-v3 hidden" id="transfer-panel">
+      <div class="transfer-head-v3"><div class="progress-ring"><svg width="62" height="62" viewBox="0 0 62 62" aria-hidden="true"><circle cx="31" cy="31" r="26" fill="none" stroke="rgba(12,26,43,.08)" stroke-width="6"></circle><circle id="progress-ring-value" cx="31" cy="31" r="26" fill="none" stroke="url(#dropProgressGradient)" stroke-width="6" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="163.36"></circle><defs><linearGradient id="dropProgressGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f6bff"></stop><stop offset="1" stop-color="#15c0c9"></stop></linearGradient></defs></svg><b><span id="pct">0</span>%</b></div><div class="transfer-copy"><p class="eyebrow">transfer queue</p><h2 id="queue-title">Preparing files</h2><div class="muted" id="detail">waiting</div></div><div class="transfer-actions"><button class="mini" id="pause-all" type="button">Pause</button><button class="mini hidden" id="retry-all" type="button">Retry failed</button><button class="mini danger hidden" id="cancel-all" type="button">Cancel all</button></div></div>
+      <div class="trail total striped"><i id="totalbar"></i></div>
+      <div class="keep-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z" fill="currentColor" opacity=".16"></path><path d="M12 8v5M12 17h.01" fill="none" stroke="currentColor" stroke-width="2"></path></svg><span><b>Keep this page open until it finishes.</b> If it closes, return and re-select the same files to resume.</span></div>
+      <div id="budget-notice" class="budget-notice hidden"><b>Upload budget reached.</b><span>This link auto-paused to protect the collector’s Drive limit. Files already delivered remain safe.</span></div>
+      <div class="filelist" id="list"></div><button class="mini show-all-files hidden" id="show-all-files" type="button"></button>
     </section>
+
+    <section id="done-card" class="grad-border done-card hidden"><div><span class="success-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" stroke-width="2.4"></path></svg></span><p class="eyebrow">delivered</p><h2 id="done-title">All files delivered ✓</h2><p id="done-recap" class="muted"></p><button class="btn ghost" id="add-more" type="button">Add more files</button></div></section>
+
+    <section class="trust-strip" aria-label="Transfer promises"><div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" fill="currentColor" opacity=".15"></path><path d="m8 12 3 3 5-6" fill="none" stroke="currentColor" stroke-width="2"></path></svg><span><b>Private link</b><small>Only people with this URL can upload.</small></span></div><div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v12H4z" fill="currentColor" opacity=".15"></path><path d="M4 7h16M8 4h8M12 11v5M9.5 13.5 12 16l2.5-2.5" fill="none" stroke="currentColor" stroke-width="2"></path></svg><span><b>Direct to Drive</b><small>Original files travel over HTTPS.</small></span></div><div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6M20 20v-6h-6M5.5 15A8 8 0 0 0 19 8M18.5 9A8 8 0 0 0 5 16" fill="none" stroke="currentColor" stroke-width="2"></path></svg><span><b>Resumable</b><small>Re-pick interrupted files to continue.</small></span></div></section>
+    <footer class="drop-footer"><button class="mini report-btn" id="report-btn" type="button">Report a problem</button><span>Powered by losthusky/drop</span></footer>
   </section>
 </main>
-<script src="/public.js"></script>
-<script src="/drop.js"></script>
+<script src="/public.js"></script><script src="/drop.js"></script>
 </body>
-</html>

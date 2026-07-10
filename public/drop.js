@@ -16,6 +16,8 @@ let liveReconnectDelay = 1000;
 let liveConnectedOnce = false;
 let lastClientError = "";
 let errorReports = 0;
+let queuePaused = false;
+let showAllFiles = false;
 
 const queue = [];
 const MAX_RETRIES = 8;
@@ -65,8 +67,9 @@ async function init() {
   $("loading").classList.add("hidden");
   if (!r.ok) return showGone();
   link = await r.json();
-  if (link.expired) return showGone();
-  if (link.paused) return showGone("paused", "This link is paused right now.", "Ask for a fresh link or try again later.");
+  if (link.expired) return showGone("expired", "This drop has closed.", "Ask the collector for a new link.");
+  if (link.paused && link.budgetHit) return showGone("budget reached", "This drop reached its upload budget.", "Files already delivered are safe. Ask the collector to raise the limit or reopen the link.");
+  if (link.paused) return showGone("paused", "This link is paused right now.", "Ask the collector to reopen it or try again later.");
   document.title = `${link.label} - LostHusky's DropBox`;
   applyTheme(link.theme || {});
   applySettings(link.settings || {});
@@ -147,6 +150,7 @@ async function verifyPinValue(candidate) {
 function showMain() {
   $("main").classList.remove("hidden");
   $("label").textContent = link.label;
+  $("collector-name").textContent = link.ownerName ? `${link.ownerName} is collecting` : "Your files are being collected";
   $("welcome").textContent = link.theme?.welcome || "Send original photos and videos here.";
 
   const meta = $("meta");
@@ -216,6 +220,15 @@ function showMain() {
 
   $("retry-all").addEventListener("click", retryAll);
   $("cancel-all").addEventListener("click", cancelAll);
+  $("pause-all").addEventListener("click", toggleQueuePause);
+  $("show-all-files").addEventListener("click", () => {
+    showAllFiles = !showAllFiles;
+    schedulePaint();
+  });
+  $("add-more").addEventListener("click", () => {
+    $("done-card").classList.add("hidden");
+    if (pickerGate()) $("picker").click();
+  });
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && active > 0) acquireWakeLock();
@@ -352,6 +365,15 @@ function addFiles(files) {
   hideResumeBanner();
 }
 
+function toggleQueuePause() {
+  queuePaused = !queuePaused;
+  $("pause-all").textContent = queuePaused ? "Resume" : "Pause";
+  $("pause-all").classList.toggle("active", queuePaused);
+  sendLive(true);
+  schedulePaint();
+  if (!queuePaused) pump();
+}
+
 function setState(item, next) {
   if (item.state === next) return;
   totals[item.state]--;
@@ -395,6 +417,11 @@ function activeWeight() {
 }
 
 function pump() {
+  if (queuePaused) {
+    sendLive(true);
+    schedulePaint();
+    return;
+  }
   const windowBytes = concurrency * chunkSize;
   while (active < MAX_ACTIVE) {
     const next = queue.find((q) => q.state === "queued");
@@ -475,6 +502,11 @@ async function uploadFile(item) {
     finalizeComplete(item);
   } catch (err) {
     if (item.canceled) return;
+    if (err.status === 413) {
+      queuePaused = true;
+      $("pause-all").textContent = "Resume";
+      $("budget-notice").classList.remove("hidden");
+    }
     item.stat = err.message.slice(0, 80);
     setState(item, "error");
     reportError("upload", err, item.file.name);
@@ -504,7 +536,11 @@ async function ensureSession(item) {
   });
   const d = await r.json().catch(() => ({}));
   if (r.status === 429) throw new Error(`locked for ${d.retryAfter || 60}s`);
-  if (!r.ok) throw new Error(d.error || `session HTTP ${r.status}`);
+  if (!r.ok) {
+    const error = new Error(d.error || `session HTTP ${r.status}`);
+    error.status = r.status;
+    throw error;
+  }
   item.uri = d.sessionUri;
   saveResumeRecord(item);
 }
@@ -847,6 +883,7 @@ function visibleItems() {
   const pinned = uploadingList.length + att.length + doneRecent.length;
   const room = Math.max(0, MAX_VISIBLE - pinned);
   const queued = [];
+  if (showAllFiles) return queue;
   if (room > 0 && totals.queued > 0) {
     for (const it of queue) {
       if (it.state !== "queued") continue;
@@ -863,17 +900,13 @@ function renderVisible() {
   reconcile(list, vis, (item) => item, makeRow, updateRow);
 
   const hidden = totals.count - vis.length;
-  if (hidden > 0) {
-    if (!tailNote) {
-      tailNote = document.createElement("div");
-      tailNote.className = "list-note";
-    }
-    tailNote.textContent = `+${hidden} more file${hidden === 1 ? "" : "s"} not shown - totals above stay accurate`;
-    list.appendChild(tailNote);
-  } else if (tailNote) {
+  if (tailNote) {
     tailNote.remove();
     tailNote = null;
   }
+  const showButton = $("show-all-files");
+  showButton.classList.toggle("hidden", hidden <= 0 && !showAllFiles);
+  showButton.textContent = showAllFiles ? "Show active and recent only" : `Show all ${totals.count} files`;
 }
 
 function makeRow(item) {
@@ -931,7 +964,15 @@ function renderSummary() {
   const pct = totals.bytes ? Math.floor((totals.sent / totals.bytes) * 100) : 0;
   $("pct").textContent = pct;
   $("totalbar").style.width = `${pct}%`;
-  $("detail").textContent = detailText();
+  $("progress-ring-value").style.strokeDashoffset = String(163.36 * (1 - pct / 100));
+  $("detail").textContent = queuePaused ? `Paused · ${detailText()}` : detailText();
+  $("queue-title").textContent = totals.done === totals.count && totals.count ? `Delivered ${totals.done} of ${totals.count} files` : queuePaused ? `Paused — ${totals.done} of ${totals.count} files delivered` : `Uploading — ${totals.done} of ${totals.count} files`;
+  const completed = totals.count > 0 && totals.done === totals.count;
+  $("done-card").classList.toggle("hidden", !completed);
+  if (completed) {
+    $("done-title").textContent = `All ${totals.done} files delivered ✓`;
+    $("done-recap").textContent = `${fmtBytes(totals.bytes)} saved to the collector’s Drive.`;
+  }
 
   const failed = totals.error + totals.warning + totals.canceled;
   const pending = totals.queued + totals.uploading;
@@ -1024,6 +1065,7 @@ function sendLive(force) {
       done: totals.done,
       error: totals.error + totals.canceled,
       speed: Math.round(speedBps),
+      paused: queuePaused,
       state: totals.count && totals.done === totals.count ? "done" : "uploading",
       files: sample,
     })

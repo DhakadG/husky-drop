@@ -3762,6 +3762,317 @@ table.uploads .empty-cell {
   color: var(--accent);
 }
 
+/* ---------- Public Drop page v3 ---------- */
+.drop-v3 {
+  max-width: 980px;
+}
+.drop-topbar {
+  margin-bottom: 28px;
+}
+.secure-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.secure-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 5px rgba(31, 178, 122, 0.1);
+  animation: pulseDot 1.8s ease-in-out infinite;
+}
+.edge-card,
+.edge-gate {
+  max-width: 520px;
+  margin: 12vh auto 0;
+  text-align: center;
+}
+.edge-card {
+  padding: 34px;
+}
+.edge-card-inner {
+  border-radius: 22px;
+  padding: 34px;
+  background: rgba(255, 255, 255, 0.78);
+}
+.edge-icon {
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  color: var(--accent);
+  background: rgba(47, 107, 255, 0.1);
+}
+.edge-icon.warn {
+  color: var(--amber);
+  background: rgba(217, 138, 20, 0.1);
+}
+.edge-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.edge-gate .field {
+  text-align: left;
+}
+.collector-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 30px;
+  text-align: center;
+}
+.collector-hero::after {
+  content: "";
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  right: -100px;
+  bottom: -150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(21, 192, 201, 0.17), transparent 68%);
+}
+.collector-hero h1 {
+  margin: 7px 0;
+  font: 800 clamp(27px, 5vw, 46px) var(--font-display);
+  letter-spacing: -0.04em;
+}
+.collector-hero .meta-row {
+  justify-content: center;
+}
+.resume-banner-v3,
+.keep-open,
+.budget-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+.resume-banner-v3 {
+  margin-bottom: 12px;
+  color: var(--accent);
+  background: rgba(47, 107, 255, 0.09);
+}
+.resume-banner-v3 svg,
+.keep-open svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+.resume-banner-v3 b,
+.resume-banner-v3 small {
+  display: block;
+}
+.resume-banner-v3 small {
+  margin-top: 2px;
+  color: var(--ink-soft);
+}
+.drop-step {
+  position: relative;
+  margin-top: 16px;
+  padding-left: 48px;
+}
+.step-number {
+  position: absolute;
+  top: 7px;
+  left: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: #fff;
+  font: 700 13px var(--font-display);
+  background: var(--grad);
+  box-shadow: 0 10px 22px -10px rgba(47, 107, 255, 0.7);
+}
+.name-step {
+  max-width: 620px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.name-step .field small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.dropzone-wrap {
+  border-radius: 24px;
+}
+.drop-v3 .dropzone {
+  min-height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  border: 0;
+  border-radius: 22px;
+  padding: 32px;
+  background: rgba(255, 255, 255, 0.72);
+}
+.dropzone-icon {
+  width: 58px;
+  height: 58px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  color: var(--accent);
+  background: rgba(47, 107, 255, 0.1);
+  transition: transform 0.18s ease;
+}
+.dropzone:hover .dropzone-icon,
+.dropzone.drag .dropzone-icon {
+  transform: translateY(-4px);
+}
+.dropzone-icon svg {
+  width: 29px;
+  height: 29px;
+}
+.transfer-panel-v3 {
+  margin-top: 18px;
+  padding: 22px;
+}
+.transfer-head-v3 {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+.progress-ring {
+  position: relative;
+  width: 62px;
+  height: 62px;
+}
+.progress-ring svg {
+  transform: rotate(-90deg);
+}
+.progress-ring b {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 11px var(--font-display);
+}
+.transfer-copy h2 {
+  margin: 3px 0;
+  font: 700 17px var(--font-display);
+}
+.striped > i {
+  background: repeating-linear-gradient(120deg, #2f6bff 0 10px, #15c0c9 10px 20px);
+  background-size: 28px 100%;
+  animation: progressStripe 1s linear infinite;
+}
+@keyframes progressStripe {
+  to { background-position: 28px 0; }
+}
+.keep-open {
+  margin: 14px 0;
+  color: #7a5410;
+  background: rgba(217, 138, 20, 0.1);
+}
+.budget-notice {
+  flex-direction: column;
+  margin: 12px 0;
+  color: #7a5410;
+  border: 1px solid rgba(217, 138, 20, 0.2);
+  background: rgba(217, 138, 20, 0.1);
+}
+.transfer-panel-v3 .file-row {
+  border-radius: 13px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+.transfer-panel-v3 .file-row.error {
+  border: 1px solid rgba(240, 85, 107, 0.2);
+}
+.show-all-files {
+  display: flex;
+  margin: 14px auto 0;
+}
+.done-card {
+  margin-top: 18px;
+  text-align: center;
+}
+.done-card > div {
+  border-radius: 22px;
+  padding: 30px;
+  background: rgba(255, 255, 255, 0.76);
+}
+.done-card .success-check svg {
+  width: 27px;
+  height: 27px;
+}
+.trust-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 18px;
+}
+.trust-strip > div {
+  display: flex;
+  gap: 9px;
+  border-radius: 15px;
+  padding: 13px;
+  background: rgba(255, 255, 255, 0.48);
+}
+.trust-strip svg {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.trust-strip b,
+.trust-strip small {
+  display: block;
+}
+.trust-strip small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.drop-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 0 36px;
+  color: var(--muted);
+  font: 10.5px var(--font-mono);
+}
+
+@media (max-width: 680px) {
+  .drop-v3 {
+    padding: 14px;
+  }
+  .collector-hero,
+  .transfer-panel-v3 {
+    padding: 17px;
+  }
+  .drop-step {
+    padding-left: 0;
+    padding-top: 42px;
+  }
+  .step-number {
+    top: 0;
+  }
+  .transfer-head-v3 {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .transfer-actions {
+    grid-column: 1 / -1;
+  }
+  .trust-strip {
+    grid-template-columns: 1fr;
+  }
+  .drop-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 9px;
+  }
+}
 /* ---------- Admin shell v3 ---------- */
 .admin-side {
   border-radius: 24px;

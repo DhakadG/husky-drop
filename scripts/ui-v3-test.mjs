@@ -82,4 +82,17 @@ assert.match(adminJs, /data-view-share-activity/, "plan 07 connects Share Link c
 assert.match(css, /\.viewer-chip\s*\{/, "plan 07 styles recent-viewer chips");
 assert.match(css, /\.share-mode-card\s*\{/, "plan 07 styles the Share Link mode choices");
 
+const dropHtml = await read("public/drop.html");
+const dropJs = await read("public/drop.js");
+assert.match(dropHtml, /id="collector-name"/, "plan 08 displays the real collector name");
+assert.match(dropHtml, /id="progress-ring-value"/, "plan 08 provides the transfer progress ring");
+assert.match(dropHtml, /id="budget-notice"/, "plan 08 provides the real budget-stop notice");
+assert.match(dropHtml, /id="done-card"/, "plan 08 provides the delivered-files recap");
+assert.match(dropHtml, /class="trust-strip"/, "plan 08 provides uploader trust guidance");
+assert.match(dropJs, /let queuePaused = false/, "plan 08 tracks queue pause state");
+assert.match(dropJs, /function toggleQueuePause\(/, "plan 08 implements queue pause and resume");
+assert.match(dropJs, /paused:\s*queuePaused/, "plan 08 reports queue pause state to the live admin feed");
+assert.match(dropJs, /budgetHit/, "plan 08 handles real backend budget limits");
+assert.match(css, /\.transfer-panel-v3\s*\{/, "plan 08 styles the uploader transfer queue");
+
 console.log("UI v3 structure tests passed");
