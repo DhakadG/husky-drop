@@ -280,6 +280,9 @@ a {
 
 /* ---------- Chips ---------- */
 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--ink-soft);
@@ -287,6 +290,11 @@ a {
   border-radius: 999px;
   padding: 7px 13px;
   background: rgba(255, 255, 255, 0.7);
+}
+.chip-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
 }
 .chip.warn {
   color: var(--amber);
@@ -658,6 +666,10 @@ h2 {
   fill: none;
   flex: 0 0 auto;
   vertical-align: -3px;
+}
+.ico-fill {
+  fill: currentColor;
+  stroke: none;
 }
 
 /* ---------- Settings fold ---------- */
@@ -2925,11 +2937,36 @@ body.selecting .g-check {
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
-.upload-tools input[type="search"] {
+.history-search {
   flex: 1;
   min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-sm);
+  padding: 0 13px;
+  color: var(--faint);
+  background: var(--field-bg);
+}
+.history-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(47, 107, 255, 0.1);
+}
+.history-search .ico {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+.upload-tools input[type="search"] {
+  flex: 1;
+  min-width: 0;
   min-height: 40px;
-  padding: 8px 14px;
+  border: 0;
+  padding: 8px 0;
+  box-shadow: none;
+  background: transparent;
   font-size: 14px;
 }
 .upload-table-wrap {
@@ -4374,6 +4411,15 @@ table.uploads .empty-cell {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.stat-card.v3 .stat-ico svg {
+  width: 16px;
+  height: 16px;
 }
 .stat-card.v3 b {
   display: block;
@@ -4382,7 +4428,9 @@ table.uploads .empty-cell {
   font-weight: 800;
   letter-spacing: -0.03em;
 }
-.stat-card.v3 div > span {
+.stat-card.v3 .stat-label {
+  display: block;
+  margin: 0;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--muted);
@@ -4624,7 +4672,10 @@ table.uploads .empty-cell {
   background: rgba(12, 26, 43, 0.055);
 }
 .activity-chevron {
+  margin: 0;
   color: var(--muted);
+  fill: currentColor;
+  stroke: none;
   transition: transform 0.18s ease;
 }
 .activity-session.expanded .activity-chevron {
@@ -4665,6 +4716,11 @@ table.uploads .empty-cell {
   border-radius: 9px;
   color: var(--accent);
   background: rgba(47, 107, 255, 0.1);
+}
+.activity-type-icon .ico {
+  width: 14px;
+  height: 14px;
+  margin: 0;
 }
 .activity-timeline-row.clienterror .activity-type-icon,
 .activity-timeline-row.autopause .activity-type-icon {
@@ -4784,6 +4840,10 @@ table.uploads .empty-cell {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
+}
+.link-action .ico-fill {
+  fill: currentColor;
+  stroke: none;
 }
 .link-stat-grid {
   display: grid;
@@ -5093,7 +5153,38 @@ table.uploads .empty-cell {
   stroke-width: 2;
   transition: transform 0.18s ease;
 }
-.settings-accordion details[open] summary svg {
+.settings-summary-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.settings-accordion summary .settings-role-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  margin: 0;
+  border-radius: 10px;
+  padding: 7px;
+  color: var(--accent);
+  fill: currentColor;
+  stroke: none;
+  background: rgba(47, 107, 255, 0.09);
+  transform: none;
+}
+.settings-accordion summary .settings-role-icon:not(.ico-fill) {
+  fill: none;
+  stroke: currentColor;
+}
+.settings-accordion summary .settings-chevron {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  fill: var(--muted);
+  stroke: none;
+}
+.settings-accordion details[open] summary .settings-chevron {
   transform: rotate(180deg);
 }
 .settings-body {
@@ -5143,11 +5234,19 @@ table.uploads .empty-cell {
   margin-top: 7px;
 }
 .share-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border-radius: 999px;
   padding: 5px 8px;
   color: var(--violet);
   font: 10px var(--font-mono);
   background: rgba(123, 107, 255, 0.1);
+}
+.share-mode-pill .ico {
+  width: 11px;
+  height: 11px;
+  margin: 0;
 }
 .share-stat-grid {
   display: grid;
@@ -5254,9 +5353,8 @@ table.uploads .empty-cell {
 .share-mode-icon svg {
   width: 19px;
   height: 19px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
+  fill: currentColor;
+  stroke: none;
 }
 .share-mode-card b,
 .share-mode-card small {

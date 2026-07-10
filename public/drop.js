@@ -155,14 +155,15 @@ function showMain() {
 
   const meta = $("meta");
   meta.innerHTML = "";
-  meta.append(chip(link.requiresPin ? "password protected" : "open link"));
-  meta.append(chip(`up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`));
+  meta.append(chip(link.requiresPin ? "password protected" : "open link", "", link.requiresPin ? "lock-small" : "gallery"));
+  meta.append(chip(`up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`, "", "image"));
+  if (link.settings?.perUploaderFolders) meta.append(chip("your own subfolder", "", "folder-add"));
   if (link.driveFreeGB != null) {
-    meta.append(chip(`~${link.driveFreeGB} GB free in Drive`, link.driveFreeGB < 30 ? "warn" : ""));
+    meta.append(chip(`~${link.driveFreeGB} GB free in Drive`, link.driveFreeGB < 30 ? "warn" : "", "folder"));
   }
   if (link.expiresAt) {
     const d = Math.max(0, Math.ceil((link.expiresAt - Date.now()) / 86400000));
-    meta.append(chip(`closes in ${d} day${d === 1 ? "" : "s"}`, d <= 2 ? "warn" : ""));
+    meta.append(chip(`closes in ${d} day${d === 1 ? "" : "s"}`, d <= 2 ? "warn" : "", "clock"));
   }
 
   setupPromo();
