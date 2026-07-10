@@ -172,31 +172,29 @@
         </section>
       </section>
 
-      <!-- SHARE LINKS -->
+      <!-- SHARE LINKS: one pane in the shared /admin shell -->
       <section id="tab-shares" class="tab-pane hidden">
-        <div class="pane-head"><h1 class="pane-title">Share links</h1><span class="muted">outbound /s/ links that give friends read access to Drive folders</span></div>
-        <section class="panel">
-          <div class="section-title"><h2>All shares</h2></div>
-          <div class="table-wrap">
-            <table class="links">
-              <thead><tr><th>Share</th><th>Mode / folders</th><th>Activity</th><th></th></tr></thead>
-              <tbody id="share-rows"></tbody>
-            </table>
-          </div>
-        </section>
-        <section class="panel">
-          <div class="section-title"><h2>Create share link</h2></div>
+        <div class="pane-head"><div><p class="eyebrow">outbound galleries</p><h1 class="pane-title grad-text">Share links</h1><span class="muted">Private /s/ links that give selected people read access to Drive folders.</span></div></div>
+        <div id="share-rows" class="share-card-list" aria-live="polite"></div>
+        <section class="panel share-create-panel">
+          <div class="section-title"><div><p class="eyebrow">new share</p><h2>Create share link</h2></div></div>
           <div class="grid-2">
-            <div class="field"><label for="s-label">Label</label><input id="s-label" type="text" placeholder="Kareri Lake - final album" /></div>
+            <div class="field"><label for="s-label">Label</label><input id="s-label" type="text" placeholder="Kareri Lake — final album" /></div>
             <div class="field"><label for="s-slug">Slug (optional)</label><input id="s-slug" type="text" placeholder="kareri-album" /></div>
-            <div class="field wide"><label for="s-folders">Drive folder IDs or URLs (comma separated)</label><input id="s-folders" type="text" placeholder="https://drive.google.com/drive/folders/1AbC..." /></div>
-            <div class="field"><label for="s-mode">Mode</label><select id="s-mode"><option value="gallery" selected>Gallery (private, PIN + analytics)</option><option value="redirect">Redirect (public Drive link)</option></select></div>
+            <div class="field wide"><label for="s-folders">Drive folder IDs or URLs (comma separated)</label><input id="s-folders" type="text" placeholder="https://drive.google.com/drive/folders/1AbCDefGhijkLmN" /></div>
+          </div>
+          <fieldset class="share-mode-fieldset">
+            <legend>Visitor experience</legend>
+            <label class="share-mode-card"><input type="radio" name="share-mode-choice" value="gallery" checked /><span class="share-mode-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1"></rect><rect x="13" y="4" width="8" height="7" rx="1"></rect><rect x="3" y="13" width="8" height="7" rx="1"></rect><rect x="13" y="13" width="8" height="7" rx="1"></rect></svg></span><span><b>Gallery</b><small>Private gallery with PIN, identity and file analytics.</small></span></label>
+            <label class="share-mode-card"><input type="radio" name="share-mode-choice" value="redirect" /><span class="share-mode-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"></path><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"></path></svg></span><span><b>Redirect</b><small>Send visitors directly to a public Drive folder.</small></span></label>
+          </fieldset>
+          <input id="s-mode" type="hidden" value="gallery" />
+          <div class="grid-2">
             <div class="field"><label for="s-pin">Password / PIN (optional)</label><input id="s-pin" type="password" autocomplete="new-password" /></div>
             <div class="field"><label for="s-days">Expires in days (0 = permanent)</label><input id="s-days" type="number" min="0" max="30" value="14" /></div>
-            <label class="check"><input id="s-zip" type="checkbox" checked /> Allow "download all as zip"</label>
-            <label class="check"><input id="s-auth" type="checkbox" checked /> Require Google sign-in before PIN</label>
           </div>
-          <button class="btn" id="share-create">Create share link</button>
+          <div class="share-toggle-row"><label class="toggle-chip"><input id="s-zip" type="checkbox" checked /><span>Download all as ZIP</span></label><label class="toggle-chip"><input id="s-auth" type="checkbox" checked /><span>Require Google sign-in</span></label></div>
+          <button class="btn" id="share-create" type="button">Create share link</button>
           <div class="msg-err" id="share-err"></div>
         </section>
       </section>

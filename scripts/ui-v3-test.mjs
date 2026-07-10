@@ -74,4 +74,12 @@ assert.match(adminJs, /class="leader-row"/, "plan 06 renders proportional upload
 assert.match(css, /\.detail-breadcrumb\s*\{/, "plan 06 styles the Link Detail breadcrumb");
 assert.match(css, /\.settings-accordion\s*\{/, "plan 06 styles the settings accordions");
 
+assert.match(adminHtml, /class="share-mode-fieldset"/, "plan 07 provides accessible Share Link mode choices");
+assert.match(adminHtml, /id="s-mode" type="hidden"/, "plan 07 preserves the existing Share Link payload field");
+assert.match(adminJs, /function makeShareCard\(/, "plan 07 renders Share Link analytics cards");
+assert.match(adminJs, /share\.recentViewers/, "plan 07 renders real recent viewer identities");
+assert.match(adminJs, /data-view-share-activity/, "plan 07 connects Share Link cards to the shared Activity tab");
+assert.match(css, /\.viewer-chip\s*\{/, "plan 07 styles recent-viewer chips");
+assert.match(css, /\.share-mode-card\s*\{/, "plan 07 styles the Share Link mode choices");
+
 console.log("UI v3 structure tests passed");

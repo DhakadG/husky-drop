@@ -52,6 +52,15 @@ async function init() {
   $("create-qr")?.addEventListener("click", () => showQr($("create-success-url").textContent, "New drop link"));
   $("create-another")?.addEventListener("click", resetCreateFlow);
   $("share-create")?.addEventListener("click", createShare);
+  document.querySelectorAll('[name="share-mode-choice"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      $("s-mode").value = radio.value;
+      const gallery = radio.value === "gallery";
+      $("s-pin").disabled = !gallery;
+      $("s-auth").disabled = !gallery;
+      $("s-zip").disabled = !gallery;
+    });
+  });
   $("logout")?.addEventListener("click", logout);
   document.addEventListener("click", handleAdminAction);
   document.querySelectorAll("[data-metric]").forEach((b) => {
@@ -477,6 +486,15 @@ function handleAdminAction(e) {
   const refresh = e.target.closest("[data-refresh-detail]");
   if (refresh) return refreshDetail(refresh.dataset.refreshDetail, false);
   const sync = e.target.closest("[data-sync-detail]");
+  const shareActivity = e.target.closest("[data-view-share-activity]");
+  if (shareActivity) {
+    activityFilter = "all";
+    activityQuery = shareActivity.dataset.viewShareActivity;
+    if ($("activity-query")) $("activity-query").value = activityQuery;
+    document.querySelectorAll("[data-activity-filter]").forEach((button) => button.classList.toggle("active", button.dataset.activityFilter === "all"));
+    renderEvents();
+    return showTab("activity");
+  }
   if (sync) return refreshDetail(sync.dataset.syncDetail, false, true);
   const goto = e.target.closest("[data-goto-tab]");
   if (goto) return showTab(goto.dataset.gotoTab);
@@ -922,22 +940,46 @@ async function createLink() {
 function renderShares(shares) {
   const box = $("share-rows");
   if (!box) return;
-  reconcile(box, shares, (s) => s.slug, makeLinkRow, updateShareRow);
+  reconcile(box, shares, (share) => share.slug, makeShareCard, updateShareCard);
+  setEmpty(box, shares.length === 0, "No share links yet.");
 }
 
-function updateShareRow(tr, s) {
-  tr.innerHTML = `
-    <td><b>${esc(s.label)}</b> ${stateBadge(s.state)}<br><code>/s/${esc(s.slug)}</code></td>
-    <td>${esc(s.mode)}${s.hasPin ? " - password" : ""}${s.requireAuth ? ` - <span class="tag">google sign-in</span>` : ""}<br><span class="muted">${s.folderNames.map(esc).join(", ") || "-"}</span></td>
-    <td>${s.stats.opens} opens - ${s.stats.downloads} downloads<br><span class="muted">${fmtBytes(s.stats.bytes)}</span></td>
-    <td class="actions">
-      <button class="mini" data-copy-link="/s/${escAttr(s.slug)}" type="button">copy</button>
-      <button class="mini" data-qr-link="/s/${escAttr(s.slug)}" data-qr-label="${escAttr(s.label)}" type="button">qr</button>
-      <button class="mini" data-share-link="/s/${escAttr(s.slug)}" type="button">share</button>
-      <button class="mini" data-toggle-share-auth="${escAttr(s.slug)}" data-auth="${s.requireAuth ? "1" : "0"}" type="button">${s.requireAuth ? "require sign-in: on" : "require sign-in: off"}</button>
-      <button class="mini" data-pause-share="${escAttr(s.slug)}" data-paused="${s.disabled ? "1" : "0"}" type="button">${s.disabled ? "resume" : "pause"}</button>
-      <button class="mini danger" data-del-share="${escAttr(s.slug)}" data-del-label="${escAttr(s.label)}" type="button">delete</button>
-    </td>`;
+function makeShareCard() {
+  const article = document.createElement("article");
+  article.className = "share-card panel";
+  return article;
+}
+
+function updateShareCard(article, share) {
+  const closes = share.expiresAt ? `closes ${new Date(share.expiresAt).toLocaleDateString()}` : "never closes";
+  const access = [share.mode, share.hasPin ? "PIN" : "no PIN", share.requireAuth ? "Google sign-in" : "link access"].join(" · ");
+  const viewers = (share.recentViewers || []).map((viewer) => `<span class="viewer-chip" title="${escAttr(viewer.email)}"><i>${esc(initialsOf(viewer.name || viewer.email))}</i><span>${esc(viewer.name || viewer.email)}</span></span>`).join("");
+  article.className = `share-card panel ${escAttr(share.state || "active")}`;
+  article.innerHTML = `
+    <div class="share-card-head"><div><h2>${esc(share.label)}</h2><div class="share-mode-line"><span class="share-mode-pill">${esc(access)}</span><code>/s/${esc(share.slug)}</code></div><p>${esc((share.folderNames || []).join(" · ") || `${share.folderIds.length} Drive folder${share.folderIds.length === 1 ? "" : "s"}`)} · ${esc(closes)}</p></div><span class="link-status ${escAttr(share.state || "active")}">${esc(share.state || "active")}</span></div>
+    <div class="link-action-row">
+      ${shareActionButton("copy", "Copy", `data-copy-link="/s/${escAttr(share.slug)}"`)}
+      ${shareActionButton("qr", "QR", `data-qr-link="/s/${escAttr(share.slug)}" data-qr-label="${escAttr(share.label)}"`)}
+      ${shareActionButton("share", "Share", `data-share-link="/s/${escAttr(share.slug)}"`)}
+      ${shareActionButton("user", share.requireAuth ? "Sign-in on" : "Sign-in off", `data-toggle-share-auth="${escAttr(share.slug)}" data-auth="${share.requireAuth ? "1" : "0"}"`)}
+      ${shareActionButton(share.disabled ? "play" : "pause", share.disabled ? "Resume" : "Pause", `data-pause-share="${escAttr(share.slug)}" data-paused="${share.disabled ? "1" : "0"}"`)}
+      ${shareActionButton("trash", "Delete", `data-del-share="${escAttr(share.slug)}" data-del-label="${escAttr(share.label)}"`, true)}
+    </div>
+    <div class="share-stat-grid"><div><span>Opens</span><b>${share.stats.opens || 0}</b></div><div><span>Unique viewers</span><b>${share.viewerCount || 0}</b></div><div><span>File views</span><b>${share.stats.views || 0}</b></div><div><span>Downloaded</span><b>${fmtBytes(share.stats.bytes || 0)}</b></div></div>
+    <div class="recent-viewers"><div><span class="muted">Recent viewers</span><div class="viewer-chips">${viewers || '<span class="muted">No identified viewers yet.</span>'}</div></div><button class="mini" data-view-share-activity="${escAttr(share.slug)}" type="button">View activity →</button></div>`;
+}
+
+function shareActionButton(name, label, attributes, danger = false) {
+  const icons = {
+    copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>',
+    qr: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><path d="M14 14h3v3h-3zM18 18h3v3h-3zM18 14h3M14 18v3"></path></svg>',
+    share: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"></path></svg>',
+    user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>',
+    pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>',
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8Z"></path></svg>',
+    trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path></svg>',
+  };
+  return `<button class="link-action${danger ? " danger" : ""}" ${attributes} type="button">${icons[name]}<span>${esc(label)}</span></button>`;
 }
 
 async function toggleShareAuth(slug, isRequired) {
@@ -989,6 +1031,11 @@ async function createShare() {
   ["s-label", "s-slug", "s-folders", "s-pin"].forEach((id) => {
     if ($(id)) $(id).value = "";
   });
+  $("s-mode").value = "gallery";
+  document.querySelectorAll('[name="share-mode-choice"]').forEach((radio) => (radio.checked = radio.value === "gallery"));
+  $("s-pin").disabled = false;
+  $("s-auth").disabled = false;
+  $("s-zip").disabled = false;
   refreshAll();
   showQr(`${location.origin}/s/${d.slug}`, "Share link created - URL copied to clipboard");
 }

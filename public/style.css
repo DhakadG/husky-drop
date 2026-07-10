@@ -4797,6 +4797,212 @@ table.uploads .empty-cell {
   margin-top: 16px;
 }
 
+/* ---------- Admin Share links v3 ---------- */
+.share-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.share-card {
+  padding: 19px 20px;
+}
+.share-card.disabled,
+.share-card.expired {
+  opacity: 0.68;
+}
+.share-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.share-card-head h2 {
+  margin: 0;
+  font: 700 17px var(--font-display);
+}
+.share-card-head p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font: 10.5px var(--font-mono);
+}
+.share-mode-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+}
+.share-mode-pill {
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--violet);
+  font: 10px var(--font-mono);
+  background: rgba(123, 107, 255, 0.1);
+}
+.share-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.share-stat-grid > div {
+  border-radius: 13px;
+  padding: 11px 12px;
+  background: rgba(12, 26, 43, 0.035);
+}
+.share-stat-grid span,
+.share-stat-grid b {
+  display: block;
+}
+.share-stat-grid span {
+  color: var(--muted);
+  font: 9.5px var(--font-mono);
+  text-transform: uppercase;
+}
+.share-stat-grid b {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font: 700 17px var(--font-display);
+}
+.recent-viewers {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  border-top: 1px solid rgba(12, 26, 43, 0.06);
+  padding-top: 12px;
+}
+.viewer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+.viewer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 4px 8px 4px 4px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.65);
+}
+.viewer-chip i {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  font: normal 9px var(--font-mono);
+  background: var(--grad);
+}
+.share-create-panel {
+  margin-top: 18px;
+}
+.share-mode-fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border: 0;
+  margin: 18px 0;
+  padding: 0;
+}
+.share-mode-fieldset legend {
+  margin-bottom: 8px;
+  font: 11px var(--font-mono);
+}
+.share-mode-card {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(12, 26, 43, 0.09);
+  border-radius: 16px;
+  padding: 14px;
+  cursor: pointer;
+}
+.share-mode-card:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(47, 107, 255, 0.06);
+}
+.share-mode-card input {
+  accent-color: var(--accent);
+}
+.share-mode-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  color: var(--accent);
+  background: rgba(47, 107, 255, 0.1);
+}
+.share-mode-icon svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+.share-mode-card b,
+.share-mode-card small {
+  display: block;
+}
+.share-mode-card small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.share-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+.toggle-chip {
+  border: 1px solid rgba(12, 26, 43, 0.09);
+  border-radius: 999px;
+  padding: 8px 11px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.56);
+}
+.toggle-chip:has(input:checked) {
+  color: var(--accent);
+  border-color: rgba(47, 107, 255, 0.28);
+  background: rgba(47, 107, 255, 0.07);
+}
+.toggle-chip input {
+  accent-color: var(--accent);
+}
+
+@media (max-width: 760px) {
+  .share-card-head,
+  .recent-viewers {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .share-stat-grid,
+  .share-mode-fieldset {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .share-mode-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .share-mode-card > input {
+    position: absolute;
+    opacity: 0;
+  }
+}
+@media (max-width: 480px) {
+  .share-mode-fieldset {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 760px) {
   .detail-title-row,
   .detail-two-up {
