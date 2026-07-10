@@ -223,7 +223,7 @@ async function legacySha256(text) {
 }
 
 async function main() {
-  const env = makeEnv();
+  const env = makeEnv({ OWNER_DISPLAY_NAME: "Ghanishth" });
 
   const policyAssetRequests = [];
   const policyEnv = makeEnv({
@@ -268,6 +268,18 @@ async function main() {
   assert.equal(publicLink.requiresPin, true);
   assert.equal("folderId" in publicLink, false, "public link metadata must not expose Drive folder IDs");
   assert.equal(publicLink.paused, false);
+  assert.equal(publicLink.ownerName, "Ghanishth", "public link exposes the configured collector name");
+  assert.equal(publicLink.budgetHit, false, "active links are not marked as budget-hit");
+
+  await env.KV.put(
+    "link:budget-hit",
+    JSON.stringify({ ...stored, slug: "budget-hit", disabled: true, disabledReason: "byte budget reached" })
+  );
+  res = await worker.fetch(request("/api/link/budget-hit"), env);
+  assert.equal(res.status, 200);
+  const budgetPublicLink = await res.json();
+  assert.equal(budgetPublicLink.paused, true);
+  assert.equal(budgetPublicLink.budgetHit, true, "public metadata distinguishes budget auto-pause");
 
   res = await worker.fetch(
     request("/api/verify", {
@@ -437,6 +449,12 @@ async function main() {
   const rolled = await env.KV.get("events:recent", "json");
   assert.ok(Array.isArray(rolled) && rolled.length >= 3, "events merged into events:recent");
   assert.ok(rolled.some((e) => e.t === "clienterror"), "client error appears in events");
+  const today = new Date().toISOString().slice(0, 10);
+  assert.ok(Array.isArray(await env.KV.get(`events:day:${today}`, "json")), "events are also stored in a day bucket");
+  res = await worker.fetch(request(`/api/admin/events?before=${today}&days=1`, { headers: { authorization: "Bearer test-admin" } }), env);
+  assert.equal(res.status, 200, "admin can page through older event-day buckets");
+  const eventDays = await res.json();
+  assert.equal(eventDays.days.length, 1);
 
   // Admin cookie login flow.
   res = await worker.fetch(

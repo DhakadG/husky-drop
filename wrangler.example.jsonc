@@ -31,6 +31,8 @@
   "vars": {
     "DRIVE_PARENT_ID": "REPLACE_WITH_OPTIONAL_PARENT_FOLDER_ID",
     "LINK_SLUGS": "comma,separated,existing,slugs",
+    // Public non-secret name shown as “<name> is collecting” on /d/ pages.
+    "OWNER_DISPLAY_NAME": "REPLACE_WITH_OWNER_DISPLAY_NAME",
     // Optional: Cloudflare Web Analytics beacon token (Worker injects it).
     "CF_BEACON_TOKEN": "",
     // Optional: Microsoft Clarity project id (Worker injects it).

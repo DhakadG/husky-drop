@@ -19,6 +19,7 @@ import {
   clamp,
   cleanText,
   clientIp,
+  dayKey,
   escapeHtml,
   getCookie,
   json,
@@ -36,7 +37,7 @@ import {
   slugify,
   timingSafeEqual,
 } from "./util.js";
-import { accessToken, driveFileMeta, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
+import { accessToken, driveFileMeta, driveListFolders, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
 import { bumpStats, gatePin, getUploads, liveProgress, liveSnapshot, liveStub, logEvent, mergeEventsKV, rateLimitRemote, recentEvents, recordCompletion, sendNotify } from "./store.js";
 import {
   adminShare,
@@ -180,6 +181,7 @@ async function api(request, env, url, ctx) {
     if (m === "GET" && p === "/api/admin/links") return listLinks(env);
     if (m === "POST" && p === "/api/admin/links") return createLink(request, env, ctx);
     if (m === "POST" && p === "/api/admin/live/close") return closeLiveSession(request, env);
+    if (m === "GET" && p === "/api/admin/events") return adminEvents(env, url);
     if (m === "GET" && p === "/api/admin/shares") return listShares(env);
     if (m === "POST" && p === "/api/admin/shares") return createShare(request, env);
     if (m === "PATCH" && p.startsWith("/api/admin/shares/")) {
@@ -202,6 +204,15 @@ async function api(request, env, url, ctx) {
     }
     if (m === "GET" && p.startsWith("/api/admin/thumb/")) {
       return driveThumbMeta(env, p.slice("/api/admin/thumb/".length));
+    }
+    if (m === "GET" && p === "/api/admin/drive/folders") {
+      if (!env.GOOGLE_CLIENT_ID) return json({ folders: [] });
+      const parent = cleanText(url.searchParams.get("parent") || "root", 80);
+      try {
+        return json({ folders: await driveListFolders(env, parent) });
+      } catch (err) {
+        return json({ error: err.message }, 502);
+      }
     }
   }
   return json({ error: "not found" }, 404);
@@ -328,16 +339,18 @@ async function ensureLinkFolder(env, link) {
 
 // ---- Public drop-link endpoints ----
 
-function publicLink(link, quota) {
+function publicLink(link, quota, env) {
   const state = linkState(link);
   const free = quotaFree(quota);
   return {
     slug: link.slug,
     label: link.label,
+    ownerName: cleanText(env.OWNER_DISPLAY_NAME || "", 60),
     requiresPin: !!link.pinHash,
     expiresAt: link.expiresAt || null,
     expired: state === "expired",
     paused: state === "paused",
+    budgetHit: state === "paused" && /^(byte|file|session) budget reached$/.test(link.disabledReason || ""),
     state,
     settings: normalizeSettings(link.settings),
     theme: normalizeTheme(link.theme),
@@ -371,7 +384,7 @@ async function getPublicLink(env, slug) {
   const link = await env.KV.get(`link:${slug}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
   const quota = env.GOOGLE_CLIENT_ID ? await driveQuota(env) : null;
-  return json(publicLink(link, quota));
+  return json(publicLink(link, quota, env));
 }
 
 async function verifyPin(request, env) {
@@ -758,6 +771,24 @@ async function adminTimeseries(env, url) {
   const res = await liveStub(env).fetch(`https://live.internal/timeseries?days=${days}${slug ? `&slug=${encodeURIComponent(slug)}` : ""}`);
   if (!res.ok) return json({ rows: [] });
   return json(await res.json());
+}
+
+// Older activity, one KV read per calendar day. `before` is an exclusive
+// YYYY-MM-DD upper bound (defaults to today); `days` is how many earlier
+// days to return. The rolling events:recent key still serves the fresh view.
+async function adminEvents(env, url) {
+  const beforeRaw = cleanText(url.searchParams.get("before") || "", 10);
+  const before = /^\d{4}-\d{2}-\d{2}$/.test(beforeRaw) ? beforeRaw : dayKey(Date.now());
+  const days = clamp(Number(url.searchParams.get("days")) || 3, 1, 14);
+  const start = new Date(`${before}T00:00:00Z`).getTime();
+  if (!Number.isFinite(start)) return json({ error: "bad before date" }, 400);
+  const out = [];
+  for (let i = 1; i <= days; i++) {
+    const day = dayKey(start - i * 86400_000);
+    const events = (await env.KV.get(`events:day:${day}`, "json")) || [];
+    out.push({ day, events });
+  }
+  return json({ days: out, oldest: out.length ? out[out.length - 1].day : before });
 }
 
 async function driveThumbMeta(env, fileId) {

@@ -874,13 +874,13 @@ const d = await r.json().catch(() => ({ days: [] }));
 **Why:** The new-link flow needs to browse Drive folders instead of pasting IDs. Style-matched to `driveFindFolder`.
 **Locate:**
 ```js
-}
-
 export async function driveFileMeta(env, fileId) {
   const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
   if (!id) return null;
   const tok = await accessToken(env);
   const url = `https://www.googleapis.com/drive/v3/files/${id}?` + new URLSearchParams({
+    fields: "id,name,size,mimeType,parents,appProperties,thumbnailLink,webViewLink,iconLink",
+    supportsAllDrives: "true",
 ```
 **Action:** INSERT BEFORE
 **New code:**

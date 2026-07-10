@@ -362,6 +362,9 @@ export function normalizeShareStats(stats = {}) {
     opens: Number(stats.opens) || 0,
     downloads: Number(stats.downloads) || 0,
     bytes: Number(stats.bytes) || 0,
+    views: Number(stats.views) || 0,
+    // email -> { n: display name, at: last-seen ms }. Capped in bumpShareStats.
+    viewers: stats.viewers && typeof stats.viewers === "object" ? stats.viewers : {},
   };
 }
 
@@ -390,6 +393,7 @@ export function normalizeLiveSession(input) {
     error: Math.max(0, Number(input.error) || 0),
     speed: Math.max(0, Number(input.speed) || 0),
     eta: 0,
+    paused: !!input.paused,
     files,
     state: cleanText(input.state || "uploading", 20),
     lastSeen: Date.now(),

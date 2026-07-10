@@ -105,6 +105,11 @@ export function parseDriveFolderInput(value) {
 }
 
 export function adminShare(share, stats = {}) {
+  const s = normalizeShareStats(stats);
+  const recentViewers = Object.entries(s.viewers)
+    .sort((a, b) => (b[1].at || 0) - (a[1].at || 0))
+    .slice(0, 6)
+    .map(([email, v]) => ({ email, name: v.n || "" }));
   return {
     slug: share.slug,
     label: share.label,
@@ -118,7 +123,9 @@ export function adminShare(share, stats = {}) {
     expiresAt: share.expiresAt || null,
     disabled: !!share.disabled,
     state: shareState(share),
-    stats: normalizeShareStats(stats),
+    stats: { opens: s.opens, downloads: s.downloads, bytes: s.bytes, views: s.views },
+    viewerCount: Object.keys(s.viewers).length,
+    recentViewers,
     url: `/s/${share.slug}`,
   };
 }
@@ -331,17 +338,32 @@ export async function logShareOpened(request, env) {
   const share = await env.KV.get(`share:${slug}`, "json");
   if (!share) return json({ error: "share not found" }, 404);
   const viewer = await getViewer(request, env);
-  const record = normalizeEvent({ type: "share-open", slug, label: share.label, uploader: viewer?.email || "" }, request);
+  const stats = normalizeShareStats(await env.KV.get(`sstats:${slug}`, "json"));
+  const first = !!viewer?.email && !stats.viewers[viewer.email];
+  const record = normalizeEvent(
+    { type: "share-open", slug, label: share.label, uploader: viewer?.email || "", message: first ? "first open" : "" },
+    request
+  );
   if (env.LIVE_TRACKER) {
     await liveStub(env)
       .fetch("https://live.internal/share-stat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ slug, opens: 1, record }),
+        body: JSON.stringify({
+          slug,
+          opens: 1,
+          viewer: viewer ? { email: viewer.email, name: viewer.name || "" } : null,
+          record,
+        }),
       })
       .catch(() => {});
   } else {
-    await bumpShareStats(env, slug, { opens: 1, downloads: 0, bytes: 0 });
+    await bumpShareStats(env, slug, {
+      opens: 1,
+      downloads: 0,
+      bytes: 0,
+      viewers: viewer?.email ? { [viewer.email]: { n: viewer.name || "", at: Date.now() } } : {},
+    });
     await mergeEventsKV(env, [record]);
   }
   return json({ ok: true });
@@ -411,8 +433,27 @@ export async function shareTrack(request, env) {
           .catch(() => {}),
       ),
     );
+    if (viewEvents.length || viewer?.email) {
+      await liveStub(env)
+        .fetch("https://live.internal/share-stat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            slug,
+            views: viewEvents.length,
+            viewer: viewer ? { email: viewer.email, name: viewer.name || "" } : null,
+          }),
+        })
+        .catch(() => {});
+    }
   } else {
     await mergeEventsKV(env, records);
+    if (viewEvents.length || viewer?.email) {
+      await bumpShareStats(env, slug, {
+        views: viewEvents.length,
+        viewers: viewer?.email ? { [viewer.email]: { n: viewer.name || "", at: Date.now() } } : {},
+      });
+    }
   }
   return json({ ok: true });
 }
@@ -1088,11 +1129,22 @@ async function bumpDownloadStats(env, share, request, fileName, bytes, viewer) {
       .fetch("https://live.internal/share-stat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ slug: share.slug, downloads: 1, bytes, record }),
+        body: JSON.stringify({
+          slug: share.slug,
+          downloads: 1,
+          bytes,
+          viewer: viewer ? { email: viewer.email, name: viewer.name || "" } : null,
+          record,
+        }),
       })
       .catch(() => {});
   } else {
-    await bumpShareStats(env, share.slug, { opens: 0, downloads: 1, bytes });
+    await bumpShareStats(env, share.slug, {
+      opens: 0,
+      downloads: 1,
+      bytes,
+      viewers: viewer?.email ? { [viewer.email]: { n: viewer.name || "", at: Date.now() } } : {},
+    });
     await mergeEventsKV(env, [record]);
   }
 }

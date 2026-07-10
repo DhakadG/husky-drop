@@ -96,6 +96,26 @@ export async function driveFindFolder(env, name, parentId) {
   return d.files && d.files[0] ? d.files[0] : null;
 }
 
+// Child folders of a parent (default: Drive root), for the admin folder picker.
+export async function driveListFolders(env, parentId) {
+  const parent = String(parentId || "root").replace(/[^a-zA-Z0-9_-]/g, "") || "root";
+  const tok = await accessToken(env);
+  const url =
+    "https://www.googleapis.com/drive/v3/files?" +
+    new URLSearchParams({
+      q: `mimeType='application/vnd.google-apps.folder' and trashed=false and '${driveQueryEscape(parent)}' in parents`,
+      fields: "files(id,name)",
+      pageSize: "100",
+      orderBy: "name",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+  const r = await fetch(url, { headers: { authorization: `Bearer ${tok}` } });
+  if (!r.ok) throw new Error("Drive folder list failed: " + (await r.text()).slice(0, 300));
+  const d = await r.json();
+  return (d.files || []).map((f) => ({ id: f.id, name: f.name }));
+}
+
 export async function driveFileMeta(env, fileId) {
   const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
   if (!id) return null;

@@ -13,6 +13,7 @@ import {
   RECENT_CAP,
   cleanText,
   clientIp,
+  dayKey,
   json,
   makePinFields,
   normalizeEvent,
@@ -73,6 +74,18 @@ export async function bumpShareStats(env, slug, delta) {
   stats.opens += Number(delta.opens) || 0;
   stats.downloads += Number(delta.downloads) || 0;
   stats.bytes += Number(delta.bytes) || 0;
+  stats.views += Number(delta.views) || 0;
+  for (const [email, v] of Object.entries(delta.viewers || {})) {
+    const clean = cleanText(email, 80);
+    if (!clean) continue;
+    stats.viewers[clean] = { n: cleanText(v?.n || "", 80), at: Number(v?.at) || Date.now() };
+  }
+  // Cap the identity map: keep the 50 most recently seen viewers.
+  const entries = Object.entries(stats.viewers);
+  if (entries.length > 50) {
+    entries.sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
+    stats.viewers = Object.fromEntries(entries.slice(0, 50));
+  }
   await env.KV.put(key, JSON.stringify(stats));
   return stats;
 }
@@ -100,6 +113,22 @@ export async function mergeEventsKV(env, records) {
   const existing = (await env.KV.get("events:recent", "json")) || [];
   const merged = [...records, ...existing].sort((a, b) => b.at - a.at).slice(0, EVENT_CAP);
   await env.KV.put("events:recent", JSON.stringify(merged));
+
+  // Day buckets for "load earlier days": one KV key per calendar day, capped
+  // like the rolling key and expired after 90 days. Batched flushes mean this
+  // costs one extra write per flush, not per event.
+  const byDay = new Map();
+  for (const r of records) {
+    const day = dayKey(r.at || Date.now());
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(r);
+  }
+  for (const [day, batch] of byDay) {
+    const key = `events:day:${day}`;
+    const cur = (await env.KV.get(key, "json")) || [];
+    const next = [...batch, ...cur].sort((a, b) => b.at - a.at).slice(0, EVENT_CAP);
+    await env.KV.put(key, JSON.stringify(next), { expirationTtl: 90 * 86400 });
+  }
 }
 
 export async function recentEvents(env, limit = 60) {

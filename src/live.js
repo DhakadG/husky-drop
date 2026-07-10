@@ -39,6 +39,7 @@ export class LiveTracker {
     this.pendingShareStats = new Map(); // slug -> { opens, downloads, bytes }
     this.pendingDays = new Map(); // `${slug}|${day}` -> delta object
     this.rateBuckets = new Map(); // key -> { count, reset }
+    this.recentDone = []; // finished-session summaries for the Live tab
     this.sqlReady = false;
     try {
       this.sql = state.storage.sql;
@@ -71,7 +72,9 @@ export class LiveTracker {
     const url = new URL(request.url);
     if (url.pathname === "/snapshot") {
       this.prune();
-      return new Response(JSON.stringify({ active: this.snapshot() }), { headers: JSON_HEADERS });
+      return new Response(JSON.stringify({ active: this.snapshot(), recent: this.recentDone }), {
+        headers: JSON_HEADERS,
+      });
     }
 
     if (url.pathname === "/timeseries") {
@@ -115,10 +118,17 @@ export class LiveTracker {
       const body = await request.json().catch(() => ({}));
       const slug = cleanText(body.slug || "", 60);
       if (slug) {
-        const cur = this.pendingShareStats.get(slug) || { opens: 0, downloads: 0, bytes: 0 };
+        const cur = this.pendingShareStats.get(slug) || { opens: 0, downloads: 0, bytes: 0, views: 0, viewers: {} };
         cur.opens += Number(body.opens) || 0;
         cur.downloads += Number(body.downloads) || 0;
         cur.bytes += Number(body.bytes) || 0;
+        cur.views += Number(body.views) || 0;
+        if (body.viewer && body.viewer.email) {
+          cur.viewers[cleanText(body.viewer.email, 80)] = {
+            n: cleanText(body.viewer.name || "", 80),
+            at: Date.now(),
+          };
+        }
         this.pendingShareStats.set(slug, cur);
         this.bumpDay(`share:${slug}`, {
           opens: Number(body.opens) || 0,
@@ -424,6 +434,8 @@ export class LiveTracker {
   recordSession(input) {
     const session = normalizeLiveSession(input);
     const prev = this.sessions.get(session.id);
+    session.startedAt = prev?.startedAt || Date.now();
+    session.speedHist = prev?.speedHist || [];
     if (prev) {
       session.digestSent = prev.digestSent || false;
       session.prevState = prev.state;
@@ -433,11 +445,32 @@ export class LiveTracker {
         session.speed = prev.speed ? prev.speed * 0.5 + inst * 0.5 : inst || session.speed;
       }
     }
+    // Ring buffer of smoothed throughput samples (updates arrive ~1.2s apart,
+    // so 50 samples covers roughly the last minute for the admin sparkline).
+    session.speedHist = [...session.speedHist, { t: Date.now(), bps: Math.round(session.speed) }].slice(-50);
     const remaining = Math.max(0, session.total - session.sent);
     session.eta =
       session.state !== "done" && session.speed > 0 ? Math.round(remaining / session.speed) : 0;
+    if (session.state === "done" && session.prevState !== "done") this.noteFinished(session);
     this.sessions.set(session.id, session);
     return session;
+  }
+
+  // Compact summaries of recently completed sessions for the admin Live tab
+  // ("Finished this hour"). In-memory only; lost on DO restart, which is fine.
+  noteFinished(session) {
+    this.recentDone.unshift({
+      id: session.id,
+      slug: session.slug,
+      label: session.label,
+      uploader: session.uploader,
+      files: session.done,
+      bytes: session.sent,
+      duration: Math.max(1, Math.round((Date.now() - session.startedAt) / 1000)),
+      endedAt: Date.now(),
+    });
+    const cutoff = Date.now() - 3600_000;
+    this.recentDone = this.recentDone.filter((s) => s.endedAt >= cutoff).slice(0, 20);
   }
 
   // One digest email per finished session ("Priya uploaded 214 files, 18 GB")
@@ -540,10 +573,12 @@ export class LiveTracker {
         await bumpShareStats(this.env, slug, delta);
       } catch (err) {
         console.error("share stats flush failed", err.message);
-        const cur = this.pendingShareStats.get(slug) || { opens: 0, downloads: 0, bytes: 0 };
+        const cur = this.pendingShareStats.get(slug) || { opens: 0, downloads: 0, bytes: 0, views: 0, viewers: {} };
         cur.opens += delta.opens;
         cur.downloads += delta.downloads;
         cur.bytes += delta.bytes;
+        cur.views += delta.views || 0;
+        Object.assign(cur.viewers, delta.viewers || {});
         this.pendingShareStats.set(slug, cur);
       }
     }
@@ -622,7 +657,7 @@ export class LiveTracker {
   }
 
   broadcast() {
-    const payload = { type: "snapshot", active: this.snapshot() };
+    const payload = { type: "snapshot", active: this.snapshot(), recent: this.recentDone };
     for (const socket of [...this.adminSockets]) this.safeSend(socket, payload);
   }
 
