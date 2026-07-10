@@ -149,20 +149,26 @@
         <section id="live-finished-section" class="panel live-finished hidden"><div class="section-title"><h2>Finished this hour</h2><span class="muted">Most recent 20 sessions</span></div><div id="live-finished-list"></div></section>
       </section>
 
-      <!-- DROP LINKS -->
+      <!-- DROP LINKS: one pane in the shared /admin shell -->
       <section id="tab-links" class="tab-pane hidden">
-        <div class="pane-head"><h1 class="pane-title">Drop links</h1><span class="muted">inbound /d/ links your friends upload to</span></div>
-        <section class="panel">
-          <div class="section-title">
-            <h2>All links</h2>
-            <button class="mini" id="refresh" type="button">refresh</button>
+        <div class="pane-head">
+          <div>
+            <p class="eyebrow">inbound collections</p>
+            <h1 class="pane-title grad-text">Drop links</h1>
+            <span class="muted">Private /d/ links that send files directly into Drive.</span>
           </div>
-          <div class="table-wrap">
-            <table class="links">
-              <thead><tr><th>Link</th><th>Settings</th><th>Activity</th><th></th></tr></thead>
-              <tbody id="rows"></tbody>
-            </table>
+          <div class="pane-actions">
+            <button class="mini" id="refresh" type="button">Refresh</button>
+            <button class="btn" data-goto-tab="create" type="button">+ New drop link</button>
           </div>
+        </div>
+        <div id="rows" class="link-card-list" aria-live="polite"></div>
+        <section id="expired-links-section" class="expired-links hidden">
+          <button id="expired-links-toggle" class="expired-links-head" type="button" aria-expanded="false">
+            <span>Expired · <b id="expired-links-count">0</b></span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <div id="expired-rows" class="link-card-list"></div>
         </section>
       </section>
 
@@ -225,56 +231,88 @@
         </section>
       </section>
 
-      <!-- CREATE DROP LINK -->
+      <!-- CREATE DROP LINK: still a pane, not a separate page -->
       <section id="tab-create" class="tab-pane hidden">
-        <div class="pane-head"><h1 class="pane-title">New drop link</h1><span class="muted">a private upload page backed by its own Drive folder</span></div>
-        <section class="panel">
-          <div class="section-sub" style="margin-top:0">Basics</div>
-          <div class="grid-2">
-            <div class="field"><label for="f-label">Label</label><input id="f-label" type="text" placeholder="Spiti Trip - June 2026" /></div>
-            <div class="field"><label for="f-slug">Slug</label><input id="f-slug" type="text" placeholder="spiti-26" /></div>
-            <div class="field"><label for="f-pin">Password / PIN</label><input id="f-pin" type="password" inputmode="numeric" autocomplete="new-password" /></div>
-            <div class="field"><label for="f-days">Expires in days (0 = permanent)</label><input id="f-days" type="number" min="0" max="30" value="14" /></div>
-            <div class="field wide"><label for="f-folder">Drive folder ID (blank auto-creates)</label><input id="f-folder" type="text" placeholder="1AbC..." /></div>
-          </div>
+        <div class="pane-head">
+          <div><p class="eyebrow">new collection</p><h1 class="pane-title grad-text">New drop link</h1><span class="muted">Label it, choose a destination, then optionally add protection.</span></div>
+        </div>
+        <div class="create-flow">
+          <div class="create-steps" aria-hidden="true"><span class="active" data-create-indicator="1">1 · Basics</span><i></i><span data-create-indicator="2">2 · Optional settings</span></div>
+          <form id="drop-create-form" class="panel create-card">
+            <section id="create-step-1" class="create-step">
+              <div class="section-title"><div><p class="eyebrow">step 1</p><h2>Name and destination</h2></div><span class="tag">Label required</span></div>
+              <div class="field"><label for="f-label">Link label</label><input id="f-label" type="text" placeholder="Spiti Trip — June 2026" maxlength="90" required autofocus /></div>
+              <div class="folder-picker">
+                <div class="field"><label for="f-folder">Destination Drive folder</label><input id="f-folder" type="text" placeholder="Blank creates a new folder automatically" /></div>
+                <button class="mini" id="folder-browse" type="button">Browse Drive</button>
+              </div>
+              <div id="folder-picker-panel" class="folder-picker-panel hidden">
+                <div class="folder-picker-head"><button class="mini" id="folder-up" type="button">← Parent</button><span id="folder-path">Drive root</span></div>
+                <div id="folder-list" class="folder-list"></div>
+                <div class="msg-err" id="folder-err"></div>
+              </div>
+              <div class="create-quick-actions">
+                <button class="btn" id="create" type="submit">Create with defaults</button>
+                <button class="btn ghost" id="create-next" type="button">Add optional settings →</button>
+              </div>
+              <p class="muted create-enter-note">Press Enter from the label field to create immediately with safe defaults.</p>
+            </section>
 
-          <div class="section-sub">Transfer settings</div>
-          <div class="grid-3">
-            <div class="field"><label for="f-conc">Parallel files</label><select id="f-conc"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option></select></div>
-            <div class="field"><label for="f-chunk">Chunk size</label><select id="f-chunk"><option value="8">8 MB</option><option value="16">16 MB</option><option value="32" selected>32 MB</option><option value="64">64 MB</option></select></div>
-            <label class="check"><input id="f-folders" type="checkbox" /> Create subfolders per uploader</label>
-          </div>
+            <section id="create-step-2" class="create-step hidden">
+              <div class="section-title"><div><p class="eyebrow">step 2 · optional</p><h2>Protection and transfer</h2></div><button class="mini" id="create-back" type="button">← Basics</button></div>
+              <div class="grid-2">
+                <div class="field"><label for="f-slug">Custom slug</label><input id="f-slug" type="text" placeholder="spiti-26" /></div>
+                <div class="field"><label for="f-pin">Password / PIN</label><input id="f-pin" type="password" inputmode="numeric" autocomplete="new-password" /></div>
+                <div class="field"><label for="f-days">Expires in days (0 = permanent)</label><input id="f-days" type="number" min="0" max="30" value="14" /></div>
+                <div class="field"><label for="f-budget-gb">Size budget in GB (0 = unlimited)</label><input id="f-budget-gb" type="number" min="0" value="0" /></div>
+              </div>
+              <fieldset class="preset-fieldset">
+                <legend>Parallelism preset</legend>
+                <label class="preset-card"><input type="radio" name="transfer-preset" value="simple" /><span><b>Simple</b><small>2 files · 16 MB chunks</small></span></label>
+                <label class="preset-card"><input type="radio" name="transfer-preset" value="fast" checked /><span><b>Fast</b><small>4 files · 32 MB chunks</small></span></label>
+                <label class="preset-card"><input type="radio" name="transfer-preset" value="aggressive" /><span><b>Aggressive</b><small>8 files · 64 MB chunks</small></span></label>
+              </fieldset>
+              <input id="f-conc" type="hidden" value="4" />
+              <input id="f-chunk" type="hidden" value="32" />
+              <details class="optional-advanced">
+                <summary>More options</summary>
+                <div class="grid-3">
+                  <label class="check"><input id="f-folders" type="checkbox" /> Create subfolders per uploader</label>
+                  <div class="field"><label for="f-budget-files">Max files</label><input id="f-budget-files" type="number" min="0" value="0" /></div>
+                  <div class="field"><label for="f-budget-sessions">Max sessions</label><input id="f-budget-sessions" type="number" min="0" value="0" /></div>
+                </div>
+                <div class="check-row">
+                  <label class="check"><input id="f-notify" type="checkbox" /> Email me</label>
+                  <label class="check"><input id="f-notify-start" type="checkbox" checked /> On upload start</label>
+                  <label class="check"><input id="f-notify-complete" type="checkbox" /> Digest when done</label>
+                </div>
+                <div class="grid-2">
+                  <div class="field"><label for="f-logo">Logo URL</label><input id="f-logo" type="url" /></div>
+                  <div class="field"><label for="f-bg">Background image URL</label><input id="f-bg" type="url" /></div>
+                  <div class="field"><label for="f-accent">Accent color</label><input id="f-accent" type="color" value="#2f6bff" /></div>
+                  <div class="field"><label for="f-bgcolor">Fallback background</label><input id="f-bgcolor" type="color" value="#eaf0f9" /></div>
+                  <div class="field wide"><label for="f-welcome">Welcome message</label><input id="f-welcome" type="text" /></div>
+                  <div class="field"><label for="f-promo-title">Promo title</label><input id="f-promo-title" type="text" /></div>
+                  <div class="field"><label for="f-promo-text">Promo text</label><input id="f-promo-text" type="text" /></div>
+                  <div class="field"><label for="f-video">YouTube/Vimeo URL</label><input id="f-video" type="url" /></div>
+                  <div class="field"><label for="f-cta-label">CTA label</label><input id="f-cta-label" type="text" /></div>
+                  <div class="field"><label for="f-cta-url">CTA URL</label><input id="f-cta-url" type="url" /></div>
+                </div>
+              </details>
+              <button class="btn create-final" type="submit">Create drop link</button>
+            </section>
+            <div class="msg-err" id="create-err"></div>
+          </form>
 
-          <div class="section-sub">Budgets (0 = unlimited; link auto-pauses when reached)</div>
-          <div class="grid-3">
-            <div class="field"><label for="f-budget-gb">Max total GB</label><input id="f-budget-gb" type="number" min="0" placeholder="0" /></div>
-            <div class="field"><label for="f-budget-files">Max files</label><input id="f-budget-files" type="number" min="0" placeholder="0" /></div>
-            <div class="field"><label for="f-budget-sessions">Max sessions</label><input id="f-budget-sessions" type="number" min="0" placeholder="0" /></div>
-          </div>
-
-          <div class="section-sub">Notifications</div>
-          <div class="check-row">
-            <label class="check"><input id="f-notify" type="checkbox" /> Email me</label>
-            <label class="check"><input id="f-notify-start" type="checkbox" checked /> On upload start</label>
-            <label class="check"><input id="f-notify-complete" type="checkbox" /> Session digest when done</label>
-          </div>
-
-          <div class="section-sub">Customization</div>
-          <div class="grid-2">
-            <div class="field"><label for="f-logo">Logo URL</label><input id="f-logo" type="url" placeholder="https://..." /></div>
-            <div class="field"><label for="f-bg">Background image URL</label><input id="f-bg" type="url" placeholder="https://..." /></div>
-            <div class="field"><label for="f-accent">Accent color</label><input id="f-accent" type="color" value="#2f6bff" /></div>
-            <div class="field"><label for="f-bgcolor">Fallback background</label><input id="f-bgcolor" type="color" value="#eaf0f9" /></div>
-            <div class="field wide"><label for="f-welcome">Welcome message</label><input id="f-welcome" type="text" placeholder="Upload original photos and videos from the trip." /></div>
-            <div class="field"><label for="f-promo-title">Promo title</label><input id="f-promo-title" type="text" placeholder="Trip archive" /></div>
-            <div class="field"><label for="f-promo-text">Promo text</label><input id="f-promo-text" type="text" placeholder="Drop everything here before Sunday." /></div>
-            <div class="field"><label for="f-video">YouTube/Vimeo URL</label><input id="f-video" type="url" /></div>
-            <div class="field"><label for="f-cta-label">CTA label</label><input id="f-cta-label" type="text" placeholder="Open album notes" /></div>
-            <div class="field"><label for="f-cta-url">CTA URL</label><input id="f-cta-url" type="url" /></div>
-          </div>
-          <button class="btn" id="create">Create link</button>
-          <div class="msg-err" id="create-err"></div>
-        </section>
+          <section id="create-success" class="grad-border create-success hidden" aria-live="polite">
+            <div class="create-success-inner">
+              <span class="success-check"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg></span>
+              <p class="eyebrow">ready to share</p><h2>Your drop link is live</h2>
+              <code id="create-success-url"></code>
+              <div><button class="btn" id="create-copy" type="button">Copy URL</button><button class="btn ghost" id="create-qr" type="button">Show QR</button><button class="mini" id="create-another" type="button">Create another</button></div>
+            </div>
+          </section>
+        </div>
       </section>
 
       <!-- LINK DETAIL -->

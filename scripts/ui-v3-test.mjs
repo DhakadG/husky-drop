@@ -55,4 +55,14 @@ assert.match(adminJs, /async function loadEarlierActivity\(/, "plan 04 loads old
 assert.match(adminJs, /\/api\/admin\/events\?/, "plan 04 uses the real paginated Activity endpoint");
 assert.match(css, /\.activity-session-summary\s*\{/, "plan 04 styles expandable Activity sessions");
 
+assert.match(adminHtml, /id="expired-links-section"/, "plan 05 separates expired Drop Links");
+assert.match(adminHtml, /id="drop-create-form"/, "plan 05 keeps link creation in the shared admin page");
+assert.match(adminHtml, /id="folder-picker-panel"/, "plan 05 provides the Drive folder picker");
+assert.match(adminHtml, /id="create-success"/, "plan 05 provides the inline creation success state");
+assert.match(adminJs, /function makeLinkCard\(/, "plan 05 renders complete Drop Link cards");
+assert.match(adminJs, /function showCreateStep\(/, "plan 05 implements the two-step creation flow");
+assert.match(adminJs, /async function openFolderPicker\(/, "plan 05 browses real Drive folders");
+assert.match(adminJs, /\/api\/admin\/drive\/folders/, "plan 05 uses the real Drive folder endpoint");
+assert.match(css, /\.folder-picker-panel\s*\{/, "plan 05 styles the Drive picker");
+
 console.log("UI v3 structure tests passed");

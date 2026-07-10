@@ -37,7 +37,19 @@ async function init() {
   });
   $("refresh").addEventListener("click", refreshAll);
   $("live-refresh")?.addEventListener("click", refreshAll);
-  $("create").addEventListener("click", createLink);
+  $("drop-create-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    createLink();
+  });
+  $("create-next")?.addEventListener("click", () => showCreateStep(2));
+  $("create-back")?.addEventListener("click", () => showCreateStep(1));
+  $("folder-browse")?.addEventListener("click", () => openFolderPicker("root", "Drive root"));
+  $("folder-up")?.addEventListener("click", () => openFolderPicker("root", "Drive root"));
+  $("expired-links-toggle")?.addEventListener("click", toggleExpiredLinks);
+  document.querySelectorAll('[name="transfer-preset"]').forEach((radio) => radio.addEventListener("change", applyTransferPreset));
+  $("create-copy")?.addEventListener("click", () => copyCreatedLink());
+  $("create-qr")?.addEventListener("click", () => showQr($("create-success-url").textContent, "New drop link"));
+  $("create-another")?.addEventListener("click", resetCreateFlow);
   $("share-create")?.addEventListener("click", createShare);
   $("logout")?.addEventListener("click", logout);
   document.addEventListener("click", handleAdminAction);
@@ -712,36 +724,134 @@ async function loadEarlierActivity() {
 // ---- Drop links table ----
 
 function renderLinks(links) {
-  reconcile($("rows"), links, (l) => l.slug, makeLinkRow, updateLinkRow);
+  const active = links.filter((link) => link.state !== "expired");
+  const expired = links.filter((link) => link.state === "expired");
+  reconcile($("rows"), active, (link) => link.slug, makeLinkCard, updateLinkCard);
+  reconcile($("expired-rows"), expired, (link) => link.slug, makeLinkCard, updateLinkCard);
+  setEmpty($("rows"), active.length === 0, "No active drop links yet.");
+  $("expired-links-section").classList.toggle("hidden", expired.length === 0);
+  $("expired-links-count").textContent = expired.length;
 }
 
-function makeLinkRow() {
-  return document.createElement("tr");
+function makeLinkCard() {
+  const article = document.createElement("article");
+  article.className = "link-card panel";
+  return article;
 }
 
-function stateBadge(state) {
-  if (state === "paused") return `<span class="tag err">paused</span>`;
-  if (state === "expired") return `<span class="tag warn">expired</span>`;
-  return "";
+function updateLinkCard(article, link) {
+  const budgetLimit = link.settings.maxTotalBytes || 0;
+  const budgetPct = budgetLimit ? Math.min(100, Math.round((link.stats.bytes / budgetLimit) * 100)) : 0;
+  const expires = link.expiresAt ? `expires ${new Date(link.expiresAt).toLocaleDateString()}` : "never expires";
+  const access = link.hasPin ? "PIN" : "open";
+  article.className = `link-card panel ${escAttr(link.state || "active")}`;
+  article.innerHTML = `
+    <div class="link-card-head">
+      <div><button class="link-card-title" data-open-detail="${escAttr(link.slug)}" type="button">${esc(link.label)}</button><div class="link-meta"><code>/d/${esc(link.slug)}</code><span>·</span><span>${esc(expires)}</span><span>·</span><span>${link.settings.concurrency}× parallel</span><span>·</span><span>${link.settings.chunkMB} MB chunks</span><span>·</span><span>${link.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</span></div></div>
+      <span class="link-status ${escAttr(link.state || "active")}">${esc(access)}${link.state === "expired" ? " · expired" : link.disabled ? " · paused" : ""}</span>
+    </div>
+    <div class="link-action-row" aria-label="Actions for ${escAttr(link.label)}">
+      ${linkActionButton("copy", "Copy link", `data-copy-link="/d/${escAttr(link.slug)}"`)}
+      ${linkActionButton("qr", "Show QR", `data-qr-link="/d/${escAttr(link.slug)}" data-qr-label="${escAttr(link.label)}"`)}
+      ${linkActionButton("folder", "Open Drive folder", `data-open-folder="${escAttr(link.slug)}"`)}
+      ${linkActionButton(link.disabled ? "play" : "pause", link.disabled ? "Resume" : "Pause", `data-pause-link="${escAttr(link.slug)}" data-paused="${link.disabled ? "1" : "0"}"`)}
+      ${linkActionButton("detail", "Details", `data-open-detail="${escAttr(link.slug)}"`)}
+      ${linkActionButton("trash", "Delete", `data-del-link="${escAttr(link.slug)}" data-del-label="${escAttr(link.label)}"`, true)}
+    </div>
+    <div class="link-stat-grid">
+      ${linkStat("Opens", link.stats.opens || 0)}
+      ${linkStat("Sessions", link.stats.sessions || 0)}
+      ${linkStat("Files", link.stats.files || 0)}
+      <div class="link-stat budget ${budgetPct >= 85 ? "warn" : ""}"><span>Budget</span><b>${budgetLimit ? `${budgetPct}%` : "∞"}</b><small>${budgetLimit ? `${fmtBytes(link.stats.bytes)} of ${fmtBytes(budgetLimit)}` : `${fmtBytes(link.stats.bytes)} received`}</small>${budgetLimit ? `<div class="trail"><i style="width:${budgetPct}%"></i></div>` : ""}</div>
+    </div>`;
 }
 
-function updateLinkRow(tr, l) {
-  const budget = l.settings.maxTotalBytes ? `<br><span class="muted">budget ${fmtBytes(l.stats.bytes)} / ${fmtBytes(l.settings.maxTotalBytes)}</span>` : "";
-  tr.innerHTML = `
-    <td><b>${esc(l.label)}</b> ${stateBadge(l.state)}<br><code>/d/${esc(l.slug)}</code></td>
-    <td>${l.hasPin ? "password" : "open"} - ${l.settings.concurrency}x - ${l.settings.chunkMB} MB<br>
-      <span class="muted">${l.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</span></td>
-    <td>${l.stats.opens} opens - ${l.stats.files} files<br><span class="muted">${fmtBytes(l.stats.bytes)}</span>${budget}</td>
-    <td class="actions">
-      <button class="mini" data-open-detail="${escAttr(l.slug)}" type="button">detail</button>
-      <button class="mini" data-copy-link="/d/${escAttr(l.slug)}" type="button">copy</button>
-      <button class="mini" data-qr-link="/d/${escAttr(l.slug)}" data-qr-label="${escAttr(l.label)}" type="button">qr</button>
-      <button class="mini" data-open-folder="${escAttr(l.slug)}" type="button">folder</button>
-      <button class="mini" data-pause-link="${escAttr(l.slug)}" data-paused="${l.disabled ? "1" : "0"}" type="button">${l.disabled ? "resume" : "pause"}</button>
-      <button class="mini danger" data-del-link="${escAttr(l.slug)}" data-del-label="${escAttr(l.label)}" type="button">delete</button>
-    </td>`;
+function linkStat(label, value) {
+  return `<div class="link-stat"><span>${esc(label)}</span><b>${esc(String(value))}</b></div>`;
 }
 
+function linkActionButton(name, label, attributes, danger = false) {
+  const icons = {
+    copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>',
+    qr: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><path d="M14 14h3v3h-3zM18 18h3v3h-3zM18 14h3M14 18v3"></path></svg>',
+    folder: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg>',
+    pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>',
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8Z"></path></svg>',
+    detail: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7h.01"></path></svg>',
+    trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path></svg>',
+  };
+  return `<button class="link-action${danger ? " danger" : ""}" ${attributes} type="button">${icons[name]}<span>${esc(label)}</span></button>`;
+}
+
+let folderParentId = "root";
+let folderParentLabel = "Drive root";
+
+function showCreateStep(step) {
+  if (step === 2 && !value("f-label")) {
+    $("f-label").reportValidity();
+    return;
+  }
+  $("create-step-1").classList.toggle("hidden", step !== 1);
+  $("create-step-2").classList.toggle("hidden", step !== 2);
+  document.querySelectorAll("[data-create-indicator]").forEach((indicator) => indicator.classList.toggle("active", Number(indicator.dataset.createIndicator) === step));
+}
+
+function applyTransferPreset(event) {
+  const values = { simple: [2, 16], fast: [4, 32], aggressive: [8, 64] };
+  const [concurrency, chunkMB] = values[event.target.value] || values.fast;
+  $("f-conc").value = concurrency;
+  $("f-chunk").value = chunkMB;
+}
+
+function toggleExpiredLinks() {
+  const button = $("expired-links-toggle");
+  const expanded = button.getAttribute("aria-expanded") === "true";
+  button.setAttribute("aria-expanded", String(!expanded));
+  $("expired-rows").classList.toggle("expanded", !expanded);
+}
+
+async function openFolderPicker(parentId, label) {
+  folderParentId = parentId || "root";
+  folderParentLabel = label || "Drive root";
+  $("folder-picker-panel").classList.remove("hidden");
+  $("folder-path").textContent = folderParentLabel;
+  $("folder-list").innerHTML = '<div class="empty">Loading Drive folders…</div>';
+  $("folder-err").textContent = "";
+  try {
+    const response = await fetch(`/api/admin/drive/folders?parent=${encodeURIComponent(folderParentId)}`);
+    const data = await response.json().catch(() => ({ folders: [] }));
+    if (!response.ok) throw new Error(data.error || "Drive folder list failed.");
+    $("folder-list").innerHTML = (data.folders || []).length
+      ? data.folders.map((folder) => `<div class="folder-option"><button type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg><span>${esc(folder.name)}</span></button><button class="mini" type="button" data-open-folder-picker="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}">Open</button></div>`).join("")
+      : '<div class="empty">No child folders here.</div>';
+    $("folder-list").querySelectorAll("[data-pick-folder]").forEach((button) => button.addEventListener("click", () => {
+      $("f-folder").value = button.dataset.pickFolder;
+      $("folder-path").textContent = `Selected: ${button.dataset.folderName}`;
+      $("folder-picker-panel").classList.add("hidden");
+    }));
+    $("folder-list").querySelectorAll("[data-open-folder-picker]").forEach((button) => button.addEventListener("click", () => openFolderPicker(button.dataset.openFolderPicker, button.dataset.folderName)));
+  } catch (error) {
+    $("folder-list").innerHTML = "";
+    $("folder-err").textContent = error.message;
+  }
+}
+
+function copyCreatedLink() {
+  const url = $("create-success-url").textContent;
+  navigator.clipboard?.writeText(url).catch(() => {});
+}
+
+function resetCreateFlow() {
+  $("drop-create-form").reset();
+  $("f-conc").value = "4";
+  $("f-chunk").value = "32";
+  $("f-accent").value = "#2f6bff";
+  $("f-bgcolor").value = "#eaf0f9";
+  $("create-success").classList.add("hidden");
+  $("drop-create-form").classList.remove("hidden");
+  showCreateStep(1);
+  $("f-label").focus();
+}
 async function toggleLinkPause(slug, isPaused) {
   await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, {
     method: "PATCH",
@@ -764,7 +874,11 @@ async function deleteLink(slug, label) {
 
 async function createLink() {
   $("create-err").textContent = "";
-  $("create").disabled = true;
+  if (!value("f-label")) {
+    $("f-label").reportValidity();
+    return;
+  }
+  document.querySelectorAll('#drop-create-form button[type="submit"]').forEach((button) => (button.disabled = true));
   const gb = Number(value("f-budget-gb")) || 0;
   const body = {
     label: value("f-label"),
@@ -780,55 +894,26 @@ async function createLink() {
       maxTotalFiles: Number(value("f-budget-files")) || 0,
       maxSessions: Number(value("f-budget-sessions")) || 0,
     },
-    notify: {
-      enabled: $("f-notify").checked,
-      start: $("f-notify-start").checked,
-      complete: $("f-notify-complete").checked,
-    },
+    notify: { enabled: $("f-notify").checked, start: $("f-notify-start").checked, complete: $("f-notify-complete").checked },
     theme: {
-      logoUrl: value("f-logo"),
-      backgroundUrl: value("f-bg"),
-      accentColor: value("f-accent"),
-      backgroundColor: value("f-bgcolor"),
-      welcome: value("f-welcome"),
-      promoTitle: value("f-promo-title"),
-      promoText: value("f-promo-text"),
-      videoUrl: value("f-video"),
-      ctaLabel: value("f-cta-label"),
-      ctaUrl: value("f-cta-url"),
+      logoUrl: value("f-logo"), backgroundUrl: value("f-bg"), accentColor: value("f-accent"), backgroundColor: value("f-bgcolor"), welcome: value("f-welcome"), promoTitle: value("f-promo-title"), promoText: value("f-promo-text"), videoUrl: value("f-video"), ctaLabel: value("f-cta-label"), ctaUrl: value("f-cta-url"),
     },
   };
-  const r = await fetch("/api/admin/links", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  $("create").disabled = false;
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) return ($("create-err").textContent = d.error || "failed");
-  navigator.clipboard?.writeText(`${location.origin}/d/${d.slug}`).catch(() => {});
-  [
-    "f-label",
-    "f-slug",
-    "f-pin",
-    "f-folder",
-    "f-budget-gb",
-    "f-budget-files",
-    "f-budget-sessions",
-    "f-logo",
-    "f-bg",
-    "f-welcome",
-    "f-promo-title",
-    "f-promo-text",
-    "f-video",
-    "f-cta-label",
-    "f-cta-url",
-  ].forEach((id) => {
-    if ($(id)) $(id).value = "";
-  });
-  showTab("links");
-  refreshAll();
-  showQr(`${location.origin}/d/${d.slug}`, "Link created - URL copied to clipboard");
+  try {
+    const response = await fetch("/api/admin/links", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not create link.");
+    const url = `${location.origin}/d/${data.slug}`;
+    $("create-success-url").textContent = url;
+    $("drop-create-form").classList.add("hidden");
+    $("create-success").classList.remove("hidden");
+    navigator.clipboard?.writeText(url).catch(() => {});
+    refreshAll();
+  } catch (error) {
+    $("create-err").textContent = error.message;
+  } finally {
+    document.querySelectorAll('#drop-create-form button[type="submit"]').forEach((button) => (button.disabled = false));
+  }
 }
 
 // ---- Share links ----
