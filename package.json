@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node scripts/smoke-test.mjs",
+    "test": "node scripts/smoke-test.mjs && node scripts/ui-v3-test.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
