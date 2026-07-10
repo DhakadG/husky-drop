@@ -46,4 +46,13 @@ assert.match(adminJs, /function speedSparkline\(/, "plan 03 renders speed sample
 assert.match(adminJs, /function makeMiniLiveRow\(/, "plan 03 keeps overview live rows compact");
 assert.match(css, /\.live-summary-strip\s*\{/, "plan 03 styles the live-transfer summary strip");
 
+assert.match(adminHtml, /id="activity-filters"/, "plan 04 provides Activity filters inside the shared admin page");
+assert.match(adminHtml, /id="activity-query"/, "plan 04 provides Activity search");
+assert.match(adminHtml, /id="activity-more"/, "plan 04 provides older-day pagination");
+assert.match(adminJs, /function groupActivityDays\(/, "plan 04 groups Activity entries by day");
+assert.match(adminJs, /function groupActivitySessions\(/, "plan 04 groups Activity entries into sessions");
+assert.match(adminJs, /async function loadEarlierActivity\(/, "plan 04 loads older Activity days from the backend");
+assert.match(adminJs, /\/api\/admin\/events\?/, "plan 04 uses the real paginated Activity endpoint");
+assert.match(css, /\.activity-session-summary\s*\{/, "plan 04 styles expandable Activity sessions");
+
 console.log("UI v3 structure tests passed");

@@ -12,6 +12,12 @@ let detailData = null;
 let detailSearch = "";
 let detailSort = "new";
 const openSettings = new Set();
+let activityFilter = "all";
+let activityQuery = "";
+let activityOlder = [];
+let activityOldestDay = new Date().toISOString().slice(0, 10);
+let activityLoading = false;
+const openActivitySessions = new Set();
 
 init();
 
@@ -43,6 +49,18 @@ async function init() {
     });
   });
   // A previous session cookie may still be valid.
+  document.querySelectorAll("[data-activity-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activityFilter = button.dataset.activityFilter || "all";
+      document.querySelectorAll("[data-activity-filter]").forEach((item) => item.classList.toggle("active", item === button));
+      renderEvents();
+    });
+  });
+  $("activity-query")?.addEventListener("input", (event) => {
+    activityQuery = event.target.value;
+    renderEvents();
+  });
+  $("activity-more")?.addEventListener("click", loadEarlierActivity);
   if (await ping()) unlock();
 }
 
@@ -504,119 +522,158 @@ async function closeLiveSession(id, slug) {
 }
 
 function renderEvents() {
-  const events = groupEventsForRender(overview?.events || []);
+  const fresh = overview?.events || [];
+  const all = [...fresh, ...activityOlder].sort((a, b) => (b.at || 0) - (a.at || 0));
+  const filtered = all.filter(activityMatches);
+  const days = groupActivityDays(filtered);
   const box = $("events");
   if (box) {
-    reconcile(box, events, eventKey, makeEventRow, updateEventRow);
-    setEmpty(box, events.length === 0, "No activity yet.");
+    reconcile(box, days, (day) => day.key, makeActivityDay, updateActivityDay);
+    setEmpty(box, days.length === 0, activityQuery || activityFilter !== "all" ? "No activity matches these filters." : "No activity yet.");
   }
+
   const mini = $("events-mini");
   if (mini) {
-    const top = events.slice(0, 8);
-    reconcile(mini, top, (e) => `m:${eventKey(e)}`, makeEventRow, updateEventRow);
+    const top = fresh.slice(0, 5);
+    reconcile(mini, top, (event) => `mini:${eventKey(event)}`, makeCompactEventRow, updateCompactEventRow);
     setEmpty(mini, top.length === 0, "No activity yet.");
   }
 }
 
-function groupEventsForRender(events) {
-  const groups = new Map();
-  const rows = [];
-  for (const e of events) {
-    if (!e?.si) {
-      rows.push(e);
-      continue;
-    }
-    let group = groups.get(e.si);
-    if (!group) {
-      group = {
-        ...e,
-        t: "session",
-        _session: true,
-        _events: [],
-        _firstAt: e.at,
-        _lastAt: e.at,
-      };
-      groups.set(e.si, group);
-      rows.push(group);
-    }
-    group._events.push(e);
-    group._firstAt = Math.min(group._firstAt, e.at || group._firstAt);
-    group._lastAt = Math.max(group._lastAt, e.at || group._lastAt);
+function activityMatches(event) {
+  const type = event.t || "";
+  const groups = {
+    uploads: ["open", "start", "file", "sessionclose", "autopause"],
+    opens: ["open", "share-open"],
+    views: ["share-view", "share-browse"],
+    downloads: ["share-dl"],
+    errors: ["clienterror", "autopause", "lock", "global-lock"],
+  };
+  if (activityFilter !== "all" && !(groups[activityFilter] || []).includes(type)) return false;
+  const query = activityQuery.trim().toLowerCase();
+  if (!query) return true;
+  return [event.u, event.l, event.s, event.f, event.m, event.c?.o, event.c?.l].some((value) => String(value || "").toLowerCase().includes(query));
+}
+
+function groupActivityDays(events) {
+  const days = new Map();
+  for (const event of events) {
+    const dayKey = new Date(event.at || Date.now()).toISOString().slice(0, 10);
+    if (!days.has(dayKey)) days.set(dayKey, []);
+    days.get(dayKey).push(event);
   }
-  return rows;
+  return [...days.entries()].map(([key, dayEvents]) => ({ key, sessions: groupActivitySessions(dayEvents) }));
 }
 
-function eventKey(e) {
-  if (e._session) return `session:${e.si}`;
-  return `${e.at}:${e.t}:${e.s}:${e.u}:${e.f}`;
-}
-
-function makeEventRow() {
-  const el = document.createElement("div");
-  el.className = "event-row";
-  return el;
-}
-
-function updateEventRow(el, e) {
-  if (e._session) return updateSessionEventRow(el, e);
-  el.classList.remove("session-row");
-  const c = e.c || {};
-  const hasDetails = c.o || c.l || e.m;
-
-  if (hasDetails) {
-    el.classList.add("expandable");
-    el.onclick = () => el.classList.toggle("expanded");
-  } else {
-    el.classList.remove("expandable", "expanded");
-    el.onclick = null;
+function groupActivitySessions(events) {
+  const sessions = new Map();
+  for (const event of events) {
+    const tenMinuteWindow = Math.floor((event.at || 0) / 600000);
+    const key = event.si || `${event.u || "anonymous"}:${event.s || event.l || "system"}:${tenMinuteWindow}`;
+    if (!sessions.has(key)) sessions.set(key, { key, events: [] });
+    sessions.get(key).events.push(event);
   }
-
-  const typeIcon = eventTypeIcon(e.t);
-
-  el.innerHTML = `
-    <code class="${escAttr(e.t)}">${icon(typeIcon)}${esc(e.t)}</code>
-    <span>${esc(e.l || e.s || "")}${e.u ? " - " + esc(e.u) : ""}${e.f ? " - " + esc(e.f) : ""}</span>
-    <time>${new Date(e.at).toLocaleString()}</time>
-    ${
-      hasDetails
-        ? `
-      <div class="event-row-details">
-        ${e.m ? `<div class="detail-item">${icon("list")}${esc(e.m)}</div>` : ""}
-        ${c.o ? `<div class="detail-item">${icon(c.i || "laptop")}${esc(c.o)}</div>` : ""}
-        ${c.l ? `<div class="detail-item">${icon("globe")}${esc(c.l)}</div>` : ""}
-      </div>
-    `
-        : ""
-    }
-  `;
+  return [...sessions.values()]
+    .map((session) => ({ ...session, events: session.events.sort((a, b) => (a.at || 0) - (b.at || 0)) }))
+    .sort((a, b) => (b.events.at(-1)?.at || 0) - (a.events.at(-1)?.at || 0));
 }
 
-function updateSessionEventRow(el, e) {
-  const expanded = el.classList.contains("expanded");
-  el.className = `event-row session-row expandable${expanded ? " expanded" : ""}`;
-  el.onclick = () => el.classList.toggle("expanded");
-  const items = e._events || [];
-  const newest = items[0] || e;
-  const oldest = items[items.length - 1] || e;
-  const actor = newest.u || "anonymous";
-  const place = newest.l || newest.s || "share";
-  const files = new Set(items.map((item) => item.f).filter(Boolean)).size;
-  const range =
-    items.length > 1
-      ? `${new Date(oldest.at).toLocaleTimeString()} - ${new Date(newest.at).toLocaleTimeString()}`
-      : new Date(newest.at).toLocaleTimeString();
-  const details = items
-    .map((item) => {
-      const label = [item.m, item.f].filter(Boolean).join(" - ") || item.t;
-      return `<div class="detail-item">${icon(eventTypeIcon(item.t))}<span><b>${esc(item.t)}</b> ${esc(label)}</span><time>${new Date(item.at).toLocaleTimeString()}</time></div>`;
-    })
-    .join("");
-  el.innerHTML = `
-    <code class="session">${icon("list")}session</code>
-    <span>${esc(items.length)} activity item${items.length === 1 ? "" : "s"} - ${esc(actor)}, ${esc(place)}${files ? ` - ${files} file${files === 1 ? "" : "s"}` : ""}</span>
-    <time>${esc(range)}</time>
-    <div class="event-row-details">${details}</div>
-  `;
+function makeActivityDay() {
+  const section = document.createElement("section");
+  section.className = "activity-day";
+  section.innerHTML = `<div class="activity-day-head"><span></span><b></b></div><div class="activity-session-list"></div>`;
+  section._label = section.querySelector(".activity-day-head span");
+  section._count = section.querySelector(".activity-day-head b");
+  section._list = section.querySelector(".activity-session-list");
+  return section;
+}
+
+function updateActivityDay(section, day) {
+  const date = new Date(`${day.key}T00:00:00`);
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+  const prefix = day.key === today ? "Today" : day.key === yesterday ? "Yesterday" : date.toLocaleDateString(undefined, { weekday: "long" });
+  section._label.textContent = `${prefix} · ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  section._count.textContent = `${day.sessions.length} session${day.sessions.length === 1 ? "" : "s"}`;
+  reconcile(section._list, day.sessions, (session) => session.key, makeActivitySession, updateActivitySession);
+}
+
+function makeActivitySession() {
+  const article = document.createElement("article");
+  article.className = "activity-session glass-tile";
+  return article;
+}
+
+function updateActivitySession(article, session) {
+  const events = session.events;
+  const first = events[0] || {};
+  const last = events.at(-1) || first;
+  const actor = last.u || first.u || "anonymous";
+  const place = last.l || last.s || first.l || first.s || "system";
+  const context = last.c || first.c || {};
+  const fileCount = new Set(events.map((event) => event.f).filter(Boolean)).size;
+  const hasError = events.some((event) => ["clienterror", "autopause", "lock", "global-lock"].includes(event.t));
+  const expanded = openActivitySessions.has(session.key);
+  const counts = activityCounts(events);
+  article.className = `activity-session glass-tile${expanded ? " expanded" : ""}${hasError ? " has-error" : ""}`;
+  article.innerHTML = `
+    <button class="activity-session-summary" type="button" aria-expanded="${expanded}">
+      <span class="avatar">${esc(initialsOf(actor))}</span>
+      <span class="activity-person"><b>${esc(actor)} <i>·</i> ${esc(place)}</b><small>${esc(context.o || "Unknown device")}${context.l ? ` · ${esc(context.l)}` : ""} · ${activityTimeRange(first.at, last.at)}</small></span>
+      <span class="activity-counts">${counts}${fileCount ? `<em>${fileCount} file${fileCount === 1 ? "" : "s"}</em>` : ""}</span>
+      <svg class="activity-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+    </button>
+    <div class="activity-timeline">${events.map(activityTimelineRow).join("")}</div>`;
+  article.querySelector(".activity-session-summary").onclick = () => {
+    if (openActivitySessions.has(session.key)) openActivitySessions.delete(session.key);
+    else openActivitySessions.add(session.key);
+    updateActivitySession(article, session);
+  };
+}
+
+function activityCounts(events) {
+  const labels = [];
+  const uploads = events.filter((event) => event.t === "file").length;
+  const opens = events.filter((event) => event.t === "open" || event.t === "share-open").length;
+  const views = events.filter((event) => event.t === "share-view" || event.t === "share-browse").length;
+  const downloads = events.filter((event) => event.t === "share-dl").length;
+  if (uploads) labels.push(`<em>${uploads} upload${uploads === 1 ? "" : "s"}</em>`);
+  if (opens) labels.push(`<em>${opens} open${opens === 1 ? "" : "s"}</em>`);
+  if (views) labels.push(`<em>${views} view${views === 1 ? "" : "s"}</em>`);
+  if (downloads) labels.push(`<em>${downloads} download${downloads === 1 ? "" : "s"}</em>`);
+  return labels.join("");
+}
+
+function activityTimelineRow(event) {
+  const label = event.f || event.m || activityTypeLabel(event.t);
+  const meta = [event.t, event.s ? `/d/${event.s}` : "", event.m === "first open" ? "first open of this share" : ""].filter(Boolean).join(" · ");
+  return `<div class="activity-timeline-row ${escAttr(event.t || "event")}"><span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(label)}</b><small>${esc(meta)}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>`;
+}
+
+function activityTypeLabel(type) {
+  const labels = { open: "Opened drop link", start: "Started upload", file: "Uploaded file", sessionclose: "Session finished", "share-open": "Opened share", "share-view": "Viewed file", "share-browse": "Browsed gallery", "share-dl": "Downloaded file", clienterror: "Client error", autopause: "Link auto-paused", lock: "Link locked", "global-lock": "Uploads locked" };
+  return labels[type] || "Activity";
+}
+
+function activityTimeRange(firstAt, lastAt) {
+  const first = new Date(firstAt || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const last = new Date(lastAt || firstAt || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return first === last ? first : `${first}–${last}`;
+}
+
+function makeCompactEventRow() {
+  const row = document.createElement("div");
+  row.className = "event-mini-row";
+  return row;
+}
+
+function updateCompactEventRow(row, event) {
+  const actor = event.u || "anonymous";
+  row.innerHTML = `<span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(actor)}</b><small>${esc(activityTypeLabel(event.t))}${event.l || event.s ? ` · ${esc(event.l || event.s)}` : ""}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>`;
+}
+
+function eventKey(event) {
+  return `${event.at}:${event.t}:${event.s}:${event.u}:${event.f}`;
 }
 
 function eventTypeIcon(type) {
@@ -627,6 +684,29 @@ function eventTypeIcon(type) {
   if (type === "lock" || type === "global-lock" || type === "autopause") return "lock";
   if (type === "sessionclose" || type === "clienterror") return "shield-alert";
   return "list";
+}
+async function loadEarlierActivity() {
+  if (activityLoading) return;
+  activityLoading = true;
+  $("activity-more").disabled = true;
+  $("activity-more").textContent = "Loading…";
+  $("activity-err").textContent = "";
+  try {
+    const response = await fetch(`/api/admin/events?before=${encodeURIComponent(activityOldestDay)}&days=3`);
+    const data = await response.json().catch(() => ({ days: [] }));
+    if (!response.ok) throw new Error(data.error || "Could not load earlier activity.");
+    const incoming = (data.days || []).flatMap((day) => day.events || []);
+    const known = new Set(activityOlder.map(eventKey));
+    for (const event of incoming) if (!known.has(eventKey(event))) activityOlder.push(event);
+    activityOldestDay = data.oldest || activityOldestDay;
+    renderEvents();
+  } catch (error) {
+    $("activity-err").textContent = error.message;
+  } finally {
+    activityLoading = false;
+    $("activity-more").disabled = false;
+    $("activity-more").textContent = "Load earlier days";
+  }
 }
 
 // ---- Drop links table ----

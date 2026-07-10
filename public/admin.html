@@ -195,11 +195,33 @@
         </section>
       </section>
 
-      <!-- ACTIVITY -->
+      <!-- ACTIVITY: one pane in the shared /admin shell -->
       <section id="tab-activity" class="tab-pane hidden">
-        <div class="pane-head"><h1 class="pane-title">Activity</h1><span class="muted">opens, starts, files, locks and client errors - click a row for device details</span></div>
-        <section class="panel">
-          <div id="events" class="event-list tall"></div>
+        <div class="pane-head">
+          <div>
+            <p class="eyebrow">audit trail</p>
+            <h1 class="pane-title grad-text">Activity</h1>
+            <span class="muted">Every upload, open, view, download and error—grouped into human-readable sessions.</span>
+          </div>
+        </div>
+        <section class="panel activity-panel">
+          <div class="activity-toolbar" aria-label="Activity filters">
+            <div class="activity-filters" id="activity-filters">
+              <button class="chip-filter active" data-activity-filter="all" type="button">All</button>
+              <button class="chip-filter" data-activity-filter="uploads" type="button">Uploads</button>
+              <button class="chip-filter" data-activity-filter="opens" type="button">Opens</button>
+              <button class="chip-filter" data-activity-filter="views" type="button">Views</button>
+              <button class="chip-filter" data-activity-filter="downloads" type="button">Downloads</button>
+              <button class="chip-filter danger" data-activity-filter="errors" type="button">Errors</button>
+            </div>
+            <label class="activity-search" for="activity-query">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+              <input id="activity-query" type="search" placeholder="Search person or link" autocomplete="off" />
+            </label>
+          </div>
+          <div id="events" class="activity-days" aria-live="polite"></div>
+          <button class="btn ghost activity-more" id="activity-more" type="button">Load earlier days</button>
+          <div class="msg-err" id="activity-err"></div>
         </section>
       </section>
 
