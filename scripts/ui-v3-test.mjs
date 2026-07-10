@@ -28,4 +28,12 @@ assert.match(home, /class="steps-v3"/, "plan 01 installs the three-step section"
 assert.match(home, /class="[^"]*\bstrip-v3\b[^"]*"/, "plan 01 installs the feature strip");
 assert.match(home, /class="bg-fx"/, "plan 01 mounts the ambient background layer");
 
+const adminHtml = await read("public/admin.html");
+const adminJs = await read("public/admin.js");
+assert.match(adminHtml, /id="auth" class="auth-wrap"/, "plan 02 installs the v3 authentication wrapper");
+assert.match(adminHtml, /class="grad-border auth-card"/, "plan 02 wraps admin unlock in the gradient card");
+assert.match(adminHtml, /id="tok-eye"/, "plan 02 provides the password visibility control");
+assert.match(adminHtml, /class="auth-note"/, "plan 02 provides the rate-limit reassurance notice");
+assert.match(adminJs, /tok-eye/, "plan 02 wires the password visibility control");
+
 console.log("UI v3 structure tests passed");

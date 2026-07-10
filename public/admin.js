@@ -24,6 +24,10 @@ async function init() {
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => showTab(tab.dataset.tab));
   });
+  $("tok-eye")?.addEventListener("click", () => {
+    const tok = $("tok");
+    tok.type = tok.type === "password" ? "text" : "password";
+  });
   $("refresh").addEventListener("click", refreshAll);
   $("live-refresh")?.addEventListener("click", refreshAll);
   $("create").addEventListener("click", createLink);
