@@ -65,4 +65,13 @@ assert.match(adminJs, /async function openFolderPicker\(/, "plan 05 browses real
 assert.match(adminJs, /\/api\/admin\/drive\/folders/, "plan 05 uses the real Drive folder endpoint");
 assert.match(css, /\.folder-picker-panel\s*\{/, "plan 05 styles the Drive picker");
 
+assert.match(adminJs, /let detailShowAll = false/, "plan 06 tracks collapsed upload history");
+assert.match(adminJs, /class="detail-breadcrumb"/, "plan 06 renders the Link Detail breadcrumb");
+assert.match(adminJs, /function detailStatCard\(/, "plan 06 renders Link Detail stat cards");
+assert.match(adminJs, /id="up-show-all"/, "plan 06 provides upload-history expansion");
+assert.match(adminJs, /class="settings-accordion"/, "plan 06 renders focused settings accordions");
+assert.match(adminJs, /class="leader-row"/, "plan 06 renders proportional uploader bars");
+assert.match(css, /\.detail-breadcrumb\s*\{/, "plan 06 styles the Link Detail breadcrumb");
+assert.match(css, /\.settings-accordion\s*\{/, "plan 06 styles the settings accordions");
+
 console.log("UI v3 structure tests passed");
