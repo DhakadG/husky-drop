@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Spline+Sans+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#0c1a2b;background:#edf2fa;-webkit-font-smoothing:antialiased}
+a{color:#2f6bff;text-decoration:none}a:hover{color:#0e9aa7}
+@keyframes blobA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(34px,-26px) scale(1.08)}}
+@keyframes blobB{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-28px,22px) scale(1.12)}}
+@keyframes blobC{0%,100%{transform:translate(0,0)}50%{transform:translate(18px,26px)}}
+@keyframes floaty{0%,100%{transform:translateY(0) rotate(-6deg)}50%{transform:translateY(-10px) rotate(-6deg)}}
+</style>
+</helmet>
+
+<div style="position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:linear-gradient(180deg,#f4f8fe 0%,#eaf1fb 55%,#e5edf9 100%)">
+  <div style="position:absolute;top:-180px;left:-140px;width:600px;height:600px;border-radius:50%;filter:blur(80px);opacity:.26;background:radial-gradient(circle at 32% 32%,#2f6bff,transparent 70%);animation:blobA 18s ease-in-out infinite"></div>
+  <div style="position:absolute;bottom:-220px;right:-160px;width:660px;height:660px;border-radius:50%;filter:blur(85px);opacity:.22;background:radial-gradient(circle at 60% 40%,#15c0c9,transparent 70%);animation:blobB 22s ease-in-out infinite"></div>
+  <div style="position:absolute;top:26%;right:10%;width:400px;height:400px;border-radius:50%;filter:blur(90px);opacity:.15;background:radial-gradient(circle at 50% 50%,#7b6bff,transparent 70%);animation:blobC 26s ease-in-out infinite"></div>
+  <div style="position:absolute;inset:0;background-image:radial-gradient(rgba(47,107,255,0.09) 1px,transparent 1.4px);background-size:26px 26px;mask-image:radial-gradient(80% 70% at 50% 30%,black,transparent)"></div>
+  <div style="position:absolute;inset:0;opacity:.05;mix-blend-mode:multiply;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E&quot;)"></div>
+</div>
+
+<main data-screen-label="Homepage" style="position:relative;z-index:1;width:min(1080px,calc(100% - 40px));margin:0 auto;padding:22px 0 90px;display:flex;flex-direction:column;gap:64px">
+
+  <!-- nav -->
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+    <a href="Home.dc.html" style="display:inline-flex;align-items:center;gap:11px;font-family:'Unbounded',sans-serif;font-size:16px;font-weight:700;color:#0c1a2b;letter-spacing:-0.01em">
+      <span style="position:relative;width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#2f6bff 0%,#4d8aff 45%,#15c0c9 100%);box-shadow:0 10px 22px -8px rgba(47,107,255,0.65), inset 0 1px 1px rgba(255,255,255,0.55);display:inline-flex;align-items:center;justify-content:center;transform:rotate(-6deg)">
+        <span style="width:16px;height:16px;background:#ffffff;border-radius:50% 50% 50% 14%;transform:rotate(51deg);box-shadow:0 2px 5px rgba(10,40,90,0.3)"></span>
+      </span>
+      <span>losthusky <span style="background:linear-gradient(120deg,#2f6bff,#15c0c9);-webkit-background-clip:text;background-clip:text;color:transparent">/</span> drop</span>
+    </a>
+    <a href="Admin Unlock.dc.html" style="display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:700;color:#0c1a2b;border:1px solid rgba(255,255,255,0.9);border-radius:999px;padding:10px 18px;background:rgba(255,255,255,0.65);backdrop-filter:blur(10px);box-shadow:0 8px 20px -12px rgba(20,60,120,0.45)" style-hover="border-color:rgba(47,107,255,0.4);color:#2f6bff">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.25"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6z"></path></svg>
+      Admin
+    </a>
+  </header>
+
+  <!-- hero -->
+  <section style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,0.85fr);gap:44px;align-items:center">
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <span style="align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-family:'Spline Sans Mono',monospace;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#2f6bff;border:1px solid rgba(47,107,255,0.25);border-radius:999px;padding:8px 15px;background:rgba(47,107,255,0.06)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="#2f6bff"><path d="M13 2L4.5 13.5H11l-1 8.5L18.5 10H12l1-8z"></path></svg>
+        self-hosted · your Drive, your rules
+      </span>
+      <h1 style="margin:0;font-family:'Unbounded',sans-serif;font-size:clamp(34px,5.6vw,54px);font-weight:800;letter-spacing:-0.035em;line-height:1.04">Collect original-quality files, <span style="background:linear-gradient(120deg,#2f6bff 10%,#15c0c9 55%,#7b6bff 100%);-webkit-background-clip:text;background-clip:text;color:transparent">straight into your Drive.</span></h1>
+      <p style="margin:0;color:#43566b;font-size:17px;line-height:1.65;max-width:52ch">Send friends a link. They drop photos and videos — full resolution, no compression, multi-gigabyte files — and everything lands organized in your Google Drive. No accounts, no apps, no WhatsApp crunch.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <a href="Admin Unlock.dc.html" style="display:inline-flex;align-items:center;gap:9px;font-size:15px;font-weight:700;color:#ffffff;border-radius:999px;padding:14px 26px;background:linear-gradient(120deg,#2f6bff,#15c0c9);box-shadow:0 16px 34px -14px rgba(47,107,255,0.75)" style-hover="filter:brightness(1.06)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z"></path></svg>
+          Create a drop link
+        </a>
+        <a href="Drop Page.dc.html" style="display:inline-flex;align-items:center;gap:9px;font-size:15px;font-weight:700;color:#2f6bff;border:1px solid rgba(47,107,255,0.35);border-radius:999px;padding:14px 26px;background:rgba(255,255,255,0.7);backdrop-filter:blur(8px)" style-hover="background:rgba(47,107,255,0.08)">
+          See the drop page
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="#2f6bff"><path d="M9 5l7 7-7 7-1.4-1.4L13.2 12 7.6 6.4 9 5z"></path></svg>
+        </a>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#6b7c91">
+        <span style="display:inline-flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="#1fb27a"><path d="M10.4 17.2l-5-5 1.4-1.4 3.6 3.6 7.8-7.8 1.4 1.4-9.2 9.2z"></path></svg>resumable uploads</span>
+        <span style="display:inline-flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="#1fb27a"><path d="M10.4 17.2l-5-5 1.4-1.4 3.6 3.6 7.8-7.8 1.4 1.4-9.2 9.2z"></path></svg>no size limits</span>
+        <span style="display:inline-flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="#1fb27a"><path d="M10.4 17.2l-5-5 1.4-1.4 3.6 3.6 7.8-7.8 1.4 1.4-9.2 9.2z"></path></svg>zero storage cost</span>
+      </div>
+    </div>
+
+    <!-- hero visual: stylised drop card -->
+    <div style="position:relative;display:flex;align-items:center;justify-content:center;min-height:360px">
+      <div style="position:absolute;inset:8% 6%;border-radius:32px;background:linear-gradient(135deg,rgba(47,107,255,0.16),rgba(21,192,201,0.16),rgba(123,107,255,0.12));filter:blur(2px)"></div>
+      <div style="position:relative;width:min(320px,90%);border-radius:26px;border:1px solid rgba(255,255,255,0.95);background:rgba(255,255,255,0.78);backdrop-filter:blur(16px);box-shadow:0 34px 80px -36px rgba(20,60,120,0.6);padding:24px;display:flex;flex-direction:column;gap:14px;animation:floaty 7s ease-in-out infinite;transform:rotate(-6deg)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:38px;height:38px;border-radius:13px;background:linear-gradient(135deg,#2f6bff,#15c0c9);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 10px 22px -10px rgba(47,107,255,0.7)"><svg width="17" height="17" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 3a1 1 0 0 1 .7.3l4.5 4.5a1 1 0 0 1-1.4 1.4L13 6.4V15a1 1 0 1 1-2 0V6.4L8.2 9.2a1 1 0 0 1-1.4-1.4l4.5-4.5A1 1 0 0 1 12 3z"></path><path d="M4 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z" opacity="0.6"></path></svg></span>
+          <div><div style="font-weight:800;font-size:14.5px">Jibhi &amp; Koksar</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91">96 files · 6.2 GB</div></div>
+          <span style="margin-left:auto;font-family:'Unbounded',sans-serif;font-size:14px;font-weight:700;color:#2f6bff">68%</span>
+        </div>
+        <div style="height:9px;border-radius:99px;background:rgba(12,26,43,0.07)"><div style="width:68%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#2f6bff,#15c0c9)"></div></div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="display:flex;align-items:center;gap:9px;border-radius:11px;background:rgba(255,255,255,0.8);border:1px solid rgba(12,26,43,0.06);padding:8px 11px;font-size:12px"><svg width="13" height="13" viewBox="0 0 24 24" fill="#1fb27a"><circle cx="12" cy="12" r="10" opacity="0.16"></circle><path d="M10.4 15.2l-3-3 1.3-1.3 1.7 1.7 4.9-4.9 1.3 1.3-6.2 6.2z"></path></svg><b>IMG_4753.HEIC</b><span style="margin-left:auto;font-family:'Spline Sans Mono',monospace;font-size:10.5px;color:#9aa8b8">2.6 MB</span></div>
+          <div style="display:flex;align-items:center;gap:9px;border-radius:11px;background:rgba(255,255,255,0.8);border:1px solid rgba(47,107,255,0.25);padding:8px 11px;font-size:12px"><svg width="13" height="13" viewBox="0 0 24 24" fill="#15c0c9"><path d="M5 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm13.5 3.8l2.9-1.9a1 1 0 0 1 1.6.8v6.6a1 1 0 0 1-1.6.8l-2.9-1.9V9.8z"></path></svg><b>DJI_0284.MOV</b><span style="margin-left:auto;font-family:'Spline Sans Mono',monospace;font-size:10.5px;color:#2f6bff">34 MB/s</span></div>
+          <div style="display:flex;align-items:center;gap:9px;border-radius:11px;background:rgba(255,255,255,0.6);border:1px solid rgba(12,26,43,0.05);padding:8px 11px;font-size:12px;opacity:.7"><svg width="13" height="13" viewBox="0 0 24 24" fill="#9aa8b8"><rect x="4" y="5" width="16" height="14" rx="2.5"></rect></svg><b>IMG_4880.DNG</b><span style="margin-left:auto;font-family:'Spline Sans Mono',monospace;font-size:10.5px;color:#9aa8b8">queued</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-family:'Spline Sans Mono',monospace;font-size:10.5px;color:#6b7c91"><svg width="12" height="12" viewBox="0 0 24 24" fill="#1fb27a"><path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5l8-3z"></path></svg>direct to Google Drive · encrypted</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- how it works -->
+  <section style="display:flex;flex-direction:column;gap:22px">
+    <div style="text-align:center;display:flex;flex-direction:column;gap:8px">
+      <h2 style="margin:0;font-family:'Unbounded',sans-serif;font-size:clamp(22px,3.4vw,30px);font-weight:800;letter-spacing:-0.03em">Three steps, zero friction</h2>
+      <p style="margin:0;color:#6b7c91;font-size:14.5px">for you and for the people sending you files</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+      <div style="border-radius:24px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.62);backdrop-filter:blur(12px);box-shadow:0 20px 50px -30px rgba(20,60,120,0.5);padding:24px;display:flex;flex-direction:column;gap:12px">
+        <span style="width:44px;height:44px;border-radius:15px;background:linear-gradient(135deg,rgba(47,107,255,0.14),rgba(21,192,201,0.14));display:inline-flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="#2f6bff"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l2.8-2.8a3 3 0 0 1 4.2 4.2l-2 2a1 1 0 1 1-1.4-1.4l2-2a1 1 0 0 0-1.4-1.4l-2.8 2.8a1 1 0 0 1-1.4 0z"></path><path d="M13.4 10.6a1 1 0 0 1 0 1.4l-2.8 2.8a3 3 0 0 1-4.2-4.2l2-2a1 1 0 0 1 1.4 1.4l-2 2a1 1 0 1 0 1.4 1.4l2.8-2.8a1 1 0 0 1 1.4 0z" opacity="0.55"></path></svg></span>
+        <div style="font-family:'Unbounded',sans-serif;font-size:16px;font-weight:700;letter-spacing:-0.02em"><span style="color:#2f6bff">1 ·</span> Make a link</div>
+        <p style="margin:0;color:#43566b;font-size:13.5px;line-height:1.6">Name it, point it at a Drive folder, optionally add a PIN, expiry or size budget. Ten seconds.</p>
+      </div>
+      <div style="border-radius:24px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.62);backdrop-filter:blur(12px);box-shadow:0 20px 50px -30px rgba(20,60,120,0.5);padding:24px;display:flex;flex-direction:column;gap:12px">
+        <span style="width:44px;height:44px;border-radius:15px;background:linear-gradient(135deg,rgba(21,192,201,0.16),rgba(31,178,122,0.14));display:inline-flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="#0e9aa7"><path d="M12 3a1 1 0 0 1 .7.3l4.5 4.5a1 1 0 0 1-1.4 1.4L13 6.4V15a1 1 0 1 1-2 0V6.4L8.2 9.2a1 1 0 0 1-1.4-1.4l4.5-4.5A1 1 0 0 1 12 3z"></path><path d="M4 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z" opacity="0.55"></path></svg></span>
+        <div style="font-family:'Unbounded',sans-serif;font-size:16px;font-weight:700;letter-spacing:-0.02em"><span style="color:#0e9aa7">2 ·</span> Friends drop files</div>
+        <p style="margin:0;color:#43566b;font-size:13.5px;line-height:1.6">They open the link on any device, type a name, and add files. Uploads run in parallel and resume if the network drops.</p>
+      </div>
+      <div style="border-radius:24px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.62);backdrop-filter:blur(12px);box-shadow:0 20px 50px -30px rgba(20,60,120,0.5);padding:24px;display:flex;flex-direction:column;gap:12px">
+        <span style="width:44px;height:44px;border-radius:15px;background:linear-gradient(135deg,rgba(123,107,255,0.16),rgba(47,107,255,0.14));display:inline-flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="#7b6bff"><path d="M5 7a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7z" opacity="0.3"></path><path d="M7 6h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zm3.4 8.2l1.3-1.3 1.1 1.1 2.5-2.5 1.3 1.3-3.8 3.8-2.4-2.4z"></path></svg></span>
+        <div style="font-family:'Unbounded',sans-serif;font-size:16px;font-weight:700;letter-spacing:-0.02em"><span style="color:#7b6bff">3 ·</span> It lands in Drive</div>
+        <p style="margin:0;color:#43566b;font-size:13.5px;line-height:1.6">Every uploader gets their own subfolder. Watch transfers live, then share galleries back with a /s/ link.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- feature strip -->
+  <section style="border-radius:28px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.6);backdrop-filter:blur(14px);box-shadow:0 24px 60px -34px rgba(20,60,120,0.5);padding:28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:20px">
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#2f6bff" style="flex:0 0 auto;margin-top:2px"><circle cx="12" cy="12" r="10" opacity="0.14"></circle><path d="M13 2L4.5 13.5H11l-1 8.5L18.5 10H12l1-8z"></path></svg>
+      <div><b style="font-size:14px">Fast by design</b><div style="color:#6b7c91;font-size:12.5px;line-height:1.55;margin-top:3px">Parallel chunked uploads saturate the connection — 4.5 GB in under an hour on hotel Wi-Fi.</div></div>
+    </div>
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#0e9aa7" style="flex:0 0 auto;margin-top:2px"><circle cx="12" cy="12" r="10" opacity="0.14"></circle><path d="M12 5a7 7 0 1 1-6.3 4h2.3A5 5 0 1 0 12 7v2.5L7.5 6 12 2.5V5z"></path></svg>
+      <div><b style="font-size:14px">Survives bad networks</b><div style="color:#6b7c91;font-size:12.5px;line-height:1.55;margin-top:3px">Interrupted transfers resume from the last verified chunk — never from zero.</div></div>
+    </div>
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#7b6bff" style="flex:0 0 auto;margin-top:2px"><path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5l8-3z" opacity="0.14"></path><path d="M12 4.2l6 2.2v4.7c0 3.9-2.5 6.8-6 8.8-3.5-2-6-4.9-6-8.8V6.4l6-2.2zm-1 9.4l-1.8-1.8-1.2 1.2 3 3 5-5-1.2-1.2-3.8 3.8z"></path></svg>
+      <div><b style="font-size:14px">Private by default</b><div style="color:#6b7c91;font-size:12.5px;line-height:1.55;margin-top:3px">PINs, expiry dates, size budgets and full activity logs on every link.</div></div>
+    </div>
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#1fb27a" style="flex:0 0 auto;margin-top:2px"><ellipse cx="12" cy="6" rx="8" ry="3" opacity="0.35"></ellipse><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0 1.7-3.6 3-8 3S4 7.7 4 6zm16 6c0 1.7-3.6 3-8 3s-8-1.3-8-3"></path></svg>
+      <div><b style="font-size:14px">Your storage</b><div style="color:#6b7c91;font-size:12.5px;line-height:1.55;margin-top:3px">Files stream straight into your Google Drive — nothing is stored on a middleman server.</div></div>
+    </div>
+  </section>
+
+  <!-- footer -->
+  <footer style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding-top:8px">
+    <span style="font-family:'Spline Sans Mono',monospace;font-size:12px;color:#9aa8b8">© 2026 losthusky/drop — built for friends, not customers</span>
+    <div style="display:flex;gap:16px;font-family:'Spline Sans Mono',monospace;font-size:12px">
+      <a href="Admin Unlock.dc.html">admin</a>
+      <a href="Drop Page.dc.html">demo drop</a>
+      <a href="PLAN.md">docs</a>
+    </div>
+  </footer>
+</main>
+</x-dc>
+</body>
+</html>

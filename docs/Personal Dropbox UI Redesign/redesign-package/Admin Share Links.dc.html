@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Spline+Sans+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#0c1a2b;background:#edf2fa;-webkit-font-smoothing:antialiased}
+a{color:#2f6bff;text-decoration:none}a:hover{color:#0e9aa7}
+@keyframes blobA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(34px,-26px) scale(1.08)}}
+@keyframes blobB{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-28px,22px) scale(1.12)}}
+@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<div style="position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:linear-gradient(180deg,#f4f8fe 0%,#eaf1fb 55%,#e5edf9 100%)">
+  <div style="position:absolute;top:-180px;left:-140px;width:560px;height:560px;border-radius:50%;filter:blur(80px);opacity:.22;background:radial-gradient(circle at 32% 32%,#2f6bff,transparent 70%);animation:blobA 18s ease-in-out infinite"></div>
+  <div style="position:absolute;bottom:-200px;right:-140px;width:620px;height:620px;border-radius:50%;filter:blur(85px);opacity:.18;background:radial-gradient(circle at 60% 40%,#15c0c9,transparent 70%);animation:blobB 22s ease-in-out infinite"></div>
+  <div style="position:absolute;inset:0;background-image:radial-gradient(rgba(47,107,255,0.08) 1px,transparent 1.4px);background-size:26px 26px;mask-image:radial-gradient(85% 75% at 45% 25%,black,transparent)"></div>
+  <div style="position:absolute;inset:0;opacity:.05;mix-blend-mode:multiply;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E&quot;)"></div>
+</div>
+
+<div data-screen-label="Admin Share links" style="position:relative;z-index:1;display:grid;grid-template-columns:250px minmax(0,1fr);gap:26px;width:min(1360px,calc(100% - 44px));margin:0 auto;padding:24px 0 70px;align-items:start">
+
+  <!-- sidebar -->
+  <aside style="position:sticky;top:24px;display:flex;flex-direction:column;gap:20px;border-radius:24px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.6);backdrop-filter:blur(14px);box-shadow:0 24px 60px -34px rgba(20,60,120,0.5);padding:20px 16px;min-height:calc(100dvh - 120px)">
+    <a href="Home.dc.html" style="display:inline-flex;align-items:center;gap:10px;font-family:'Unbounded',sans-serif;font-size:14.5px;font-weight:700;color:#0c1a2b;padding:2px 4px">
+      <span style="position:relative;width:34px;height:34px;border-radius:12px;background:linear-gradient(135deg,#2f6bff 0%,#4d8aff 45%,#15c0c9 100%);box-shadow:0 10px 22px -8px rgba(47,107,255,0.65), inset 0 1px 1px rgba(255,255,255,0.55);display:inline-flex;align-items:center;justify-content:center;transform:rotate(-6deg);flex:0 0 auto">
+        <span style="width:13px;height:13px;background:#ffffff;border-radius:50% 50% 50% 14%;transform:rotate(51deg)"></span>
+      </span>
+      <span>losthusky <span style="background:linear-gradient(120deg,#2f6bff,#15c0c9);-webkit-background-clip:text;background-clip:text;color:transparent">/</span> drop</span>
+    </a>
+
+    <nav aria-label="dashboard sections" style="display:flex;flex-direction:column;gap:6px">
+      <a href="Admin Overview.dc.html" style="display:flex;align-items:center;gap:11px;border-radius:13px;padding:11px 13px;font-size:14px;font-weight:600;color:#43566b" style-hover="background:rgba(47,107,255,0.08);color:#2f6bff">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="#43566b"><rect x="3" y="3" width="8" height="8" rx="2.5"></rect><rect x="13" y="3" width="8" height="8" rx="2.5" opacity="0.55"></rect><rect x="3" y="13" width="8" height="8" rx="2.5" opacity="0.55"></rect><rect x="13" y="13" width="8" height="8" rx="2.5"></rect></svg>
+        Overview
+      </a>
+      <a href="PLAN.md" style="display:flex;align-items:center;gap:11px;border-radius:13px;padding:11px 13px;font-size:14px;font-weight:600;color:#43566b" style-hover="background:rgba(47,107,255,0.08);color:#2f6bff">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="#43566b"><circle cx="12" cy="12" r="10" opacity="0.16"></circle><path d="M13 2L4.5 13.5H11l-1 8.5L18.5 10H12l1-8z"></path></svg>
+        Live transfers
+        <span style="margin-left:auto;font-family:'Spline Sans Mono',monospace;font-size:10.5px;color:#ffffff;background:linear-gradient(120deg,#2f6bff,#15c0c9);border-radius:99px;padding:2px 8px">2</span>
+      </a>
+      <a href="Admin Drop Links.dc.html" style="display:flex;align-items:center;gap:11px;border-radius:13px;padding:11px 13px;font-size:14px;font-weight:600;color:#43566b" style-hover="background:rgba(47,107,255,0.08);color:#2f6bff">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="#43566b"><path d="M4 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z"></path><path d="M12 3a1 1 0 0 1 .7.3l4.5 4.5a1 1 0 0 1-1.4 1.4L13 6.4V15a1 1 0 1 1-2 0V6.4L8.2 9.2a1 1 0 0 1-1.4-1.4l4.5-4.5A1 1 0 0 1 12 3z" opacity="0.55" transform="rotate(180 12 9)"></path></svg>
+        Drop links
+      </a>
+      <a href="Admin Share Links.dc.html" style="display:flex;align-items:center;gap:11px;border-radius:13px;padding:11px 13px;font-size:14px;font-weight:700;color:#ffffff;background:linear-gradient(120deg,#2f6bff,#15c0c9);box-shadow:0 12px 26px -12px rgba(47,107,255,0.7)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="#ffffff"><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="6" r="3" opacity="0.7"></circle><circle cx="18" cy="18" r="3" opacity="0.7"></circle><path d="M8.6 10.8l6.8-3.6M8.6 13.2l6.8 3.6" stroke="#ffffff" stroke-width="1.8" fill="none"></path></svg>
+        Share links
+      </a>
+      <a href="Admin Activity.dc.html" style="display:flex;align-items:center;gap:11px;border-radius:13px;padding:11px 13px;font-size:14px;font-weight:600;color:#43566b" style-hover="background:rgba(47,107,255,0.08);color:#2f6bff">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#43566b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"></path></svg>
+        Activity
+      </a>
+      <div style="height:1px;background:rgba(12,26,43,0.08);margin:8px 4px"></div>
+      <a href="PLAN.md" style="display:flex;align-items:center;justify-content:center;gap:9px;border-radius:13px;padding:12px 13px;font-size:13.5px;font-weight:700;color:#2f6bff;border:1.5px dashed rgba(47,107,255,0.45);background:rgba(47,107,255,0.05)" style-hover="background:rgba(47,107,255,0.12)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="#2f6bff"><path d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z"></path></svg>
+        New drop link
+      </a>
+    </nav>
+
+    <div style="margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <span style="display:inline-flex;align-items:center;gap:7px;font-family:'Spline Sans Mono',monospace;font-size:11.5px;color:#43566b;border:1px solid rgba(255,255,255,0.9);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,0.7)"><span style="width:7px;height:7px;border-radius:99px;background:#1fb27a;animation:pulseDot 1.8s ease-in-out infinite"></span>live</span>
+      <button type="button" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:'Spline Sans Mono',monospace;font-size:11.5px;color:#43566b;border:1px solid rgba(12,26,43,0.12);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,0.7)" style-hover="border-color:#f0556b;color:#f0556b"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.3"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6z"></path></svg>lock</button>
+    </div>
+  </aside>
+
+  <!-- content -->
+  <main style="display:flex;flex-direction:column;gap:16px;min-width:0">
+    <header style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:4px 2px">
+      <h1 style="margin:0;font-family:'Unbounded',sans-serif;font-size:clamp(26px,3.4vw,34px);font-weight:800;letter-spacing:-0.03em;background:linear-gradient(120deg,#2f6bff 10%,#15c0c9 60%,#7b6bff 100%);-webkit-background-clip:text;background-clip:text;color:transparent">Share links</h1>
+      <span style="color:#6b7c91;font-size:13.5px">outbound /s/ galleries that give friends read access to Drive folders</span>
+    </header>
+
+    <!-- share card 1 -->
+    <section style="border-radius:22px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.64);backdrop-filter:blur(14px);box-shadow:0 24px 60px -34px rgba(20,60,120,0.5);padding:20px 22px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+        <span style="width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,rgba(123,107,255,0.16),rgba(47,107,255,0.16));display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto"><svg width="20" height="20" viewBox="0 0 24 24" fill="#7b6bff"><rect x="3" y="4" width="18" height="16" rx="3" opacity="0.18"></rect><path d="M6 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm2.5 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM6 17h12l-4.5-6-3.2 4.2-1.8-2.2L6 17z"></path></svg></span>
+        <div style="flex:1;min-width:220px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-family:'Unbounded',sans-serif;font-size:19px;font-weight:700;letter-spacing:-0.02em">Koksar</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-family:'Spline Sans Mono',monospace;font-size:11px;color:#7b6bff;background:rgba(123,107,255,0.12);border-radius:99px;padding:4px 10px"><svg width="10" height="10" viewBox="0 0 24 24" fill="#7b6bff"><rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.4"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7z"></path></svg>gallery · PIN · Google sign-in</span>
+          </div>
+          <div style="margin-top:4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#6b7c91">
+            <span style="color:#2f6bff">/s/cocksir</span><span>·</span><span>folders: Jibhi &amp; Koksar – June 2026</span><span>·</span><span>closes in 14 days</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <button type="button" title="copy link" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(12,26,43,0.12);border-radius:11px;background:rgba(255,255,255,0.8)" style-hover="border-color:#2f6bff"><svg width="15" height="15" viewBox="0 0 24 24" fill="#43566b"><rect x="8" y="8" width="12" height="12" rx="2.5" opacity="0.4"></rect><path d="M6 4h9a2 2 0 0 1 2 2v1h-2V6H6v9h1v2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg></button>
+          <button type="button" title="QR code" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(12,26,43,0.12);border-radius:11px;background:rgba(255,255,255,0.8)" style-hover="border-color:#2f6bff"><svg width="15" height="15" viewBox="0 0 24 24" fill="#43566b"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5" opacity="0.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5" opacity="0.5"></rect><rect x="13" y="13" width="3.5" height="3.5" rx="1"></rect><rect x="17.5" y="17.5" width="3.5" height="3.5" rx="1"></rect></svg></button>
+          <button type="button" title="share" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(12,26,43,0.12);border-radius:11px;background:rgba(255,255,255,0.8)" style-hover="border-color:#2f6bff"><svg width="15" height="15" viewBox="0 0 24 24" fill="#43566b"><circle cx="6" cy="12" r="2.6"></circle><circle cx="17.5" cy="6" r="2.6" opacity="0.55"></circle><circle cx="17.5" cy="18" r="2.6" opacity="0.55"></circle><path d="M8.3 10.9l6.8-3.5M8.3 13.1l6.8 3.5" stroke="#43566b" stroke-width="1.7" fill="none"></path></svg></button>
+          <button type="button" title="pause" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(12,26,43,0.12);border-radius:11px;background:rgba(255,255,255,0.8)" style-hover="border-color:#d98a14"><svg width="15" height="15" viewBox="0 0 24 24" fill="#43566b"><rect x="6" y="5" width="4.5" height="14" rx="1.5"></rect><rect x="13.5" y="5" width="4.5" height="14" rx="1.5" opacity="0.55"></rect></svg></button>
+          <button type="button" title="delete" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(240,85,107,0.3);border-radius:11px;background:rgba(240,85,107,0.05)" style-hover="background:rgba(240,85,107,0.14)"><svg width="15" height="15" viewBox="0 0 24 24" fill="#f0556b"><path d="M9 4h6l1 2h4v2H4V6h4l1-2z"></path><path d="M6 9h12l-1 11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 9z" opacity="0.5"></path></svg></button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+        <div style="border-radius:14px;background:rgba(255,255,255,0.66);border:1px solid rgba(12,26,43,0.06);padding:11px 14px"><div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700">10</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91;text-transform:uppercase;letter-spacing:.08em">opens</div></div>
+        <div style="border-radius:14px;background:rgba(255,255,255,0.66);border:1px solid rgba(12,26,43,0.06);padding:11px 14px"><div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700">3</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91;text-transform:uppercase;letter-spacing:.08em">unique viewers</div></div>
+        <div style="border-radius:14px;background:rgba(255,255,255,0.66);border:1px solid rgba(12,26,43,0.06);padding:11px 14px"><div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700">64</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91;text-transform:uppercase;letter-spacing:.08em">file views</div></div>
+        <div style="border-radius:14px;background:rgba(255,255,255,0.66);border:1px solid rgba(12,26,43,0.06);padding:11px 14px"><div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700">0 B</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91;text-transform:uppercase;letter-spacing:.08em">downloaded</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:12.5px;color:#6b7c91">
+        <span style="font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#9aa8b8">recent viewers</span>
+        <span style="display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(12,26,43,0.08);border-radius:99px;padding:5px 11px;background:rgba(255,255,255,0.7)"><span style="width:20px;height:20px;border-radius:99px;background:linear-gradient(135deg,#2f6bff,#7b6bff);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700">GK</span>Ghanishth</span>
+        <span style="display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(12,26,43,0.08);border-radius:99px;padding:5px 11px;background:rgba(255,255,255,0.7)"><span style="width:20px;height:20px;border-radius:99px;background:linear-gradient(135deg,#15c0c9,#1fb27a);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700">K</span>Karishma</span>
+        <span style="display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(12,26,43,0.08);border-radius:99px;padding:5px 11px;background:rgba(255,255,255,0.7)"><span style="width:20px;height:20px;border-radius:99px;background:linear-gradient(135deg,#7b6bff,#f0556b);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700">R</span>Rishu</span>
+        <a href="Admin Activity.dc.html" style="margin-left:auto;font-family:'Spline Sans Mono',monospace;font-size:11.5px">view activity →</a>
+      </div>
+    </section>
+
+    <!-- share card 2 -->
+    <section style="border-radius:22px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.64);backdrop-filter:blur(14px);box-shadow:0 24px 60px -34px rgba(20,60,120,0.5);padding:20px 22px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+        <span style="width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,rgba(21,192,201,0.16),rgba(31,178,122,0.16));display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto"><svg width="20" height="20" viewBox="0 0 24 24" fill="#0e9aa7"><rect x="3" y="4" width="18" height="16" rx="3" opacity="0.18"></rect><path d="M6 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm2.5 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM6 17h12l-4.5-6-3.2 4.2-1.8-2.2L6 17z"></path></svg></span>
+        <div style="flex:1;min-width:220px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-family:'Unbounded',sans-serif;font-size:19px;font-weight:700;letter-spacing:-0.02em">Koksir – Rishu</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-family:'Spline Sans Mono',monospace;font-size:11px;color:#7b6bff;background:rgba(123,107,255,0.12);border-radius:99px;padding:4px 10px"><svg width="10" height="10" viewBox="0 0 24 24" fill="#7b6bff"><rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.4"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7z"></path></svg>gallery · PIN · Google sign-in</span>
+          </div>
+          <div style="margin-top:4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#6b7c91">
+            <span style="color:#2f6bff">/s/cocksir-rishu</span><span>·</span><span>folders: Rishu</span><span>·</span><span>closes in 14 days</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <button type="button" title="copy link" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(12,26,43,0.12);border-radius:11px;background:rgba(255,255,255,0.8)" style-hover="border-color:#2f6bff"><svg width="15" height="15" viewBox="0 0 24 24" fill="#43566b"><rect x="8" y="8" width="12" height="12" rx="2.5" opacity="0.4"></rect><path d="M6 4h9a2 2 0 0 1 2 2v1h-2V6H6v9h1v2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path></svg></button>
+          <button type="button" title="QR code" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(12,26,43,0.12);border-radius:11px;background:rgba(255,255,255,0.8)" style-hover="border-color:#2f6bff"><svg width="15" height="15" viewBox="0 0 24 24" fill="#43566b"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5" opacity="0.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5" opacity="0.5"></rect><rect x="13" y="13" width="3.5" height="3.5" rx="1"></rect><rect x="17.5" y="17.5" width="3.5" height="3.5" rx="1"></rect></svg></button>
+          <button type="button" title="share" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(12,26,43,0.12);border-radius:11px;background:rgba(255,255,255,0.8)" style-hover="border-color:#2f6bff"><svg width="15" height="15" viewBox="0 0 24 24" fill="#43566b"><circle cx="6" cy="12" r="2.6"></circle><circle cx="17.5" cy="6" r="2.6" opacity="0.55"></circle><circle cx="17.5" cy="18" r="2.6" opacity="0.55"></circle><path d="M8.3 10.9l6.8-3.5M8.3 13.1l6.8 3.5" stroke="#43566b" stroke-width="1.7" fill="none"></path></svg></button>
+          <button type="button" title="pause" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(12,26,43,0.12);border-radius:11px;background:rgba(255,255,255,0.8)" style-hover="border-color:#d98a14"><svg width="15" height="15" viewBox="0 0 24 24" fill="#43566b"><rect x="6" y="5" width="4.5" height="14" rx="1.5"></rect><rect x="13.5" y="5" width="4.5" height="14" rx="1.5" opacity="0.55"></rect></svg></button>
+          <button type="button" title="delete" style="cursor:pointer;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(240,85,107,0.3);border-radius:11px;background:rgba(240,85,107,0.05)" style-hover="background:rgba(240,85,107,0.14)"><svg width="15" height="15" viewBox="0 0 24 24" fill="#f0556b"><path d="M9 4h6l1 2h4v2H4V6h4l1-2z"></path><path d="M6 9h12l-1 11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 9z" opacity="0.5"></path></svg></button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+        <div style="border-radius:14px;background:rgba(255,255,255,0.66);border:1px solid rgba(12,26,43,0.06);padding:11px 14px"><div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700">13</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91;text-transform:uppercase;letter-spacing:.08em">opens</div></div>
+        <div style="border-radius:14px;background:rgba(255,255,255,0.66);border:1px solid rgba(12,26,43,0.06);padding:11px 14px"><div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700">1</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91;text-transform:uppercase;letter-spacing:.08em">unique viewers</div></div>
+        <div style="border-radius:14px;background:rgba(255,255,255,0.66);border:1px solid rgba(12,26,43,0.06);padding:11px 14px"><div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700">18</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91;text-transform:uppercase;letter-spacing:.08em">file views</div></div>
+        <div style="border-radius:14px;background:rgba(255,255,255,0.66);border:1px solid rgba(12,26,43,0.06);padding:11px 14px"><div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700">0 B</div><div style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#6b7c91;text-transform:uppercase;letter-spacing:.08em">downloaded</div></div>
+      </div>
+    </section>
+
+    <!-- create share link -->
+    <section style="border-radius:22px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.62);backdrop-filter:blur(14px);box-shadow:0 24px 60px -34px rgba(20,60,120,0.5);padding:22px 24px;display:flex;flex-direction:column;gap:18px">
+      <div style="display:flex;align-items:center;gap:11px">
+        <span style="width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#2f6bff,#15c0c9);display:inline-flex;align-items:center;justify-content:center;box-shadow:0 8px 18px -8px rgba(47,107,255,0.7)"><svg width="17" height="17" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z"></path></svg></span>
+        <div>
+          <h2 style="margin:0;font-family:'Unbounded',sans-serif;font-size:18px;font-weight:700;letter-spacing:-0.02em">Create share link</h2>
+          <div style="font-size:12.5px;color:#6b7c91;margin-top:2px">a private, trackable gallery for one or more Drive folders</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px">
+        <div style="display:flex;flex-direction:column;gap:6px"><label style="font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b7c91">Label</label><input type="text" placeholder="Kareri Lake – final album" style="border:1px solid rgba(12,26,43,0.1);border-radius:11px;padding:12px 14px;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;background:rgba(255,255,255,0.9);outline:none" style-focus="border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,0.15)"></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><label style="font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b7c91">Slug <span style="text-transform:none;letter-spacing:0">(optional)</span></label><input type="text" placeholder="kareri-album" style="border:1px solid rgba(12,26,43,0.1);border-radius:11px;padding:12px 14px;font-family:'Spline Sans Mono',monospace;font-size:13.5px;background:rgba(255,255,255,0.9);outline:none" style-focus="border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,0.15)"></div>
+        <div style="grid-column:1 / -1;display:flex;flex-direction:column;gap:6px"><label style="font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b7c91">Drive folder IDs or URLs <span style="text-transform:none;letter-spacing:0">(comma separated)</span></label><input type="text" placeholder="https://drive.google.com/drive/folders/1AbC…" style="border:1px solid rgba(12,26,43,0.1);border-radius:11px;padding:12px 14px;font-family:'Spline Sans Mono',monospace;font-size:13px;background:rgba(255,255,255,0.9);outline:none" style-focus="border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,0.15)"></div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b7c91">Mode</label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+          <div style="cursor:pointer;border:1.5px solid rgba(47,107,255,0.5);border-radius:16px;background:linear-gradient(135deg,rgba(47,107,255,0.07),rgba(21,192,201,0.07));padding:14px 16px;display:flex;gap:11px;align-items:flex-start">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#2f6bff" style="flex:0 0 auto;margin-top:1px"><circle cx="12" cy="12" r="10" opacity="0.14"></circle><path d="M12 6.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zm0 2.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>
+            <div><b style="font-size:14px">Gallery</b><div style="font-size:12.5px;color:#43566b;margin-top:2px;line-height:1.45">private tiles with PIN, viewer identity and per-file analytics</div></div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#2f6bff" style="margin-left:auto;flex:0 0 auto"><circle cx="12" cy="12" r="10" opacity="0.15"></circle><path d="M10.4 15.2l-3-3 1.3-1.3 1.7 1.7 4.9-4.9 1.3 1.3-6.2 6.2z"></path></svg>
+          </div>
+          <div style="cursor:pointer;border:1.5px solid rgba(12,26,43,0.1);border-radius:16px;background:rgba(255,255,255,0.6);padding:14px 16px;display:flex;gap:11px;align-items:flex-start" style-hover="border-color:rgba(47,107,255,0.4)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#6b7c91" style="flex:0 0 auto;margin-top:1px"><circle cx="12" cy="12" r="10" opacity="0.12"></circle><path d="M13 6h5v5h-2V9.4l-5.3 5.3-1.4-1.4L14.6 8H13V6zM6 8h4v2H8v6h6v-2h2v4H6V8z"></path></svg>
+            <div><b style="font-size:14px;color:#43566b">Redirect</b><div style="font-size:12.5px;color:#6b7c91;margin-top:2px;line-height:1.45">a simple public jump to the Drive folder — no analytics</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
+        <div style="display:flex;flex-direction:column;gap:6px"><label style="font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b7c91">Password / PIN <span style="text-transform:none;letter-spacing:0">(optional)</span></label><input type="password" style="border:1px solid rgba(12,26,43,0.1);border-radius:11px;padding:12px 14px;font-size:14px;background:rgba(255,255,255,0.9);outline:none;font-family:'Plus Jakarta Sans',sans-serif" style-focus="border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,0.15)"></div>
+        <div style="display:flex;flex-direction:column;gap:6px"><label style="font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b7c91">Expires in days <span style="text-transform:none;letter-spacing:0">(0 = permanent)</span></label><input type="number" value="14" style="border:1px solid rgba(12,26,43,0.1);border-radius:11px;padding:12px 14px;font-size:14px;background:rgba(255,255,255,0.9);outline:none;font-family:'Plus Jakarta Sans',sans-serif" style-focus="border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,0.15)"></div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <label style="cursor:pointer;display:inline-flex;align-items:center;gap:9px;border:1px solid rgba(47,107,255,0.35);border-radius:999px;padding:9px 16px;background:rgba(47,107,255,0.07);font-size:13.5px;font-weight:600;color:#2f6bff"><svg width="14" height="14" viewBox="0 0 24 24" fill="#2f6bff"><circle cx="12" cy="12" r="10" opacity="0.15"></circle><path d="M10.4 15.2l-3-3 1.3-1.3 1.7 1.7 4.9-4.9 1.3 1.3-6.2 6.2z"></path></svg>Allow "download all as zip"</label>
+        <label style="cursor:pointer;display:inline-flex;align-items:center;gap:9px;border:1px solid rgba(47,107,255,0.35);border-radius:999px;padding:9px 16px;background:rgba(47,107,255,0.07);font-size:13.5px;font-weight:600;color:#2f6bff"><svg width="14" height="14" viewBox="0 0 24 24" fill="#2f6bff"><circle cx="12" cy="12" r="10" opacity="0.15"></circle><path d="M10.4 15.2l-3-3 1.3-1.3 1.7 1.7 4.9-4.9 1.3 1.3-6.2 6.2z"></path></svg>Require Google sign-in before PIN</label>
+      </div>
+
+      <button type="button" style="cursor:pointer;align-self:flex-start;display:inline-flex;align-items:center;gap:9px;font-size:14.5px;font-weight:700;color:#ffffff;border:none;border-radius:999px;padding:13px 26px;background:linear-gradient(120deg,#2f6bff,#15c0c9);box-shadow:0 14px 30px -12px rgba(47,107,255,0.7)" style-hover="filter:brightness(1.06)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="#ffffff"><circle cx="6" cy="12" r="2.6"></circle><circle cx="17.5" cy="6" r="2.6" opacity="0.7"></circle><circle cx="17.5" cy="18" r="2.6" opacity="0.7"></circle><path d="M8.3 10.9l6.8-3.5M8.3 13.1l6.8 3.5" stroke="#ffffff" stroke-width="1.7" fill="none"></path></svg>
+        Create share link
+      </button>
+    </section>
+  </main>
+</div>
+</x-dc>
+</body>
+</html>

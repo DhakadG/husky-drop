@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Spline+Sans+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#0c1a2b;background:#edf2fa;-webkit-font-smoothing:antialiased}
+a{color:#2f6bff;text-decoration:none}a:hover{color:#0e9aa7}
+@keyframes blobA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(34px,-26px) scale(1.08)}}
+@keyframes blobB{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-28px,22px) scale(1.12)}}
+@keyframes blobC{0%,100%{transform:translate(0,0)}50%{transform:translate(18px,26px)}}
+@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes stripes{0%{background-position:0 0}100%{background-position:28px 0}}
+</style>
+</helmet>
+
+<!-- ambient background: gradient mesh + blobs + dot grid + noise -->
+<div style="position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:linear-gradient(180deg,#f4f8fe 0%,#eaf1fb 55%,#e5edf9 100%)">
+  <div style="position:absolute;top:-180px;left:-140px;width:560px;height:560px;border-radius:50%;filter:blur(80px);opacity:.24;background:radial-gradient(circle at 32% 32%,#2f6bff,transparent 70%);animation:blobA 18s ease-in-out infinite"></div>
+  <div style="position:absolute;bottom:-200px;right:-140px;width:620px;height:620px;border-radius:50%;filter:blur(85px);opacity:.2;background:radial-gradient(circle at 60% 40%,#15c0c9,transparent 70%);animation:blobB 22s ease-in-out infinite"></div>
+  <div style="position:absolute;top:30%;right:12%;width:380px;height:380px;border-radius:50%;filter:blur(90px);opacity:.14;background:radial-gradient(circle at 50% 50%,#7b6bff,transparent 70%);animation:blobC 26s ease-in-out infinite"></div>
+  <div style="position:absolute;inset:0;background-image:radial-gradient(rgba(47,107,255,0.09) 1px,transparent 1.4px);background-size:26px 26px;mask-image:radial-gradient(80% 70% at 50% 30%,black,transparent)"></div>
+  <div style="position:absolute;inset:0;opacity:.05;mix-blend-mode:multiply;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E&quot;)"></div>
+</div>
+
+<main data-screen-label="Drop page" style="position:relative;z-index:1;width:min(760px,calc(100% - 32px));margin:0 auto;padding:20px 0 90px;display:flex;flex-direction:column;gap:18px">
+
+  <!-- topbar -->
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:6px 2px 8px">
+    <a href="Home.dc.html" style="display:inline-flex;align-items:center;gap:11px;font-family:'Unbounded',sans-serif;font-size:16px;font-weight:700;color:#0c1a2b;letter-spacing:-0.01em">
+      <span style="position:relative;width:38px;height:38px;border-radius:13px;background:linear-gradient(135deg,#2f6bff 0%,#4d8aff 45%,#15c0c9 100%);box-shadow:0 10px 22px -8px rgba(47,107,255,0.65), inset 0 1px 1px rgba(255,255,255,0.55);display:inline-flex;align-items:center;justify-content:center;transform:rotate(-6deg)">
+        <span style="width:15px;height:15px;background:#ffffff;border-radius:50% 50% 50% 14%;transform:rotate(51deg);box-shadow:0 2px 5px rgba(10,40,90,0.3)"></span>
+      </span>
+      <span>losthusky <span style="background:linear-gradient(120deg,#2f6bff,#15c0c9);-webkit-background-clip:text;background-clip:text;color:transparent">/</span> drop</span>
+    </a>
+    <span style="display:inline-flex;align-items:center;gap:8px;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#43566b;border:1px solid rgba(255,255,255,0.9);border-radius:999px;padding:8px 14px;background:rgba(255,255,255,0.6);backdrop-filter:blur(10px);box-shadow:0 6px 16px -10px rgba(20,60,120,0.4)">
+      <span style="width:8px;height:8px;border-radius:99px;background:#1fb27a;animation:pulseDot 1.8s ease-in-out infinite"></span>
+      secure drop
+    </span>
+  </header>
+
+  <!-- hero: who is receiving, in the uploader's language -->
+  <section style="position:relative;overflow:hidden;border-radius:26px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.62);backdrop-filter:blur(14px);box-shadow:0 24px 60px -34px rgba(20,60,120,0.5);padding:26px 26px 24px">
+    <div style="position:absolute;inset:0;background:linear-gradient(120deg,rgba(47,107,255,0.10),transparent 40%),linear-gradient(300deg,rgba(21,192,201,0.12),transparent 46%);pointer-events:none"></div>
+    <div style="position:relative;display:flex;flex-direction:column;gap:10px">
+      <p style="margin:0;font-family:'Spline Sans Mono',monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;background:linear-gradient(120deg,#2f6bff,#15c0c9);-webkit-background-clip:text;background-clip:text;color:transparent">Ghanishth is collecting</p>
+      <h1 style="margin:0;font-family:'Unbounded',sans-serif;font-size:clamp(26px,5vw,38px);font-weight:800;letter-spacing:-0.03em;line-height:1.05">Jibhi &amp; Koksar — June 2026</h1>
+      <p style="margin:2px 0 0;color:#43566b;font-size:15.5px;line-height:1.6;max-width:56ch">Send the full-resolution photos and videos here. They go straight into Ghanishth's Google Drive — nothing is resized or recompressed.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#43566b;border:1px solid rgba(12,26,43,0.08);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,0.72)"><svg width="13" height="13" viewBox="0 0 24 24" fill="#2f6bff"><circle cx="12" cy="12" r="10" opacity="0.18"></circle><path d="M12 6a1 1 0 0 1 1 1v4.6l3 1.8a1 1 0 1 1-1 1.7l-3.5-2.1A1 1 0 0 1 11 12V7a1 1 0 0 1 1-1z"></path></svg> open until Jul 20</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#43566b;border:1px solid rgba(12,26,43,0.08);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,0.72)"><svg width="13" height="13" viewBox="0 0 24 24" fill="#15c0c9"><rect x="3" y="5" width="18" height="14" rx="3" opacity="0.18"></rect><path d="M5 7a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7z"></path></svg> your own subfolder</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#43566b;border:1px solid rgba(12,26,43,0.08);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,0.72)"><svg width="13" height="13" viewBox="0 0 24 24" fill="#7b6bff"><path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5l8-3z" opacity="0.18"></path><path d="M12 4.2l6 2.2v4.7c0 3.9-2.5 6.8-6 8.8-3.5-2-6-4.9-6-8.8V6.4l6-2.2zm-1 9.4l-1.8-1.8-1.2 1.2 3 3 5-5-1.2-1.2-3.8 3.8z"></path></svg> originals only</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- step 1: name -->
+  <section style="border-radius:22px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.6);backdrop-filter:blur(12px);box-shadow:0 16px 40px -26px rgba(20,60,120,0.45);padding:18px 22px;display:flex;align-items:center;gap:14px">
+    <span style="flex:0 0 auto;width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,rgba(47,107,255,0.16),rgba(21,192,201,0.16));display:inline-flex;align-items:center;justify-content:center;font-family:'Unbounded',sans-serif;font-size:13px;font-weight:700;color:#2f6bff">1</span>
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <label for="who" style="font-family:'Spline Sans Mono',monospace;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:#6b7c91">Your name — so Ghanishth knows who sent what</label>
+      <input id="who" type="text" placeholder="e.g. Riya" style="border:1px solid rgba(12,26,43,0.1);border-radius:12px;padding:12px 14px;font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;color:#0c1a2b;background:rgba(255,255,255,0.85);outline:none;width:100%;box-sizing:border-box" style-focus="border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,0.15)">
+    </div>
+  </section>
+
+  <!-- step 2: the hero action -->
+  <section style="position:relative;border-radius:26px;padding:2px;background:linear-gradient(135deg,rgba(47,107,255,0.55),rgba(21,192,201,0.55),rgba(123,107,255,0.45));box-shadow:0 26px 60px -30px rgba(47,107,255,0.55)">
+    <div role="button" tabindex="0" aria-label="Add photos and videos" style="cursor:pointer;border-radius:24px;background:rgba(255,255,255,0.82);backdrop-filter:blur(14px);padding:46px 26px 40px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;transition:background 160ms ease" style-hover="background:rgba(255,255,255,0.94)">
+      <span style="width:74px;height:74px;border-radius:24px;background:linear-gradient(135deg,#2f6bff,#15c0c9);box-shadow:0 18px 36px -14px rgba(47,107,255,0.7), inset 0 1px 1px rgba(255,255,255,0.5);display:inline-flex;align-items:center;justify-content:center">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="#ffffff"><path d="M4 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z"></path><path d="M12 3a1 1 0 0 1 .7.3l4.5 4.5a1 1 0 0 1-1.4 1.4L13 6.4V15a1 1 0 1 1-2 0V6.4L8.2 9.2a1 1 0 0 1-1.4-1.4l4.5-4.5A1 1 0 0 1 12 3z"></path></svg>
+      </span>
+      <div style="font-family:'Unbounded',sans-serif;font-size:clamp(18px,3.4vw,23px);font-weight:700;letter-spacing:-0.02em">Tap to add photos &amp; videos</div>
+      <div style="color:#6b7c91;font-size:14.5px;line-height:1.5;max-width:44ch">HEIC, MOV, RAW, whole folders, multi-GB files — everything is fine. You can keep adding while uploads run.</div>
+      <span style="margin-top:4px;display:inline-flex;align-items:center;gap:7px;font-family:'Spline Sans Mono',monospace;font-size:12.5px;color:#2f6bff;border:1px solid rgba(47,107,255,0.3);border-radius:999px;padding:8px 15px;background:rgba(47,107,255,0.07)" style-hover="background:rgba(47,107,255,0.14)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="#2f6bff"><path d="M5 7a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7z"></path></svg>
+        or add a whole folder
+      </span>
+    </div>
+  </section>
+
+  <!-- transfer queue: shown once files are added -->
+  <section data-screen-label="Transfer queue" style="border-radius:26px;border:1px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.66);backdrop-filter:blur(14px);box-shadow:0 24px 60px -34px rgba(20,60,120,0.5);padding:24px 24px 20px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="position:relative;width:56px;height:56px;flex:0 0 auto">
+          <svg width="56" height="56" viewBox="0 0 56 56" style="transform:rotate(-90deg)"><circle cx="28" cy="28" r="24" fill="none" stroke="rgba(12,26,43,0.08)" stroke-width="6"></circle><circle cx="28" cy="28" r="24" fill="none" stroke="url(#dpgrad)" stroke-width="6" stroke-linecap="round" stroke-dasharray="150.8" stroke-dashoffset="48"></circle><defs><linearGradient id="dpgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f6bff"></stop><stop offset="1" stop-color="#15c0c9"></stop></linearGradient></defs></svg>
+          <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Unbounded',sans-serif;font-size:13px;font-weight:700">68%</span>
+        </span>
+        <div>
+          <div style="font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700;letter-spacing:-0.02em">Uploading — 41 of 96 files</div>
+          <div style="margin-top:3px;font-family:'Spline Sans Mono',monospace;font-size:12.5px;color:#6b7c91">4.1 GB of 6.2 GB · 38 MB/s · about 9 min left</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="button" style="cursor:pointer;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#43566b;border:1px solid rgba(12,26,43,0.12);border-radius:999px;padding:8px 14px;background:rgba(255,255,255,0.8)" style-hover="border-color:#2f6bff;color:#2f6bff">pause</button>
+        <button type="button" style="cursor:pointer;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#f0556b;border:1px solid rgba(240,85,107,0.3);border-radius:999px;padding:8px 14px;background:rgba(240,85,107,0.06)" style-hover="background:rgba(240,85,107,0.12)">cancel all</button>
+      </div>
+    </div>
+
+    <div style="height:12px;border-radius:99px;background:rgba(12,26,43,0.07);overflow:hidden">
+      <div style="width:68%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#2f6bff,#15c0c9);background-size:200% 100%;position:relative;overflow:hidden">
+        <div style="position:absolute;inset:0;background-image:linear-gradient(135deg,rgba(255,255,255,0.25) 25%,transparent 25%,transparent 50%,rgba(255,255,255,0.25) 50%,rgba(255,255,255,0.25) 75%,transparent 75%);background-size:28px 28px;animation:stripes 1s linear infinite"></div>
+      </div>
+    </div>
+
+    <!-- reassurance banner -->
+    <div style="display:flex;align-items:center;gap:12px;border-radius:14px;border:1px solid rgba(217,138,20,0.25);background:rgba(255,176,32,0.1);padding:12px 14px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="#d98a14" style="flex:0 0 auto"><circle cx="12" cy="12" r="10" opacity="0.18"></circle><path d="M12 7a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0V8a1 1 0 0 1 1-1zm0 9.5a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4z"></path></svg>
+      <div style="font-size:13.5px;color:#7a5410;line-height:1.5"><b>Keep this page open until it finishes.</b> If it closes, come back and re-select the same files — they continue from where they stopped.</div>
+    </div>
+
+    <!-- file rows -->
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:rgba(255,255,255,0.7);border:1px solid rgba(12,26,43,0.06);padding:10px 14px">
+        <span style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,rgba(47,107,255,0.16),rgba(21,192,201,0.16));display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="#2f6bff"><rect x="3" y="4" width="18" height="16" rx="3" opacity="0.18"></rect><path d="M6 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm2.5 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM6 17h12l-4.5-6-3.2 4.2-1.8-2.2L6 17z"></path></svg></span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">IMG_4753.HEIC</span><span style="font-family:'Spline Sans Mono',monospace;font-size:12px;color:#6b7c91;flex:0 0 auto">2.6 MB</span></div>
+          <div style="margin-top:6px;height:5px;border-radius:99px;background:rgba(12,26,43,0.07)"><div style="width:100%;height:100%;border-radius:inherit;background:#1fb27a"></div></div>
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#1fb27a" style="flex:0 0 auto"><circle cx="12" cy="12" r="10" opacity="0.16"></circle><path d="M10.4 15.2l-3-3 1.3-1.3 1.7 1.7 4.9-4.9 1.3 1.3-6.2 6.2z"></path></svg>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:rgba(255,255,255,0.7);border:1px solid rgba(47,107,255,0.25);padding:10px 14px;box-shadow:0 10px 24px -18px rgba(47,107,255,0.5)">
+        <span style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,rgba(47,107,255,0.16),rgba(21,192,201,0.16));display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="#15c0c9"><rect x="3" y="5" width="14" height="14" rx="3" opacity="0.18"></rect><path d="M5 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm13.5 3.8l2.9-1.9a1 1 0 0 1 1.6.8v6.6a1 1 0 0 1-1.6.8l-2.9-1.9V9.8z"></path></svg></span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">DJI_0284.MOV</span><span style="font-family:'Spline Sans Mono',monospace;font-size:12px;color:#6b7c91;flex:0 0 auto">612 MB · 72%</span></div>
+          <div style="margin-top:6px;height:5px;border-radius:99px;background:rgba(12,26,43,0.07)"><div style="width:72%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#2f6bff,#15c0c9)"></div></div>
+        </div>
+        <span style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#2f6bff;flex:0 0 auto">34 MB/s</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:rgba(255,255,255,0.55);border:1px solid rgba(12,26,43,0.06);padding:10px 14px;opacity:.75">
+        <span style="width:34px;height:34px;border-radius:10px;background:rgba(12,26,43,0.05);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="#6b7c91"><rect x="3" y="4" width="18" height="16" rx="3" opacity="0.18"></rect><path d="M6 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm2.5 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM6 17h12l-4.5-6-3.2 4.2-1.8-2.2L6 17z"></path></svg></span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">IMG_4880.DNG</span><span style="font-family:'Spline Sans Mono',monospace;font-size:12px;color:#9aa8b8;flex:0 0 auto">81.8 MB</span></div>
+          <div style="margin-top:6px;height:5px;border-radius:99px;background:rgba(12,26,43,0.06)"></div>
+        </div>
+        <span style="font-family:'Spline Sans Mono',monospace;font-size:11px;color:#9aa8b8;flex:0 0 auto">queued</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;border-radius:14px;background:rgba(240,85,107,0.05);border:1px solid rgba(240,85,107,0.25);padding:10px 14px">
+        <span style="width:34px;height:34px;border-radius:10px;background:rgba(240,85,107,0.1);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="#f0556b"><rect x="3" y="5" width="14" height="14" rx="3" opacity="0.18"></rect><path d="M5 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm13.5 3.8l2.9-1.9a1 1 0 0 1 1.6.8v6.6a1 1 0 0 1-1.6.8l-2.9-1.9V9.8z"></path></svg></span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">GOPR2214.MP4</span><span style="font-family:'Spline Sans Mono',monospace;font-size:12px;color:#f0556b;flex:0 0 auto">network dropped</span></div>
+          <div style="margin-top:6px;height:5px;border-radius:99px;background:rgba(12,26,43,0.07)"><div style="width:41%;height:100%;border-radius:inherit;background:#f0556b;opacity:.6"></div></div>
+        </div>
+        <button type="button" style="cursor:pointer;font-family:'Spline Sans Mono',monospace;font-size:11.5px;color:#2f6bff;border:1px solid rgba(47,107,255,0.35);border-radius:999px;padding:6px 12px;background:rgba(47,107,255,0.06);flex:0 0 auto" style-hover="background:rgba(47,107,255,0.14)">retry</button>
+      </div>
+    </div>
+
+    <button type="button" style="cursor:pointer;align-self:center;font-family:'Spline Sans Mono',monospace;font-size:12px;color:#6b7c91;border:none;background:none;padding:4px 8px;text-decoration:underline;text-underline-offset:3px" style-hover="color:#2f6bff">show all 96 files</button>
+  </section>
+
+  <!-- trust strip -->
+  <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+    <div style="display:flex;gap:11px;align-items:flex-start;border-radius:18px;border:1px solid rgba(255,255,255,0.85);background:rgba(255,255,255,0.5);backdrop-filter:blur(10px);padding:14px 16px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#2f6bff" style="flex:0 0 auto;margin-top:1px"><path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5l8-3z" opacity="0.16"></path><path d="M12 4.2l6 2.2v4.7c0 3.9-2.5 6.8-6 8.8-3.5-2-6-4.9-6-8.8V6.4l6-2.2zm-1 9.4l-1.8-1.8-1.2 1.2 3 3 5-5-1.2-1.2-3.8 3.8z"></path></svg>
+      <div style="font-size:12.5px;line-height:1.5;color:#43566b"><b style="color:#0c1a2b">Private &amp; encrypted.</b> Files travel over HTTPS directly to Google Drive — they never sit on this site.</div>
+    </div>
+    <div style="display:flex;gap:11px;align-items:flex-start;border-radius:18px;border:1px solid rgba(255,255,255,0.85);background:rgba(255,255,255,0.5);backdrop-filter:blur(10px);padding:14px 16px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#15c0c9" style="flex:0 0 auto;margin-top:1px"><circle cx="12" cy="8" r="4" opacity="0.16"></circle><path d="M12 5a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm0 8c3.9 0 7 2 7 4.5V19H5v-1.5C5 15 8.1 13 12 13z"></path></svg>
+      <div style="font-size:12.5px;line-height:1.5;color:#43566b"><b style="color:#0c1a2b">Only Ghanishth sees them.</b> This link is private — nothing you send is public or shared onward.</div>
+    </div>
+    <div style="display:flex;gap:11px;align-items:flex-start;border-radius:18px;border:1px solid rgba(255,255,255,0.85);background:rgba(255,255,255,0.5);backdrop-filter:blur(10px);padding:14px 16px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#7b6bff" style="flex:0 0 auto;margin-top:1px"><circle cx="12" cy="12" r="10" opacity="0.16"></circle><path d="M12 5a7 7 0 1 1-6.3 4h2.3A5 5 0 1 0 12 7v2.5L7.5 6 12 2.5V5z"></path></svg>
+      <div style="font-size:12.5px;line-height:1.5;color:#43566b"><b style="color:#0c1a2b">Interrupted? It resumes.</b> Re-pick the same files any time and they continue instead of restarting.</div>
+    </div>
+  </section>
+
+  <footer style="display:flex;justify-content:center">
+    <a href="#" style="font-family:'Spline Sans Mono',monospace;font-size:12px;color:#6b7c91;text-decoration:underline;text-underline-offset:3px" style-hover="color:#2f6bff">Something not working? Report a problem</a>
+  </footer>
+</main>
+</x-dc>
+</body>
+</html>

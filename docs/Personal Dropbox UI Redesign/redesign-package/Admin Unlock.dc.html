@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Spline+Sans+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#0c1a2b;background:#edf2fa;-webkit-font-smoothing:antialiased}
+a{color:#2f6bff;text-decoration:none}a:hover{color:#0e9aa7}
+@keyframes blobA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(34px,-26px) scale(1.08)}}
+@keyframes blobB{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-28px,22px) scale(1.12)}}
+@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<div style="position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:linear-gradient(180deg,#f4f8fe 0%,#eaf1fb 55%,#e5edf9 100%)">
+  <div style="position:absolute;top:-180px;left:-140px;width:560px;height:560px;border-radius:50%;filter:blur(80px);opacity:.24;background:radial-gradient(circle at 32% 32%,#2f6bff,transparent 70%);animation:blobA 18s ease-in-out infinite"></div>
+  <div style="position:absolute;bottom:-200px;right:-140px;width:620px;height:620px;border-radius:50%;filter:blur(85px);opacity:.2;background:radial-gradient(circle at 60% 40%,#15c0c9,transparent 70%);animation:blobB 22s ease-in-out infinite"></div>
+  <div style="position:absolute;top:30%;right:16%;width:360px;height:360px;border-radius:50%;filter:blur(90px);opacity:.14;background:radial-gradient(circle at 50% 50%,#7b6bff,transparent 70%)"></div>
+  <div style="position:absolute;inset:0;background-image:radial-gradient(rgba(47,107,255,0.09) 1px,transparent 1.4px);background-size:26px 26px;mask-image:radial-gradient(70% 65% at 50% 40%,black,transparent)"></div>
+  <div style="position:absolute;inset:0;opacity:.05;mix-blend-mode:multiply;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E&quot;)"></div>
+</div>
+
+<main data-screen-label="Admin unlock" style="position:relative;z-index:1;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px 16px">
+
+  <a href="Home.dc.html" style="display:inline-flex;align-items:center;gap:12px;font-family:'Unbounded',sans-serif;font-size:17px;font-weight:700;color:#0c1a2b;letter-spacing:-0.01em">
+    <span style="position:relative;width:44px;height:44px;border-radius:15px;background:linear-gradient(135deg,#2f6bff 0%,#4d8aff 45%,#15c0c9 100%);box-shadow:0 12px 26px -10px rgba(47,107,255,0.65), inset 0 1px 1px rgba(255,255,255,0.55);display:inline-flex;align-items:center;justify-content:center;transform:rotate(-6deg)">
+      <span style="width:17px;height:17px;background:#ffffff;border-radius:50% 50% 50% 14%;transform:rotate(51deg);box-shadow:0 2px 5px rgba(10,40,90,0.3)"></span>
+    </span>
+    <span>losthusky <span style="background:linear-gradient(120deg,#2f6bff,#15c0c9);-webkit-background-clip:text;background-clip:text;color:transparent">/</span> drop</span>
+  </a>
+
+  <section style="width:min(400px,100%);position:relative;border-radius:28px;padding:2px;background:linear-gradient(135deg,rgba(47,107,255,0.5),rgba(21,192,201,0.5),rgba(123,107,255,0.4));box-shadow:0 30px 70px -34px rgba(47,107,255,0.55)">
+    <div style="border-radius:26px;background:rgba(255,255,255,0.8);backdrop-filter:blur(16px);padding:30px 28px 26px;display:flex;flex-direction:column;gap:18px">
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:center;text-align:center">
+        <span style="width:54px;height:54px;border-radius:18px;background:linear-gradient(135deg,rgba(47,107,255,0.14),rgba(21,192,201,0.14));display:inline-flex;align-items:center;justify-content:center">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="#2f6bff"><rect x="5" y="10" width="14" height="10" rx="3" opacity="0.22"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6zm7 2a1.5 1.5 0 0 0-.8 2.8V18h1.6v-1.2A1.5 1.5 0 0 0 12 14z"></path></svg>
+        </span>
+        <h1 style="margin:6px 0 0;font-family:'Unbounded',sans-serif;font-size:23px;font-weight:800;letter-spacing:-0.02em">Unlock dashboard</h1>
+        <p style="margin:0;color:#6b7c91;font-size:13.5px;line-height:1.55">Admin access only. Your session stays signed in on this device for 30 days.</p>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label for="pw" style="font-family:'Spline Sans Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#6b7c91">Admin password</label>
+        <div style="display:flex;align-items:center;gap:10px;border:1px solid rgba(12,26,43,0.12);border-radius:13px;padding:0 14px;background:rgba(255,255,255,0.95)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="#9aa8b8" style="flex:0 0 auto"><path d="M14 3a7 7 0 0 1 6.9 8.2c-.5 3-3 5.4-6 5.7-.6.1-1.2 0-1.8-.1L11 19h-2v2H7v2H3v-4l7.2-7.2c-.1-.6-.2-1.2-.1-1.8.3-3 2.7-5.5 5.7-6 .4-.1.8-.1 1.2 0zM16 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"></path></svg>
+          <input id="pw" type="password" placeholder="••••••••••" style="flex:1;border:none;outline:none;background:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;color:#0c1a2b;padding:14px 0" >
+          <button type="button" title="show password" style="cursor:pointer;border:none;background:none;padding:6px;display:inline-flex" style-hover="opacity:.7"><svg width="16" height="16" viewBox="0 0 24 24" fill="#9aa8b8"><path d="M12 5c5 0 8.6 3.6 10 7-1.4 3.4-5 7-10 7S3.4 15.4 2 12c1.4-3.4 5-7 10-7z" opacity="0.25"></path><path d="M12 7c3.9 0 6.8 2.6 8 5-1.2 2.4-4.1 5-8 5s-6.8-2.6-8-5c1.2-2.4 4.1-5 8-5zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg></button>
+        </div>
+      </div>
+
+      <button type="button" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:9px;font-size:15px;font-weight:700;color:#ffffff;border:none;border-radius:14px;padding:14px 20px;background:linear-gradient(120deg,#2f6bff,#15c0c9);box-shadow:0 16px 34px -14px rgba(47,107,255,0.75)" style-hover="filter:brightness(1.06)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="#ffffff"><path d="M13 4a1 1 0 0 1 1 1v3h-2V6H6v12h6v-2h2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h8z" opacity="0.75"></path><path d="M15.6 8.6L20 12l-4.4 3.4-1.2-1.5 1.8-1.4H9v-2h7.2l-1.8-1.4 1.2-1.5z"></path></svg>
+        Unlock
+      </button>
+
+      <div style="display:flex;align-items:center;gap:10px;border-radius:12px;border:1px solid rgba(12,26,43,0.07);background:rgba(255,255,255,0.6);padding:11px 13px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="#1fb27a" style="flex:0 0 auto"><path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5l8-3z" opacity="0.18"></path><path d="M12 4.2l6 2.2v4.7c0 3.9-2.5 6.8-6 8.8-3.5-2-6-4.9-6-8.8V6.4l6-2.2zm-1 9.4l-1.8-1.8-1.2 1.2 3 3 5-5-1.2-1.2-3.8 3.8z"></path></svg>
+        <span style="font-size:12.5px;color:#43566b;line-height:1.5">Rate-limited: 5 attempts, then a 15-minute lockout.</span>
+      </div>
+    </div>
+  </section>
+
+  <a href="Home.dc.html" style="font-family:'Spline Sans Mono',monospace;font-size:12px;color:#6b7c91" style-hover="color:#2f6bff">← back to home</a>
+</main>
+</x-dc>
+</body>
+</html>
