@@ -8,110 +8,139 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body class="home">
-<main class="home-shell">
+<div class="bg-fx" aria-hidden="true"></div>
+<main class="home-shell home-v3">
   <nav class="topbar">
-    <a class="brand" href="/"><i class="brand-mark"></i>losthusky<span>/</span>drop</a>
-    <div class="nav-cluster">
-      <a class="nav-link" href="/privacy">privacy</a>
-      <a class="nav-link" href="/terms">terms</a>
-      <a class="nav-link" href="/admin">admin</a>
-    </div>
+    <a class="brand" href="/"><i class="brand-mark"></i><span>losthusky <span class="brand-slash">/</span> drop</span></a>
+    <a class="nav-link admin-pill" href="/admin">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.25"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6z"></path></svg>
+      Admin
+    </a>
   </nav>
 
-  <section class="home-hero">
-    <div class="hero-copy-block">
-      <p class="eyebrow">private media transfer and share gallery</p>
-      <h1>LostHusky Drop</h1>
-      <p class="hero-copy">
-        A personal file drop and gallery system for collecting original photos
-        and videos, saving them to Google Drive, and sharing polished private
-        albums with the people who need access.
+  <section class="hero-v3">
+    <div class="hero-v3-copy">
+      <span class="eyebrow">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.5 13.5H11l-1 8.5L18.5 10H12l1-8z"></path></svg>
+        self-hosted · your Drive, your rules
+      </span>
+      <h1>Collect original-quality files, <span class="grad-text">straight into your Drive.</span></h1>
+      <p class="hero-v3-sub">
+        Send friends a link. They drop photos and videos — full resolution, no
+        compression, multi-gigabyte files — and everything lands organized in
+        your Google Drive. No accounts, no apps, no WhatsApp crunch.
       </p>
       <div class="hero-actions">
-        <a class="btn" href="/admin">Open dashboard</a>
-        <a class="btn ghost" href="/privacy">Privacy policy</a>
+        <a class="btn" href="/admin">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z"></path></svg>
+          Create a drop link
+        </a>
+        <a class="btn ghost" href="#how">
+          See how it works
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5l7 7-7 7-1.4-1.4L13.2 12 7.6 6.4 9 5z"></path></svg>
+        </a>
+      </div>
+      <div class="hero-v3-checks">
+        <span><svg width="12" height="12" viewBox="0 0 24 24" fill="#1fb27a"><path d="M10.4 17.2l-5-5 1.4-1.4 3.6 3.6 7.8-7.8 1.4 1.4-9.2 9.2z"></path></svg>resumable uploads</span>
+        <span><svg width="12" height="12" viewBox="0 0 24 24" fill="#1fb27a"><path d="M10.4 17.2l-5-5 1.4-1.4 3.6 3.6 7.8-7.8 1.4 1.4-9.2 9.2z"></path></svg>no size limits</span>
+        <span><svg width="12" height="12" viewBox="0 0 24 24" fill="#1fb27a"><path d="M10.4 17.2l-5-5 1.4-1.4 3.6 3.6 7.8-7.8 1.4 1.4-9.2 9.2z"></path></svg>zero storage cost</span>
       </div>
     </div>
-    <div class="home-console panel" aria-label="app capabilities">
-      <div class="console-head">
-        <span></span><span></span><span></span>
-      </div>
-      <div class="console-grid">
-        <div><b>630</b><span>file gallery support</span></div>
-        <div><b>ZIP64</b><span>server streamed archives</span></div>
-        <div><b>OAuth</b><span>viewer identity for private shares</span></div>
-        <div><b>Live</b><span>transfer queue monitoring</span></div>
-      </div>
-      <div class="console-queue" aria-hidden="true">
-        <p><span style="width:64%"></span></p>
-        <p><span style="width:87%"></span></p>
-        <p><span style="width:42%"></span></p>
+
+    <div class="hero-v3-visual" aria-hidden="true">
+      <div class="hero-v3-glow"></div>
+      <div class="mini-drop-card">
+        <div class="mini-drop-head">
+          <span class="mini-drop-icon">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 3a1 1 0 0 1 .7.3l4.5 4.5a1 1 0 0 1-1.4 1.4L13 6.4V15a1 1 0 1 1-2 0V6.4L8.2 9.2a1 1 0 0 1-1.4-1.4l4.5-4.5A1 1 0 0 1 12 3z"></path><path d="M4 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z" opacity="0.6"></path></svg>
+          </span>
+          <div><div class="mini-drop-title">Jibhi &amp; Koksar</div><div class="mini-drop-meta">96 files · 6.2 GB</div></div>
+          <span class="mini-drop-pct">68%</span>
+        </div>
+        <div class="bar"><i style="width:68%"></i></div>
+        <div class="mini-drop-files">
+          <div class="glass-tile mini-file">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="#1fb27a"><circle cx="12" cy="12" r="10" opacity="0.16"></circle><path d="M10.4 15.2l-3-3 1.3-1.3 1.7 1.7 4.9-4.9 1.3 1.3-6.2 6.2z"></path></svg>
+            <b>IMG_4753.HEIC</b><span>2.6 MB</span>
+          </div>
+          <div class="glass-tile mini-file active">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="#15c0c9"><path d="M5 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zm13.5 3.8l2.9-1.9a1 1 0 0 1 1.6.8v6.6a1 1 0 0 1-1.6.8l-2.9-1.9V9.8z"></path></svg>
+            <b>DJI_0284.MOV</b><span class="speed">34 MB/s</span>
+          </div>
+          <div class="glass-tile mini-file queued">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="#9aa8b8"><rect x="4" y="5" width="16" height="14" rx="2.5"></rect></svg>
+            <b>IMG_4880.DNG</b><span>queued</span>
+          </div>
+        </div>
+        <div class="mini-drop-foot">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="#1fb27a"><path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5l8-3z"></path></svg>
+          direct to Google Drive · encrypted
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="home-section">
-    <div>
-      <p class="eyebrow">what it does</p>
-      <h2>Collect originals, track transfers, and share galleries without passing files through the app server.</h2>
+  <section class="steps-v3" id="how">
+    <div class="steps-v3-head">
+      <h2>Three steps, zero friction</h2>
+      <p>for you and for the people sending you files</p>
     </div>
-    <p class="section-copy">
-      Uploaders send files through private drop links. The browser uploads
-      directly to Google Drive using resumable sessions, while the app handles
-      access control, progress, metadata, gallery browsing, and owner-facing
-      activity history.
-    </p>
-  </section>
-
-  <section class="feature-band">
-    <div>
-      <b>Direct Drive uploads</b>
-      <span>Large photos and videos use Google Drive resumable upload sessions instead of Worker file buffering.</span>
-    </div>
-    <div>
-      <b>Private share galleries</b>
-      <span>PIN protected albums support responsive tiles, media viewing, thumbnails, downloads, and server ZIPs.</span>
-    </div>
-    <div>
-      <b>Google sign-in gate</b>
-      <span>Optional OAuth sign-in lets owners see which signed-in viewer opened, viewed, or downloaded share content.</span>
-    </div>
-    <div>
-      <b>Live transfer queue</b>
-      <span>The dashboard shows active uploaders, per-file progress, throughput, ETA, and recent activity.</span>
-    </div>
-  </section>
-
-  <section class="home-section home-split">
-    <div class="panel">
-      <p class="eyebrow">security model</p>
-      <h2>Access is scoped to private links.</h2>
-      <p class="section-copy">
-        Drop links and share links can expire, pause, require a PIN, and limit
-        usage. Share download URLs are short-lived and refreshed only after the
-        same share checks pass again.
-      </p>
-    </div>
-    <div class="panel">
-      <p class="eyebrow">public documents</p>
-      <h2>Consent-screen links</h2>
-      <div class="legal-link-grid">
-        <a href="/privacy">Application privacy policy</a>
-        <a href="/terms">Application terms of service</a>
+    <div class="steps-v3-grid">
+      <div class="panel step-card">
+        <span class="icon-tile">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#2f6bff"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l2.8-2.8a3 3 0 0 1 4.2 4.2l-2 2a1 1 0 1 1-1.4-1.4l2-2a1 1 0 0 0-1.4-1.4l-2.8 2.8a1 1 0 0 1-1.4 0z"></path><path d="M13.4 10.6a1 1 0 0 1 0 1.4l-2.8 2.8a3 3 0 0 1-4.2-4.2l2-2a1 1 0 0 1 1.4 1.4l-2 2a1 1 0 1 0 1.4 1.4l2.8-2.8a1 1 0 0 1 1.4 0z" opacity="0.55"></path></svg>
+        </span>
+        <div class="step-title"><span style="color:#2f6bff">1 ·</span> Make a link</div>
+        <p>Name it, point it at a Drive folder, optionally add a PIN, expiry or size budget. Ten seconds.</p>
       </div>
-      <p class="muted">For questions about this application, contact notify@losthusky.qzz.io.</p>
+      <div class="panel step-card">
+        <span class="icon-tile" style="background:linear-gradient(135deg,rgba(21,192,201,0.16),rgba(31,178,122,0.14))">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#0e9aa7"><path d="M12 3a1 1 0 0 1 .7.3l4.5 4.5a1 1 0 0 1-1.4 1.4L13 6.4V15a1 1 0 1 1-2 0V6.4L8.2 9.2a1 1 0 0 1-1.4-1.4l4.5-4.5A1 1 0 0 1 12 3z"></path><path d="M4 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z" opacity="0.55"></path></svg>
+        </span>
+        <div class="step-title"><span style="color:#0e9aa7">2 ·</span> Friends drop files</div>
+        <p>They open the link on any device, type a name, and add files. Uploads run in parallel and resume if the network drops.</p>
+      </div>
+      <div class="panel step-card">
+        <span class="icon-tile" style="background:linear-gradient(135deg,rgba(123,107,255,0.16),rgba(47,107,255,0.14))">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#7b6bff"><path d="M5 7a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7z" opacity="0.3"></path><path d="M7 6h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zm3.4 8.2l1.3-1.3 1.1 1.1 2.5-2.5 1.3 1.3-3.8 3.8-2.4-2.4z"></path></svg>
+        </span>
+        <div class="step-title"><span style="color:#7b6bff">3 ·</span> It lands in Drive</div>
+        <p>Every uploader gets their own subfolder. Watch transfers live, then share galleries back with a /s/ link.</p>
+      </div>
     </div>
   </section>
 
-  <section class="home-foot">
-    <span>LostHusky Drop</span>
-    <a href="/privacy">Privacy</a>
-    <a href="/terms">Terms</a>
+  <section class="panel strip-v3">
+    <div class="strip-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#2f6bff"><circle cx="12" cy="12" r="10" opacity="0.14"></circle><path d="M13 2L4.5 13.5H11l-1 8.5L18.5 10H12l1-8z"></path></svg>
+      <div><b>Fast by design</b><div>Parallel chunked uploads saturate the connection — 4.5 GB in under an hour on hotel Wi-Fi.</div></div>
+    </div>
+    <div class="strip-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#0e9aa7"><circle cx="12" cy="12" r="10" opacity="0.14"></circle><path d="M12 5a7 7 0 1 1-6.3 4h2.3A5 5 0 1 0 12 7v2.5L7.5 6 12 2.5V5z"></path></svg>
+      <div><b>Survives bad networks</b><div>Interrupted transfers resume from the last verified chunk — never from zero.</div></div>
+    </div>
+    <div class="strip-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#7b6bff"><path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5l8-3z" opacity="0.14"></path><path d="M12 4.2l6 2.2v4.7c0 3.9-2.5 6.8-6 8.8-3.5-2-6-4.9-6-8.8V6.4l6-2.2zm-1 9.4l-1.8-1.8-1.2 1.2 3 3 5-5-1.2-1.2-3.8 3.8z"></path></svg>
+      <div><b>Private by default</b><div>PINs, expiry dates, size budgets and full activity logs on every link.</div></div>
+    </div>
+    <div class="strip-item">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#1fb27a"><ellipse cx="12" cy="6" rx="8" ry="3" opacity="0.35"></ellipse><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0 1.7-3.6 3-8 3S4 7.7 4 6zm16 6c0 1.7-3.6 3-8 3s-8-1.3-8-3"></path></svg>
+      <div><b>Your storage</b><div>Files stream straight into your Google Drive — nothing is stored on a middleman server.</div></div>
+    </div>
   </section>
+
+  <footer class="foot-v3">
+    <span>© 2026 losthusky/drop — built for friends, not customers · notify@losthusky.qzz.io</span>
+    <div>
+      <a href="/privacy">privacy</a>
+      <a href="/terms">terms</a>
+      <a href="/admin">admin</a>
+    </div>
+  </footer>
 </main>
 </body>
 </html>

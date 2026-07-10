@@ -21,4 +21,11 @@ assert.match(liveSource, /speedHist/, "plan 09 retains live speed history");
 assert.match(liveSource, /recentDone/, "plan 09 retains recently completed transfers");
 assert.match(shareSource, /recentViewers/, "plan 09 exposes recent identified share viewers");
 
+const home = await read("public/index.html");
+assert.match(home, /class="[^"]*\bhome-v3\b[^"]*"/, "plan 01 installs the redesigned homepage shell");
+assert.match(home, /class="hero-v3"/, "plan 01 installs the two-column hero");
+assert.match(home, /class="steps-v3"/, "plan 01 installs the three-step section");
+assert.match(home, /class="[^"]*\bstrip-v3\b[^"]*"/, "plan 01 installs the feature strip");
+assert.match(home, /class="bg-fx"/, "plan 01 mounts the ambient background layer");
+
 console.log("UI v3 structure tests passed");
