@@ -36,4 +36,14 @@ assert.match(adminHtml, /id="tok-eye"/, "plan 02 provides the password visibilit
 assert.match(adminHtml, /class="auth-note"/, "plan 02 provides the rate-limit reassurance notice");
 assert.match(adminJs, /tok-eye/, "plan 02 wires the password visibility control");
 
+assert.match(adminHtml, /class="brand side-brand"/, "plan 03 installs the shared admin sidebar brand");
+assert.match(adminHtml, /class="tab tab-create" data-tab="create"/, "plan 03 keeps the create view inside the shared admin page");
+assert.match(adminHtml, /id="live-empty"/, "plan 03 provides the live-transfer empty state");
+assert.match(adminHtml, /id="live-finished-list"/, "plan 03 provides the finished-transfer host");
+assert.match(adminJs, /const STAT_ICONS =/, "plan 03 renders icon stat cards");
+assert.match(adminJs, /let liveRecent = \[\]/, "plan 03 retains recent sessions from the shared live feed");
+assert.match(adminJs, /function speedSparkline\(/, "plan 03 renders speed samples from live data");
+assert.match(adminJs, /function makeMiniLiveRow\(/, "plan 03 keeps overview live rows compact");
+assert.match(css, /\.live-summary-strip\s*\{/, "plan 03 styles the live-transfer summary strip");
+
 console.log("UI v3 structure tests passed");

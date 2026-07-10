@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 
 let overview = null;
 let liveActive = [];
+let liveRecent = [];
 let liveSocket = null;
 let liveReconnectDelay = 1000;
 let currentDetailSlug = "";
@@ -163,6 +164,7 @@ function connectLive() {
       }
       if (msg.type === "snapshot") {
         liveActive = msg.active || [];
+        liveRecent = msg.recent || [];
         renderLive();
         if (currentDetailSlug) renderDetailLive(currentDetailSlug);
       }
@@ -208,18 +210,45 @@ function upsertCards(container, pairs, cls) {
   );
 }
 
+const STAT_ICONS = {
+  links: ['rgba(47,107,255,0.12)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#2f6bff"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l2.8-2.8a3 3 0 0 1 4.2 4.2l-2 2a1 1 0 1 1-1.4-1.4l2-2a1 1 0 0 0-1.4-1.4l-2.8 2.8a1 1 0 0 1-1.4 0z"></path><path d="M13.4 10.6a1 1 0 0 1 0 1.4l-2.8 2.8a3 3 0 0 1-4.2-4.2l2-2a1 1 0 0 1 1.4 1.4l-2 2a1 1 0 1 0 1.4 1.4l2.8-2.8a1 1 0 0 1 1.4 0z" opacity="0.55"></path></svg>'],
+  opens: ['rgba(21,192,201,0.14)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#0e9aa7"><path d="M12 5c5 0 8.6 3.6 10 7-1.4 3.4-5 7-10 7S3.4 15.4 2 12c1.4-3.4 5-7 10-7z" opacity="0.2"></path><path d="M12 7c3.9 0 6.8 2.6 8 5-1.2 2.4-4.1 5-8 5s-6.8-2.6-8-5c1.2-2.4 4.1-5 8-5zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>'],
+  sessions: ['rgba(123,107,255,0.14)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#7b6bff"><circle cx="9" cy="8" r="3.4"></circle><path d="M9 13c3.6 0 6.5 1.9 6.5 4.2V19H2.5v-1.8C2.5 14.9 5.4 13 9 13z" opacity="0.55"></path><circle cx="17" cy="9" r="2.6" opacity="0.55"></circle><path d="M17 13.2c2.6 0 4.5 1.4 4.5 3.1V18h-4"></path></svg>'],
+  files: ['rgba(47,107,255,0.12)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#2f6bff"><path d="M6 3h8l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" opacity="0.2"></path><path d="M6.5 4h7l4.5 4.5V20h-11.5V4zM13 5.5V9h3.5L13 5.5z"></path></svg>'],
+  received: ['', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 3a1 1 0 0 1 1 1v9.6l2.8-2.8a1 1 0 0 1 1.4 1.4l-4.5 4.5a1 1 0 0 1-1.4 0L6.8 12.2a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1z"></path><path d="M4 17a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1z" opacity="0.7"></path></svg>'],
+  "drive free": ['rgba(31,178,122,0.14)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#1fb27a"><ellipse cx="12" cy="6" rx="8" ry="3" opacity="0.55"></ellipse><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0 1.7-3.6 3-8 3S4 7.7 4 6zm16 6c0 1.7-3.6 3-8 3s-8-1.3-8-3"></path></svg>'],
+};
+
 function renderStats() {
   const t = overview?.totals || {};
   const q = overview?.quota;
   const cards = [
-    ["Links", t.links || 0],
-    ["Opens", t.opens || 0],
-    ["Sessions", t.sessions || 0],
-    ["Files", t.files || 0],
-    ["Received", fmtBytes(t.bytes || 0)],
+    ["links", t.links || 0],
+    ["opens", t.opens || 0],
+    ["sessions", t.sessions || 0],
+    ["files", (t.files || 0).toLocaleString()],
+    ["received", fmtBytes(t.bytes || 0)],
   ];
-  if (q && q.free != null) cards.push(["Drive free", fmtBytes(q.free)]);
-  upsertCards($("stats"), cards, "stat-card");
+  if (q && q.free != null) cards.push(["drive free", fmtBytes(q.free)]);
+  reconcile(
+    $("stats"),
+    cards,
+    ([label]) => label,
+    ([label]) => {
+      const el = document.createElement("div");
+      el.className = `stat-card v3${label === "received" ? " accent" : ""}`;
+      const [tint, svg] = STAT_ICONS[label] || STAT_ICONS.links;
+      el.innerHTML = `<span class="stat-ico"${tint ? ` style="background:${tint}"` : ""}>${svg}</span><div><b></b><span></span></div>`;
+      el._value = el.querySelector("b");
+      el._label = el.querySelector("div > span");
+      return el;
+    },
+    (el, [label, value]) => {
+      if (el._label.textContent !== label) el._label.textContent = label;
+      const text = String(value);
+      if (el._value.textContent !== text) el._value.textContent = text;
+    },
+  );
 }
 
 // ---- 30-day activity chart (inline SVG, no dependencies) ----
@@ -244,23 +273,32 @@ function renderChart() {
   const step = (w - pad * 2) / points.length;
   const bw = Math.max(4, step - 3);
   let bars = "";
+  const maxV = Math.max(...points.map((p) => p.v));
   points.forEach((p, i) => {
     const x = pad + i * step;
     const bh = Math.max(p.v > 0 ? 3 : 1.5, ((h - 6) * p.v) / max);
     const label = seriesMetric === "bytes" ? fmtBytes(p.v) : p.v;
-    bars += `<rect class="${p.v ? "" : "zero"}" x="${x.toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="2"><title>${esc(p.day)}: ${esc(String(label))}</title></rect>`;
+    const cls = !p.v ? "zero" : p.v === maxV ? "peak" : "";
+    bars += `<rect class="${cls}" x="${x.toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="2"><title>${esc(p.day)}: ${esc(String(label))}</title></rect>`;
   });
   const totalLabel = seriesMetric === "bytes" ? fmtBytes(total) : total;
-  const note = total ? `${totalLabel} ${seriesMetric} in the last 30 days` : `No ${seriesMetric} in the last 30 days yet - the chart fills in as activity happens.`;
+  const peak = points.reduce((a, b) => (b.v > a.v ? b : a), points[0]);
+  const peakLabel = seriesMetric === "bytes" ? fmtBytes(peak.v) : peak.v;
+  const busiest = total && peak.v ? ` · busiest day ${peak.day.slice(5)} (${peakLabel})` : "";
+  const note = total ? `${totalLabel} ${seriesMetric} in the last 30 days${busiest}` : `No ${seriesMetric} in the last 30 days yet - the chart fills in as activity happens.`;
   const labels = [points[0], points[10], points[20], points[29]].map((p) => `<span>${esc(p.day.slice(5))}</span>`).join("");
   host.innerHTML = `
     <div class="chart-note muted">${esc(note)}</div>
-    <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="30 day ${escAttr(seriesMetric)}">${bars}</svg>
+    <svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="30 day ${escAttr(seriesMetric)}">
+      <defs>
+        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7aa4ff"/><stop offset="1" stop-color="#2f6bff"/></linearGradient>
+        <linearGradient id="barGradPeak" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f6bff"/><stop offset="1" stop-color="#15c0c9"/></linearGradient>
+      </defs>${bars}</svg>
     <div class="chart-labels">${labels}</div>`;
 }
 
 function renderLive() {
-  const uploading = liveActive.filter((s) => s.state === "uploading");
+  const uploading = liveActive.filter((session) => session.state === "uploading");
   renderMetrics(uploading);
   const badge = $("live-badge");
   if (badge) {
@@ -268,46 +306,64 @@ function renderLive() {
     badge.classList.toggle("hidden", uploading.length === 0);
   }
   const box = $("live-list");
-  if (box) {
-    reconcile(box, liveActive, (s) => s.id, makeLiveRow, updateLiveRow);
-    setEmpty(box, liveActive.length === 0, "No active uploads right now.");
-  }
+  if (box) reconcile(box, uploading, (session) => session.id, makeLiveRow, updateLiveRow);
+  $("live-empty")?.classList.toggle("hidden", uploading.length !== 0);
+  const last = liveRecent[0];
+  if ($("live-last-completed")) $("live-last-completed").innerHTML = last ? `<span class="muted">Last completed: <b>${esc(last.uploader || "anonymous")}</b> → ${esc(last.label || last.slug)} · ${last.files || 0} files · ${fmtBytes(last.bytes || 0)} · ${new Date(last.endedAt).toLocaleTimeString()}</span>` : "";
+  const finished = $("live-finished-list");
+  if (finished) reconcile(finished, liveRecent, (session) => session.id, makeFinishedLiveRow, updateFinishedLiveRow);
+  $("live-finished-section")?.classList.toggle("hidden", liveRecent.length === 0);
+
   const mini = $("live-mini");
   if (mini) {
-    const top = liveActive.slice(0, 3);
-    reconcile(mini, top, (s) => `m:${s.id}`, makeLiveRow, updateLiveRow);
+    const top = uploading.slice(0, 3);
+    reconcile(mini, top, (session) => `m:${session.id}`, makeMiniLiveRow, updateMiniLiveRow);
     setEmpty(mini, top.length === 0, "No active uploads right now.");
-    if (mini._more) mini._more.remove();
-    if (liveActive.length > top.length) {
-      mini._more = document.createElement("div");
-      mini._more.className = "list-note";
-      mini._more.textContent = `+${liveActive.length - top.length} more session${liveActive.length - top.length === 1 ? "" : "s"} in the Live transfers tab`;
-      mini.appendChild(mini._more);
-    }
   }
+}
+
+function makeFinishedLiveRow() {
+  const row = document.createElement("div");
+  row.className = "finished-live-row";
+  return row;
+}
+
+function updateFinishedLiveRow(row, session) {
+  row.innerHTML = `<span class="avatar">${esc(initialsOf(session.uploader || "anonymous"))}</span><span><b>${esc(session.uploader || "anonymous")} → ${esc(session.label || session.slug)}</b><small>${session.files || 0} files · ${fmtBytes(session.bytes || 0)} · ${fmtTime(session.duration || 0)}</small></span><time>${new Date(session.endedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>`;
 }
 
 function renderMetrics(sessions) {
-  const el = $("live-metrics");
-  if (!el) return;
-  const remaining = sessions.reduce((t, s) => t + Math.max(0, (s.total || 0) - (s.sent || 0)), 0);
-  const speed = sessions.reduce((t, s) => t + (s.speed || 0), 0);
-  const files = sessions.reduce((t, s) => t + Math.max(0, (s.count || 0) - (s.done || 0)), 0);
-  const eta = speed > 0 ? remaining / speed : 0;
-  upsertCards(
-    el,
-    [
-      ["Active uploaders", sessions.length],
-      ["Files in flight", files],
-      ["Throughput", speed ? `${fmtBytes(speed)}/s` : "-"],
-      ["ETA - all done", speed ? fmtTime(eta) : "-"],
-    ],
-    "live-metric",
-  );
-  const hot = sessions.length > 0;
-  for (const [, card] of el._rows) card.classList.toggle("hot", hot);
+  const element = $("live-metrics");
+  if (!element) return;
+  const throughput = sessions.reduce((sum, session) => sum + (session.speed || 0), 0);
+  upsertCards(element, [["Active sessions", sessions.length], ["Combined throughput", throughput ? `${fmtBytes(throughput)}/s` : "—"], ["Drive write rate", throughput ? `${fmtBytes(throughput)}/s` : "—"]], "live-metric");
+  for (const [, card] of element._rows) card.classList.toggle("hot", sessions.length > 0);
 }
 
+function initialsOf(name) {
+  const parts = String(name || "?").trim().split(/\s+/);
+  return ((parts[0]?.[0] || "?") + (parts[1]?.[0] || "")).toUpperCase();
+}
+
+function makeMiniLiveRow() {
+  const el = document.createElement("div");
+  el.className = "live-mini-row glass-tile";
+  return el;
+}
+
+function updateMiniLiveRow(el, s) {
+  el.classList.toggle("hot", s.state === "uploading");
+  el.innerHTML = `
+    <div class="live-mini-head">
+      <span class="avatar">${esc(initialsOf(s.uploader))}</span>
+      <div class="live-mini-copy">
+        <div class="live-mini-title">${esc(s.uploader || "anonymous")} — uploading to <a href="#" data-open-detail="${escAttr(s.slug)}">${esc(s.label || s.slug)}</a></div>
+        <div class="live-mini-meta">${s.done || 0} of ${s.count || 0} files${s.speed ? ` · ${fmtBytes(s.speed)}/s` : ""}${s.eta ? ` · ~${fmtTime(s.eta)} left` : ""}${s.paused ? " · paused" : ""}</div>
+      </div>
+      <span class="live-mini-pct">${s.pct || 0}%</span>
+    </div>
+    <div class="bar slim"><i style="width:${s.pct || 0}%"></i></div>`;
+}
 function makeLiveRow() {
   const el = document.createElement("article");
   el.className = "live-row";
@@ -319,57 +375,24 @@ function updateLiveRow(el, s) {
   el.innerHTML = liveRowInner(s);
 }
 
-function liveRowInner(s) {
-  // Show every in-flight file the uploader reported (up to the 20-file wire
-  // sample); the list scrolls via CSS instead of hiding files behind "+N".
-  const inFlight = s.files || [];
-  const files = inFlight
-    .map((f) => {
-      const state = liveFileState(f);
-      const pct = f.size ? Math.min(100, Math.round((Number(f.sent || 0) / Number(f.size || 0)) * 100)) : 0;
-      return `
-        <div class="file-row ${escAttr(state)}">
-          <div class="file-top">
-            <div class="file-name">${esc(f.name || "file")}</div>
-            <div class="file-stat ${escAttr(liveFileStatClass(state))}">${fmtBytes(f.sent || 0)} / ${fmtBytes(f.size || 0)}</div>
-          </div>
-          <div class="trail"><i style="width:${pct}%"></i></div>
-        </div>`;
-    })
-    .join("");
-  const more = s.count > s.done + inFlight.length ? `<div class="list-note">${s.count - s.done - inFlight.length} more queued</div>` : "";
-  const age = Math.max(0, Math.round((Date.now() - Number(s.lastSeen || Date.now())) / 1000));
-  const state = s.state === "stale" ? "abandoned" : s.state === "done" ? "complete" : "uploading";
-  const tags = [];
-  if (s.count) tags.push(`<span class="tag">${s.done || 0}/${s.count} files</span>`);
-  if (s.state === "uploading" && s.speed) tags.push(`<span class="tag rate">${fmtBytes(s.speed)}/s</span>`);
-  if (s.state === "uploading" && s.eta) tags.push(`<span class="tag eta">~${fmtTime(s.eta)} left</span>`);
-  if (s.error) tags.push(`<span class="tag err">${s.error} need attention</span>`);
-  const meta = tags.length ? `<div class="live-meta">${tags.join("")}</div>` : "";
-  const headline = `${s.pct || 0}% complete`;
-  const detail = `${s.done || 0}/${s.count || 0} files - ${fmtBytes(s.sent || 0)} of ${fmtBytes(s.total || 0)}${
-    s.speed ? ` - ${fmtBytes(s.speed)}/s` : ""
-  }${s.eta ? ` - ~${fmtTime(s.eta)} left` : ""}`;
-  return `
-    <div class="transfer-head live-transfer-head">
-      <div>
-        <p class="eyebrow">${esc(s.slug)} - ${esc(state)}</p>
-        <h2><span>${esc(headline)}</span></h2>
-        <div class="muted">${esc(s.uploader || "anonymous")} - updated ${age}s ago</div>
-      </div>
-      <div class="transfer-side">
-        <span class="muted">${esc(detail)}</span>
-        <span class="state-pill">${esc(state)}</span>
-      </div>
-    </div>
-    <div class="trail total"><i style="width:${s.pct || 0}%"></i></div>
-    ${meta}
-    <div class="filelist live-queue">${files}${more}</div>
-    <div class="row-actions">
-      <button class="mini" data-open-detail="${escAttr(s.slug)}" type="button">${icon("list")}detail</button>
-      <button class="mini" data-open-folder="${escAttr(s.slug)}" type="button">${icon("folder")}open</button>
-      <button class="mini danger" data-close-session="${escAttr(s.id)}" data-close-slug="${escAttr(s.slug)}" type="button">dismiss</button>
-    </div>`;
+function liveRowInner(session) {
+  const inFlight = session.files || [];
+  const files = inFlight.map((file) => {
+    const state = liveFileState(file);
+    const pct = file.size ? Math.min(100, Math.round((Number(file.sent || 0) / Number(file.size || 0)) * 100)) : 0;
+    return `<div class="file-row ${escAttr(state)}"><div class="file-top"><div class="file-name">${esc(file.name || "file")}</div><div class="file-stat ${escAttr(liveFileStatClass(state))}">${fmtBytes(file.sent || 0)} / ${fmtBytes(file.size || 0)}</div></div><div class="trail"><i style="width:${pct}%"></i></div></div>`;
+  }).join("");
+  const more = session.count > session.done + inFlight.length ? `<div class="list-note">${session.count - session.done - inFlight.length} more queued</div>` : "";
+  return `<div class="live-card-head"><div class="live-ring"><svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="none" stroke="rgba(12,26,43,.08)" stroke-width="4"></circle><circle cx="22" cy="22" r="18" fill="none" stroke="#2f6bff" stroke-width="4" stroke-linecap="round" stroke-dasharray="113.1" stroke-dashoffset="${113.1 * (1 - (session.pct || 0) / 100)}"></circle></svg><b>${session.pct || 0}%</b></div><span class="avatar">${esc(initialsOf(session.uploader || "anonymous"))}</span><div class="live-card-copy"><h2>${esc(session.uploader || "anonymous")} → <button data-open-detail="${escAttr(session.slug)}" type="button">${esc(session.label || session.slug)}</button></h2><p>${session.done || 0} of ${session.count || 0} files · ${fmtBytes(session.sent || 0)} of ${fmtBytes(session.total || 0)}${session.speed ? ` · ${fmtBytes(session.speed)}/s` : ""}${session.eta ? ` · ~${fmtTime(session.eta)} left` : ""}${session.paused ? " · paused" : ""}</p></div><span class="state-pill">${session.paused ? "paused" : "uploading"}</span></div><div class="live-spark"><span>Last 60 seconds</span>${speedSparkline(session.speedHist || [])}</div><div class="filelist live-queue">${files}${more}</div><div class="row-actions"><button class="mini" data-open-detail="${escAttr(session.slug)}" type="button">${icon("list")}detail</button><button class="mini" data-open-folder="${escAttr(session.slug)}" type="button">${icon("folder")}Drive folder</button><button class="mini danger" data-close-session="${escAttr(session.id)}" data-close-slug="${escAttr(session.slug)}" type="button">dismiss</button></div>`;
+}
+
+function speedSparkline(samples) {
+  if (!samples.length) return '<div class="spark-empty">Waiting for speed samples…</div>';
+  const width = 320;
+  const height = 54;
+  const max = Math.max(...samples.map((sample) => Number(sample.bps) || 0), 1);
+  const points = samples.map((sample, index) => `${(index / Math.max(1, samples.length - 1)) * width},${height - ((Number(sample.bps) || 0) / max) * (height - 4)}`).join(" ");
+  return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="Transfer speed over the last 60 seconds"><defs><linearGradient id="sparkStroke" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2f6bff"></stop><stop offset="1" stop-color="#15c0c9"></stop></linearGradient></defs><polyline points="${points}" fill="none" stroke="url(#sparkStroke)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`;
 }
 
 function liveFileState(f) {

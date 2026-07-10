@@ -8,10 +8,11 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body class="admin-page">
+<div class="bg-fx" aria-hidden="true"></div>
 <main class="admin-shell">
   <section id="auth" class="auth-wrap">
     <a class="brand auth-brand" href="/"><i class="brand-mark"></i><span>losthusky <span class="brand-slash">/</span> drop</span></a>
@@ -60,36 +61,59 @@
 
   <div id="panel" class="admin-layout hidden">
     <aside class="admin-side">
-      <a class="brand" href="/"><i class="brand-mark"></i>losthusky<span>/</span>drop</a>
+      <a class="brand side-brand" href="/"><i class="brand-mark"></i><span>losthusky <span class="brand-slash">/</span> drop</span></a>
       <nav class="side-nav" aria-label="dashboard sections">
-        <button class="tab active" data-tab="overview" type="button">Overview</button>
-        <button class="tab" data-tab="live" type="button">Live transfers <span class="nav-badge hidden" id="live-badge">0</span></button>
-        <button class="tab" data-tab="links" type="button">Drop links</button>
-        <button class="tab" data-tab="shares" type="button">Share links</button>
-        <button class="tab" data-tab="activity" type="button">Activity</button>
-        <button class="tab" data-tab="create" type="button">+ New drop link</button>
+        <button class="tab active" data-tab="overview" type="button">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="2.5"></rect><rect x="13" y="3" width="8" height="8" rx="2.5" opacity="0.55"></rect><rect x="3" y="13" width="8" height="8" rx="2.5" opacity="0.55"></rect><rect x="13" y="13" width="8" height="8" rx="2.5"></rect></svg>
+          <span class="tab-label">Overview</span>
+        </button>
+        <button class="tab" data-tab="live" type="button">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" opacity="0.16"></circle><path d="M13 2L4.5 13.5H11l-1 8.5L18.5 10H12l1-8z"></path></svg>
+          <span class="tab-label">Live transfers</span>
+          <span class="nav-badge hidden" id="live-badge">0</span>
+        </button>
+        <button class="tab" data-tab="links" type="button">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M4 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z"></path><path d="M12 3a1 1 0 0 1 .7.3l4.5 4.5a1 1 0 0 1-1.4 1.4L13 6.4V15a1 1 0 1 1-2 0V6.4L8.2 9.2a1 1 0 0 1-1.4-1.4l4.5-4.5A1 1 0 0 1 12 3z" opacity="0.55" transform="rotate(180 12 9)"></path></svg>
+          <span class="tab-label">Drop links</span>
+        </button>
+        <button class="tab" data-tab="shares" type="button">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="6" r="3" opacity="0.55"></circle><circle cx="18" cy="18" r="3" opacity="0.55"></circle><path d="M8.6 10.8l6.8-3.6M8.6 13.2l6.8 3.6" stroke="currentColor" stroke-width="1.8" fill="none"></path></svg>
+          <span class="tab-label">Share links</span>
+        </button>
+        <button class="tab" data-tab="activity" type="button">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"></path></svg>
+          <span class="tab-label">Activity</span>
+        </button>
+        <div class="side-divider" role="presentation"></div>
+        <button class="tab tab-create" data-tab="create" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z"></path></svg>
+          <span class="tab-label">New drop link</span>
+        </button>
         <button class="tab hidden" data-tab="detail" id="detail-tab" type="button">Link detail</button>
       </nav>
       <div class="side-foot">
         <div class="status-pill" id="live-state">offline</div>
-        <button class="mini logout" id="logout" type="button">lock</button>
+        <button class="mini logout" id="logout" type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.3"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6z"></path></svg>
+          lock
+        </button>
       </div>
     </aside>
 
     <div class="admin-content">
       <!-- OVERVIEW: the at-a-glance page -->
       <section id="tab-overview" class="tab-pane">
-        <div class="pane-head"><h1 class="pane-title">Overview</h1><span class="muted">totals, trends and what is happening right now</span></div>
+        <div class="pane-head"><h1 class="pane-title grad-text">Overview</h1><span class="muted">totals, trends and what is happening right now</span></div>
         <div class="stat-grid" id="stats"></div>
         <section class="panel">
           <div class="section-title">
             <h2>Last 30 days</h2>
             <div class="section-tools">
-              <button class="mini active" data-metric="bytes" type="button">bytes</button>
-              <button class="mini" data-metric="files" type="button">files</button>
-              <button class="mini" data-metric="opens" type="button">opens</button>
-              <button class="mini" data-metric="sessions" type="button">sessions</button>
-              <button class="mini" data-metric="downloads" type="button">downloads</button>
+              <button class="chip-filter active" data-metric="bytes" type="button">bytes</button>
+              <button class="chip-filter" data-metric="files" type="button">files</button>
+              <button class="chip-filter" data-metric="opens" type="button">opens</button>
+              <button class="chip-filter" data-metric="sessions" type="button">sessions</button>
+              <button class="chip-filter" data-metric="downloads" type="button">downloads</button>
             </div>
           </div>
           <div id="chart" class="chart-host"></div>
@@ -97,7 +121,7 @@
         <div class="dashboard-grid">
           <section class="panel">
             <div class="section-title">
-              <h2>Live now</h2>
+              <h2><span class="live-dot" aria-hidden="true"></span>Live now</h2>
               <div class="section-tools">
                 <button class="mini" data-goto-tab="live" type="button">open live view</button>
               </div>
@@ -116,19 +140,13 @@
         </div>
       </section>
 
-      <!-- LIVE: every active transfer, full width -->
+      <!-- LIVE: still one pane in the shared /admin document -->
       <section id="tab-live" class="tab-pane hidden">
-        <div class="pane-head"><h1 class="pane-title">Live transfers</h1><span class="muted">Durable Object stream - every active uploader and file</span></div>
-        <div id="live-metrics" class="live-metrics"></div>
-        <section class="panel">
-          <div class="section-title">
-            <h2>Sessions</h2>
-            <div class="section-tools">
-              <button class="mini" id="live-refresh" type="button">refresh</button>
-            </div>
-          </div>
-          <div id="live-list" class="live-list tall"></div>
-        </section>
+        <div class="pane-head"><div><p class="eyebrow">real-time relay</p><h1 class="pane-title grad-text">Live transfers</h1><span class="muted">Every active uploader and file, streamed from the Durable Object.</span></div><button class="mini" id="live-refresh" type="button">Refresh snapshot</button></div>
+        <div id="live-metrics" class="live-metrics live-summary-strip"></div>
+        <div id="live-list" class="live-list tall"></div>
+        <section id="live-empty" class="panel live-empty hidden"><span class="live-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16c2-2 4-3 8-3s6 1 8 3" fill="none" stroke="currentColor" stroke-width="2"></path><circle cx="12" cy="8" r="3" fill="currentColor" opacity=".18"></circle><path d="M8 20h8" fill="none" stroke="currentColor" stroke-width="2"></path></svg></span><h2>No transfers right now</h2><p class="muted">This view updates automatically when somebody starts an upload.</p><div id="live-last-completed"></div></section>
+        <section id="live-finished-section" class="panel live-finished hidden"><div class="section-title"><h2>Finished this hour</h2><span class="muted">Most recent 20 sessions</span></div><div id="live-finished-list"></div></section>
       </section>
 
       <!-- DROP LINKS -->
