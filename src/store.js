@@ -304,19 +304,32 @@ function emailTemplate(bodyHtml) {
 
 export async function sendNotify(env, msg) {
   if (!env.RESEND_API_KEY || !env.NOTIFY_TO || !env.NOTIFY_FROM) return;
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from: env.NOTIFY_FROM,
-      to: [env.NOTIFY_TO],
-      subject: msg.subject,
-      html: emailTemplate(msg.html),
-    }),
-  }).catch((err) => console.error("notify failed", err.message));
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from: env.NOTIFY_FROM,
+        to: [env.NOTIFY_TO],
+        reply_to: env.NOTIFY_REPLY_TO || undefined,
+        subject: msg.subject,
+        html: emailTemplate(msg.html),
+        text: msg.text || msg.subject,
+        tags: [{ name: "category", value: msg.category || "drop-notification" }],
+      }),
+    });
+    if (!response.ok) {
+      console.error("Resend rejected email", response.status, (await response.text()).slice(0, 300));
+      return null;
+    }
+    return await response.json().catch(() => ({ ok: true }));
+  } catch (error) {
+    console.error("notify failed", error.message);
+    return null;
+  }
 }
 
 // Records a finished file. With a Durable Object bound, the write is batched
@@ -348,6 +361,8 @@ export async function recordCompletion(env, link, meta, request) {
       uploader: meta.u,
       file: meta.n,
       bytes: meta.s,
+      count: 1,
+      sessionId: meta.si,
     },
     request
   );

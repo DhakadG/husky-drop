@@ -6,20 +6,28 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 const css = await read("public/style.css");
+const faviconSvg = await read("public/favicon.svg");
 assert.match(css, /--grad:\s*linear-gradient\(120deg/, "plan 00 uses the 120-degree signature gradient");
 assert.match(css, /\.bg-fx\s*\{/, "plan 00 defines the shared ambient background layer");
 assert.match(css, /\.grad-border\s*\{/, "plan 00 defines gradient-border hero cards");
 assert.match(css, /\.brand-mark::after\s*\{/, "plan 00 defines the droplet inside the logo mark");
+assert.match(css, /\.brand-mark\s*\{[\s\S]*?transform:\s*rotate\(84deg\)/, "logo mark is rotated exactly 90 degrees clockwise from its previous orientation");
+assert.match(faviconSvg, /transform="rotate\(90 60 60\)"/, "SVG logo asset uses the corrected orientation");
 
 const workerSource = await read("src/worker.js");
 const liveSource = await read("src/live.js");
 const shareSource = await read("src/share.js");
+const storeSource = await read("src/store.js");
 assert.match(workerSource, /\/api\/admin\/events/, "plan 09 registers activity pagination");
 assert.match(workerSource, /\/api\/admin\/drive\/folders/, "plan 09 registers Drive folder browsing");
 assert.match(workerSource, /ownerName:\s*cleanText\(env\.OWNER_DISPLAY_NAME/, "plan 09 returns a configured collector name");
 assert.match(liveSource, /speedHist/, "plan 09 retains live speed history");
 assert.match(liveSource, /recentDone/, "plan 09 retains recently completed transfers");
+assert.match(liveSource, /newBySession/, "completion batches retain separate activity counts for concurrent upload sessions");
+assert.match(liveSource, /type:\s*"sessionclose"[\s\S]*?sessionId:\s*session\.id/, "terminal live progress writes an automatic completed-session activity event");
 assert.match(shareSource, /recentViewers/, "plan 09 exposes recent identified share viewers");
+assert.match(storeSource, /text:\s*msg\.text/, "transactional emails include a plain-text alternative");
+assert.match(storeSource, /Resend rejected email/, "notification provider rejections are logged without breaking uploads");
 
 const home = await read("public/index.html");
 assert.match(home, /class="[^"]*\bhome-v3\b[^"]*"/, "plan 01 installs the redesigned homepage shell");
@@ -58,11 +66,20 @@ assert.match(css, /\.activity-session-summary\s*\{/, "plan 04 styles expandable 
 assert.match(adminHtml, /id="expired-links-section"/, "plan 05 separates expired Drop Links");
 assert.match(adminHtml, /id="drop-create-form"/, "plan 05 keeps link creation in the shared admin page");
 assert.match(adminHtml, /id="folder-picker-panel"/, "plan 05 provides the Drive folder picker");
+assert.match(adminHtml, /id="folder-new-name"/, "Drive picker can create a folder in the current location");
+assert.match(adminHtml, /id="share-folder-browse"/, "New share link can browse Drive");
+assert.match(adminHtml, /id="tab-create-share"/, "New share link has its own tab pane in the shared admin page");
+assert.match(adminHtml, /data-tab="create-share"/, "shared admin navigation exposes New share link");
+assert.match(adminHtml, /id="confirm-dialog"/, "admin uses a branded confirmation dialog");
 assert.match(adminHtml, /id="create-success"/, "plan 05 provides the inline creation success state");
 assert.match(adminJs, /function makeLinkCard\(/, "plan 05 renders complete Drop Link cards");
 assert.match(adminJs, /function showCreateStep\(/, "plan 05 implements the two-step creation flow");
 assert.match(adminJs, /async function openFolderPicker\(/, "plan 05 browses real Drive folders");
 assert.match(adminJs, /\/api\/admin\/drive\/folders/, "plan 05 uses the real Drive folder endpoint");
+assert.match(adminJs, /const shareSelectedFolders = new Map\(\)/, "Drive picker supports multiple share folders without a fabricated parent");
+assert.match(adminJs, /async function createFolderHere\(/, "Drive picker creates a child folder through the backend");
+assert.match(adminJs, /async function confirmAction\(/, "destructive actions use the shared asynchronous dialog");
+assert.doesNotMatch(adminJs, /\bconfirm\s*\(/, "native browser confirmations are removed");
 assert.match(css, /\.folder-picker-panel\s*\{/, "plan 05 styles the Drive picker");
 
 assert.match(adminJs, /let detailShowAll = false/, "plan 06 tracks collapsed upload history");
@@ -93,6 +110,8 @@ assert.match(dropJs, /let queuePaused = false/, "plan 08 tracks queue pause stat
 assert.match(dropJs, /function toggleQueuePause\(/, "plan 08 implements queue pause and resume");
 assert.match(dropJs, /paused:\s*queuePaused/, "plan 08 reports queue pause state to the live admin feed");
 assert.match(dropJs, /budgetHit/, "plan 08 handles real backend budget limits");
+assert.match(dropJs, /sessionId,\s*\n\s*\}\),?\s*\n\s*\}\)/, "completion logging includes the upload session id");
+assert.match(dropJs, /setState\(item, "done"\);\s*\n\s*sendLive\(true\)/, "final Drive verification forces a terminal live update");
 assert.match(css, /\.transfer-panel-v3\s*\{/, "plan 08 styles the uploader transfer queue");
 
 console.log("UI v3 structure tests passed");

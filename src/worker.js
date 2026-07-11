@@ -32,12 +32,13 @@ import {
   normalizeTheme,
   randomSlug,
   retryJson,
+  sanitizeFolderName,
   sanitizeFilename,
   sanitizeRelPath,
   slugify,
   timingSafeEqual,
 } from "./util.js";
-import { accessToken, driveBrowseFolders, driveFileMeta, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
+import { accessToken, driveBrowseFolders, driveCreateFolder, driveFileMeta, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
 import { bumpStats, gatePin, getUploads, liveProgress, liveSnapshot, liveStub, logEvent, mergeEventsKV, rateLimitRemote, recentEvents, recordCompletion, sendNotify } from "./store.js";
 import {
   adminShare,
@@ -214,8 +215,24 @@ async function api(request, env, url, ctx) {
         return json({ error: err.message }, 502);
       }
     }
+    if (m === "POST" && p === "/api/admin/drive/folders") {
+      return createAdminDriveFolder(request, env);
+    }
   }
   return json({ error: "not found" }, 404);
+}
+
+async function createAdminDriveFolder(request, env) {
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "Google Drive is not configured" }, 503);
+  const body = await request.json().catch(() => ({}));
+  const name = sanitizeFolderName(body.name || "");
+  const parentId = String(body.parentId || "root").replace(/[^a-zA-Z0-9_-]/g, "") || "root";
+  if (!name) return json({ error: "folder name is required" }, 400);
+  try {
+    return json({ folder: await driveCreateFolder(env, name, parentId) }, 201);
+  } catch (error) {
+    return json({ error: error.message }, 502);
+  }
 }
 
 // ---- Admin auth: bearer token (scripts/tests) or HMAC session cookie ----
@@ -560,19 +577,21 @@ async function recordSessionStart(env, link, uploader, sessionId, request) {
     await env.KV.put(guardKey, "1", { expirationTtl: 24 * 3600 });
   }
   await bumpStats(env, link.slug, { sessions: 1 });
-  await logEvent(env, { type: "start", slug: link.slug, label: link.label, uploader }, request);
+  await logEvent(env, { type: "start", slug: link.slug, label: link.label, uploader, sessionId: id }, request);
   const notify = normalizeNotify(link.notify);
   if (notify.enabled && notify.start) {
     await sendNotify(env, {
       subject: `${APP_NAME}: ${uploader} started uploading`,
       html: `<p><b>${escapeHtml(uploader)}</b> started uploading to <b>${escapeHtml(link.label)}</b>.</p>`,
+      text: `${uploader} started uploading to ${link.label}.`,
+      category: "upload-started",
     });
   }
 }
 
 async function logComplete(request, env) {
   const b = await request.json().catch(() => ({}));
-  const { linkId, filename, size, mimeType, uploader, fileId } = b;
+  const { linkId, filename, size, mimeType, uploader, fileId, sessionId } = b;
   if (!linkId || !filename || !fileId) return json({ error: "linkId, filename and fileId required" }, 400);
   const link = await env.KV.get(`link:${linkId}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
@@ -594,6 +613,7 @@ async function logComplete(request, env) {
     m: cleanText(mimeType || "", 80),
     u: cleanText(uploader || "anonymous", 60),
     f: cleanText(fileId || "", 120),
+    si: cleanText(sessionId || "", 80),
     at: Date.now(),
   };
   await recordCompletion(env, link, meta, request);

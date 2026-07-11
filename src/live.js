@@ -451,7 +451,25 @@ export class LiveTracker {
     const remaining = Math.max(0, session.total - session.sent);
     session.eta =
       session.state !== "done" && session.speed > 0 ? Math.round(remaining / session.speed) : 0;
-    if (session.state === "done" && session.prevState !== "done") this.noteFinished(session);
+    if (session.state === "done" && session.prevState !== "done") {
+      this.noteFinished(session);
+      this.accumulateEvent(
+        normalizeEvent(
+          {
+            type: "sessionclose",
+            slug: session.slug,
+            label: session.label,
+            uploader: session.uploader,
+            bytes: session.sent,
+            count: session.done,
+            message: `${session.done} file${session.done === 1 ? "" : "s"} uploaded`,
+            sessionId: session.id,
+          },
+          null,
+        ),
+      );
+      this.armAlarm().catch(() => {});
+    }
     this.sessions.set(session.id, session);
     return session;
   }
@@ -494,6 +512,8 @@ export class LiveTracker {
         )}</b>.</p><p>${session.done} file${session.done === 1 ? "" : "s"} - ${escapeHtml(
           fmtBytesServer(session.sent)
         )}</p>`,
+        text: `${session.uploader} finished uploading ${session.done} file${session.done === 1 ? "" : "s"} (${fmtBytesServer(session.sent)}) to ${link.label}.`,
+        category: "upload-completed",
       });
     } catch (err) {
       console.error("digest failed", err.message);
@@ -508,7 +528,7 @@ export class LiveTracker {
     const meta = normalizeUploadMeta(rawMeta);
     let pend = this.pending.get(slug);
     if (!pend) {
-      pend = { recents: [], seen: new Set(), label, lastUploader: "", lastFile: "" };
+      pend = { recents: [], seen: new Set(), label, lastUploader: "", lastFile: "", lastSessionId: "" };
       this.pending.set(slug, pend);
     }
     const id = meta.f || `${meta.n}:${meta.at}`;
@@ -520,6 +540,7 @@ export class LiveTracker {
     pend.label = label || pend.label;
     pend.lastUploader = meta.u || pend.lastUploader;
     pend.lastFile = meta.n || pend.lastFile;
+    pend.lastSessionId = meta.si || pend.lastSessionId;
     await this.armAlarm();
   }
 
@@ -548,6 +569,7 @@ export class LiveTracker {
         cur.label = pend.label || cur.label;
         cur.lastUploader = pend.lastUploader || cur.lastUploader;
         cur.lastFile = pend.lastFile || cur.lastFile;
+        cur.lastSessionId = pend.lastSessionId || cur.lastSessionId;
       } else {
         this.pending.set(slug, pend);
       }
@@ -618,12 +640,14 @@ export class LiveTracker {
     // the totals. Drive remains the source of truth for the full archive.
     let newFiles = 0;
     let newBytes = 0;
+    const newMetas = [];
     for (const m of pend.recents) {
       const id = m.f || `${m.n}:${m.at}`;
       if (existingIds.has(id)) continue;
       existingIds.add(id);
       newFiles++;
       newBytes += m.s;
+      newMetas.push(m);
     }
 
     await this.env.KV.put(`recent:${slug}`, JSON.stringify(mergeRecent(existing, pend.recents)));
@@ -635,20 +659,32 @@ export class LiveTracker {
     await this.env.KV.put(`stats:${slug}`, JSON.stringify(stats));
 
     this.bumpDay(slug, { files: newFiles, bytes: newBytes });
-    this.accumulateEvent(
-      normalizeEvent(
-        {
-          type: "file",
-          slug,
-          label: pend.label,
-          uploader: pend.lastUploader,
-          file: newFiles === 1 ? pend.lastFile : `${newFiles} files`,
-          bytes: newBytes,
-          message: newFiles === 1 ? "" : `${newFiles} files saved`,
-        },
-        null
-      )
-    );
+    const newBySession = new Map();
+    for (const meta of newMetas) {
+      const key = meta.si || "";
+      if (!newBySession.has(key)) newBySession.set(key, []);
+      newBySession.get(key).push(meta);
+    }
+    for (const [sessionId, metas] of newBySession) {
+      const bytes = metas.reduce((total, meta) => total + meta.s, 0);
+      const last = metas.at(-1);
+      this.accumulateEvent(
+        normalizeEvent(
+          {
+            type: "file",
+            slug,
+            label: pend.label,
+            uploader: last?.u || pend.lastUploader,
+            file: metas.length === 1 ? last?.n : "",
+            bytes,
+            count: metas.length,
+            message: metas.length === 1 ? "" : `${metas.length} files saved`,
+            sessionId,
+          },
+          null
+        )
+      );
+    }
   }
 
   snapshot() {

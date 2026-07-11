@@ -596,13 +596,16 @@ function finalizeComplete(item) {
       mimeType: item.file.type,
       uploader: $("who").value.trim(),
       fileId: item.fileId || "",
+      sessionId,
     }),
   })
     .then((r) => {
       if (r.ok) {
         item.stat = "";
-        if (item.state !== "done") setState(item, "done");
-        else schedulePaint();
+        if (item.state !== "done") {
+          setState(item, "done");
+          sendLive(true);
+        } else schedulePaint();
         deleteResumeRecord(item);
       } else {
         item.stat = "Drive saved - log delayed";

@@ -89,6 +89,10 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z"></path></svg>
           <span class="tab-label">New drop link</span>
         </button>
+        <button class="tab tab-create tab-create-share" data-tab="create-share" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="7" cy="12" r="2.4"></circle><circle cx="17" cy="7" r="2.4" opacity=".65"></circle><circle cx="17" cy="17" r="2.4" opacity=".65"></circle><path d="m9.2 10.9 5.6-2.8M9.2 13.1l5.6 2.8" fill="none" stroke="currentColor" stroke-width="1.8"></path></svg>
+          <span class="tab-label">New share link</span>
+        </button>
         <button class="tab hidden" data-tab="detail" id="detail-tab" type="button">Link detail</button>
       </nav>
       <div class="side-foot">
@@ -174,14 +178,24 @@
 
       <!-- SHARE LINKS: one pane in the shared /admin shell -->
       <section id="tab-shares" class="tab-pane hidden">
-        <div class="pane-head"><div><p class="eyebrow">outbound galleries</p><h1 class="pane-title grad-text">Share links</h1><span class="muted">Private /s/ links that give selected people read access to Drive folders.</span></div></div>
+        <div class="pane-head"><div><p class="eyebrow">outbound galleries</p><h1 class="pane-title grad-text">Share links</h1><span class="muted">Private /s/ links that give selected people read access to Drive folders.</span></div><button class="btn" data-goto-tab="create-share" type="button">+ New share link</button></div>
         <div id="share-rows" class="share-card-list" aria-live="polite"></div>
+      </section>
+
+      <!-- CREATE SHARE LINK: a separate tab pane inside the shared /admin document -->
+      <section id="tab-create-share" class="tab-pane hidden">
+        <div class="pane-head"><div><p class="eyebrow">new gallery</p><h1 class="pane-title grad-text">New share link</h1><span class="muted">Choose one or more Drive folders, even when they live in different locations.</span></div></div>
         <section class="panel share-create-panel">
           <div class="section-title"><div><p class="eyebrow">new share</p><h2>Create share link</h2></div></div>
           <div class="grid-2">
             <div class="field"><label for="s-label">Label</label><input id="s-label" type="text" placeholder="Kareri Lake — final album" /></div>
             <div class="field"><label for="s-slug">Slug (optional)</label><input id="s-slug" type="text" placeholder="kareri-album" /></div>
-            <div class="field wide"><label for="s-folders">Drive folder IDs or URLs (comma separated)</label><input id="s-folders" type="text" placeholder="https://drive.google.com/drive/folders/1AbCDefGhijkLmN" /></div>
+            <div class="field wide share-folder-field">
+              <label>Drive folders</label>
+              <div id="share-folder-selection" class="selected-folder-list" aria-live="polite"><span class="muted">No folders selected yet.</span></div>
+              <button class="mini" id="share-folder-browse" type="button">Browse Drive and add folders</button>
+              <details class="folder-id-fallback"><summary>Paste folder IDs instead</summary><label class="sr-only" for="s-folders">Drive folder IDs or URLs, comma separated</label><input id="s-folders" type="text" placeholder="https://drive.google.com/drive/folders/1AbCDefGhijkLmN" /></details>
+            </div>
           </div>
           <fieldset class="share-mode-fieldset">
             <legend>Visitor experience</legend>
@@ -245,16 +259,6 @@
                 <button class="mini folder-browse-button" id="folder-browse" type="button">Browse Drive</button>
               </div>
               <p id="folder-selection" class="folder-selection muted">No folder selected — a new Drive folder will be created.</p>
-              <div id="folder-picker-panel" class="folder-picker-panel hidden">
-                <div class="folder-picker-head">
-                  <button class="mini" id="folder-up" type="button">← Parent</button>
-                  <nav id="folder-breadcrumbs" class="folder-breadcrumbs" aria-label="Drive folder path"></nav>
-                  <button class="mini folder-select-current" id="folder-select-current" type="button">Select this folder</button>
-                </div>
-                <p class="folder-picker-hint">Click a folder name to open it. Use <b>Select</b> to choose it as the upload destination.</p>
-                <div id="folder-list" class="folder-list"></div>
-                <div class="msg-err" id="folder-err"></div>
-              </div>
               <div class="create-quick-actions">
                 <button class="btn" id="create" type="submit">Create and make Drive folder</button>
                 <button class="btn ghost" id="create-next" type="button">Add optional settings →</button>
@@ -336,6 +340,28 @@
     <p class="muted">tap anywhere to close</p>
   </div>
 </div>
+<dialog id="drive-picker-dialog" class="drive-picker-dialog">
+  <section id="folder-picker-panel" class="folder-picker-panel">
+    <div class="folder-dialog-title"><div><p class="eyebrow">Google Drive</p><h2 id="folder-picker-title">Choose a destination</h2></div><button class="dialog-close" id="folder-close" type="button" aria-label="Close Drive browser">×</button></div>
+    <div class="folder-picker-head">
+      <button class="mini" id="folder-up" type="button">← Parent</button>
+      <nav id="folder-breadcrumbs" class="folder-breadcrumbs" aria-label="Drive folder path"></nav>
+      <button class="mini folder-select-current" id="folder-select-current" type="button">Select this folder</button>
+    </div>
+    <p class="folder-picker-hint">Open a folder by clicking its name. Selection only changes when you use a Select button.</p>
+    <div class="folder-create-row"><input id="folder-new-name" type="text" maxlength="120" placeholder="New folder name" /><button class="mini" id="folder-create" type="button">Create folder here</button></div>
+    <div id="folder-list" class="folder-list"></div>
+    <div class="msg-err" id="folder-err"></div>
+  </section>
+</dialog>
+<dialog id="confirm-dialog" class="confirm-dialog">
+  <form method="dialog" class="confirm-card">
+    <span class="confirm-icon" aria-hidden="true">!</span>
+    <h2 id="confirm-title">Confirm action</h2>
+    <p id="confirm-message" class="muted"></p>
+    <div class="confirm-actions"><button class="btn ghost" id="confirm-cancel" value="cancel">Cancel</button><button class="btn danger" id="confirm-accept" value="confirm">Confirm</button></div>
+  </form>
+</dialog>
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/public.js"></script>
 <script src="/admin.js"></script>

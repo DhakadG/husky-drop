@@ -44,9 +44,18 @@ async function init() {
   });
   $("create-next")?.addEventListener("click", () => showCreateStep(2));
   $("create-back")?.addEventListener("click", () => showCreateStep(1));
-  $("folder-browse")?.addEventListener("click", () => openFolderPicker(folderParentId || "root"));
+  $("folder-browse")?.addEventListener("click", () => openFolderPicker(folderParentId || "root", "drop"));
+  $("share-folder-browse")?.addEventListener("click", () => openFolderPicker("root", "share"));
   $("folder-up")?.addEventListener("click", openParentFolder);
   $("folder-select-current")?.addEventListener("click", () => selectDriveFolder(folderParentId, folderParentLabel));
+  $("folder-close")?.addEventListener("click", () => $("drive-picker-dialog").close());
+  $("folder-create")?.addEventListener("click", createFolderHere);
+  $("folder-new-name")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      createFolderHere();
+    }
+  });
   $("f-folder")?.addEventListener("input", handleFolderInput);
   $("expired-links-toggle")?.addEventListener("click", toggleExpiredLinks);
   document.querySelectorAll('[name="transfer-preset"]').forEach((radio) => radio.addEventListener("change", applyTransferPreset));
@@ -500,6 +509,11 @@ function handleAdminAction(e) {
   if (sync) return refreshDetail(sync.dataset.syncDetail, false, true);
   const goto = e.target.closest("[data-goto-tab]");
   if (goto) return showTab(goto.dataset.gotoTab);
+  const removeShareFolder = e.target.closest("[data-remove-share-folder]");
+  if (removeShareFolder) {
+    shareSelectedFolders.delete(removeShareFolder.dataset.removeShareFolder);
+    return renderShareFolderSelection();
+  }
   const prev = e.target.closest("[data-preview]");
   if (prev) return previewFile(prev.dataset.preview, prev);
   const qrClose = e.target.closest("#qr-modal");
@@ -644,7 +658,7 @@ function updateActivitySession(article, session) {
   const actor = last.u || first.u || "anonymous";
   const place = last.l || last.s || first.l || first.s || "system";
   const context = last.c || first.c || {};
-  const fileCount = new Set(events.map((event) => event.f).filter(Boolean)).size;
+  const fileCount = activityFileCount(events);
   const hasError = events.some((event) => ["clienterror", "autopause", "lock", "global-lock"].includes(event.t));
   const expanded = openActivitySessions.has(session.key);
   const counts = activityCounts(events);
@@ -666,7 +680,7 @@ function updateActivitySession(article, session) {
 
 function activityCounts(events) {
   const labels = [];
-  const uploads = events.filter((event) => event.t === "file").length;
+  const uploads = activityFileCount(events);
   const opens = events.filter((event) => event.t === "open" || event.t === "share-open").length;
   const views = events.filter((event) => event.t === "share-view" || event.t === "share-browse").length;
   const downloads = events.filter((event) => event.t === "share-dl").length;
@@ -677,8 +691,15 @@ function activityCounts(events) {
   return labels.join("");
 }
 
+function activityFileCount(events) {
+  const completedFiles = events.filter((event) => event.t === "file").reduce((total, event) => total + (Number(event.n) || 1), 0);
+  const terminalCount = Math.max(0, ...events.filter((event) => event.t === "sessionclose").map((event) => Number(event.n) || 0));
+  return Math.max(completedFiles, terminalCount);
+}
+
 function activityTimelineRow(event) {
-  const label = event.f || event.m || activityTypeLabel(event.t);
+  const count = Number(event.n) || 0;
+  const label = event.t === "file" && count > 1 ? `${count} files uploaded` : event.f || event.m || activityTypeLabel(event.t);
   const meta = [event.t, event.s ? `/d/${event.s}` : "", event.m === "first open" ? "first open of this share" : ""].filter(Boolean).join(" · ");
   return `<div class="activity-timeline-row ${escAttr(event.t || "event")}"><span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(label)}</b><small>${esc(meta)}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>`;
 }
@@ -799,6 +820,8 @@ let folderParentId = "root";
 let folderParentLabel = "My Drive";
 let folderBreadcrumbs = [{ id: "root", name: "My Drive" }];
 let selectedFolderName = "";
+let folderPickerMode = "drop";
+const shareSelectedFolders = new Map();
 
 function showCreateStep(step) {
   if (step === 2 && !value("f-label")) {
@@ -824,6 +847,24 @@ function applyTransferPreset(event) {
   $("f-adaptive").value = adaptive ? "1" : "0";
 }
 
+async function confirmAction({ title, message, confirmLabel = "Confirm" }) {
+  const dialog = $("confirm-dialog");
+  if (!dialog?.showModal) return false;
+  const previouslyFocused = document.activeElement;
+  $("confirm-title").textContent = title;
+  $("confirm-message").textContent = message;
+  $("confirm-accept").textContent = confirmLabel;
+  dialog.returnValue = "cancel";
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => {
+      previouslyFocused?.focus?.();
+      resolve(dialog.returnValue === "confirm");
+    }, { once: true });
+    dialog.showModal();
+    $("confirm-cancel").focus();
+  });
+}
+
 function toggleExpiredLinks() {
   const button = $("expired-links-toggle");
   const expanded = button.getAttribute("aria-expanded") === "true";
@@ -831,9 +872,13 @@ function toggleExpiredLinks() {
   $("expired-rows").classList.toggle("expanded", !expanded);
 }
 
-async function openFolderPicker(parentId) {
+async function openFolderPicker(parentId, mode = folderPickerMode) {
+  folderPickerMode = mode === "share" ? "share" : "drop";
   folderParentId = parentId || "root";
-  $("folder-picker-panel").classList.remove("hidden");
+  $("folder-picker-title").textContent = folderPickerMode === "share" ? "Add Drive folders" : "Choose a destination";
+  $("folder-select-current").textContent = folderPickerMode === "share" ? "Add this folder" : "Select this folder";
+  const dialog = $("drive-picker-dialog");
+  if (!dialog.open) dialog.showModal();
   $("folder-list").innerHTML = '<div class="empty">Loading Drive folders…</div>';
   $("folder-err").textContent = "";
   try {
@@ -846,8 +891,12 @@ async function openFolderPicker(parentId) {
     folderParentLabel = current?.name || "My Drive";
     renderFolderBreadcrumbs();
     $("folder-up").disabled = folderBreadcrumbs.length <= 1;
+    $("folder-select-current").disabled = folderPickerMode === "share" && folderParentId === "root";
     $("folder-list").innerHTML = (data.folders || []).length
-      ? data.folders.map((folder) => `<div class="folder-option"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg><span>${esc(folder.name)}</span><span class="folder-open-cue">Open →</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}">Select</button></div>`).join("")
+      ? data.folders.map((folder) => {
+        const added = folderPickerMode === "share" && shareSelectedFolders.has(folder.id);
+        return `<div class="folder-option"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg><span>${esc(folder.name)}</span><span class="folder-open-cue">Open →</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}" ${added ? "disabled" : ""}>${added ? "Added" : folderPickerMode === "share" ? "Add" : "Select"}</button></div>`;
+      }).join("")
       : '<div class="empty">No child folders here.</div>';
     $("folder-list").querySelectorAll("[data-pick-folder]").forEach((button) => button.addEventListener("click", () => {
       selectDriveFolder(button.dataset.pickFolder, button.dataset.folderName);
@@ -873,6 +922,14 @@ function openParentFolder() {
 }
 
 function selectDriveFolder(id, name) {
+  if (folderPickerMode === "share") {
+    const pathParts = folderBreadcrumbs.map((crumb) => crumb.name);
+    if (folderBreadcrumbs.at(-1)?.id !== id) pathParts.push(name || "Folder");
+    shareSelectedFolders.set(id || "root", { id: id || "root", name: name || "My Drive", path: pathParts.join(" / ") });
+    renderShareFolderSelection();
+    openFolderPicker(folderParentId, "share");
+    return;
+  }
   $("f-folder").value = id || "root";
   selectedFolderName = name || "My Drive";
   if (folderBreadcrumbs.at(-1)?.id !== (id || "root")) {
@@ -882,8 +939,46 @@ function selectDriveFolder(id, name) {
   folderParentLabel = selectedFolderName;
   $("folder-selection").textContent = `Selected destination: ${selectedFolderName}`;
   $("folder-selection").classList.add("selected");
-  $("folder-picker-panel").classList.add("hidden");
+  $("drive-picker-dialog").close();
   updateCreateButtonLabel();
+}
+
+function renderShareFolderSelection() {
+  const box = $("share-folder-selection");
+  if (!box) return;
+  const folders = [...shareSelectedFolders.values()];
+  box.innerHTML = folders.length
+    ? folders.map((folder) => `<span class="selected-folder-chip"><span><b>${esc(folder.name)}</b><small>${esc(folder.path)}</small></span><button type="button" data-remove-share-folder="${escAttr(folder.id)}" aria-label="Remove ${escAttr(folder.name)}">×</button></span>`).join("")
+    : '<span class="muted">No folders selected yet.</span>';
+}
+
+async function createFolderHere() {
+  const input = $("folder-new-name");
+  const name = input.value.trim();
+  if (!name) {
+    input.focus();
+    return;
+  }
+  const button = $("folder-create");
+  button.disabled = true;
+  $("folder-err").textContent = "";
+  try {
+    const response = await fetch("/api/admin/drive/folders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, parentId: folderParentId }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Could not create the folder.");
+    input.value = "";
+    await openFolderPicker(folderParentId, folderPickerMode);
+    const created = $("folder-list").querySelector(`[data-pick-folder="${CSS.escape(data.folder.id)}"]`);
+    created?.focus();
+  } catch (error) {
+    $("folder-err").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function handleFolderInput() {
@@ -930,7 +1025,11 @@ async function toggleLinkPause(slug, isPaused) {
 }
 
 async function deleteLink(slug, label) {
-  if (!confirm(`Delete "${label}"? Drive files stay put.`)) return;
+  if (!(await confirmAction({
+    title: `Delete ${label}?`,
+    message: "Drive files stay put. The public drop link stops working immediately.",
+    confirmLabel: "Delete drop link",
+  }))) return;
   await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, { method: "DELETE" });
   if (currentDetailSlug === slug) {
     currentDetailSlug = "";
@@ -1042,7 +1141,11 @@ async function toggleSharePause(slug, isPaused) {
 }
 
 async function deleteShare(slug, label) {
-  if (!confirm(`Delete share "${label}"? Drive files stay put; public access is revoked.`)) return;
+  if (!(await confirmAction({
+    title: `Delete ${label}?`,
+    message: "Drive files stay put. Public access is revoked and the share URL stops working.",
+    confirmLabel: "Delete share link",
+  }))) return;
   await fetch(`/api/admin/shares/${encodeURIComponent(slug)}`, { method: "DELETE" });
   refreshAll();
 }
@@ -1053,7 +1156,7 @@ async function createShare() {
   const body = {
     label: value("s-label"),
     slug: value("s-slug"),
-    folders: value("s-folders"),
+    folders: shareSelectedFolders.size ? [...shareSelectedFolders.keys()] : value("s-folders"),
     mode: $("s-mode").value,
     pin: value("s-pin"),
     expiresDays: Number(value("s-days")) || 0,
@@ -1077,7 +1180,10 @@ async function createShare() {
   $("s-pin").disabled = false;
   $("s-auth").disabled = false;
   $("s-zip").disabled = false;
+  shareSelectedFolders.clear();
+  renderShareFolderSelection();
   refreshAll();
+  showTab("shares");
   showQr(`${location.origin}/s/${d.slug}`, "Share link created - URL copied to clipboard");
 }
 

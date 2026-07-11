@@ -292,8 +292,9 @@ export function normalizeEvent(event, request) {
     u: cleanText(event.uploader || "", 80),
     f: cleanText(event.file || "", 160),
     b: Number(event.bytes) || 0,
+    n: clamp(Number(event.count) || 0, 0, 1000000),
     m: cleanText(event.message || "", 160),
-    si: cleanText(event.sessionId || "", 40),
+    si: cleanText(event.sessionId || "", 80),
     c: extractClientInfo(request),
   };
 }
@@ -408,6 +409,7 @@ export function normalizeUploadMeta(meta = {}) {
     m: cleanText(meta.m || "", 80),
     u: cleanText(meta.u || "anonymous", 60),
     f: cleanText(meta.f || "", 120),
+    si: cleanText(meta.si || meta.sessionId || "", 80),
     at: Number(meta.at) || Date.now(),
   };
 }

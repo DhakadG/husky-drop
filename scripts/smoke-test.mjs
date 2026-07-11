@@ -161,6 +161,13 @@ async function withMockedGoogleDrive(fn) {
       });
     }
     if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/drive/v3/files")) {
+      if ((init.method || "GET").toUpperCase() === "POST") {
+        const body = JSON.parse(String(init.body || "{}"));
+        return new Response(JSON.stringify({ id: "created-folder", name: body.name }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
       if (url.searchParams.get("alt") === "media") {
         const id = decodeURIComponent(url.pathname.split("/").pop());
         const bytes = mediaBytes[id] || new Uint8Array();
@@ -412,6 +419,7 @@ async function main() {
         mimeType: "image/heic",
         uploader: "Riya",
         fileId: "drive-file-1",
+        sessionId: "session-1",
       }),
     }),
     env
@@ -430,6 +438,7 @@ async function main() {
         mimeType: "image/heic",
         uploader: "Riya",
         fileId: "drive-file-1",
+        sessionId: "session-1",
       }),
     }),
     env
@@ -453,6 +462,9 @@ async function main() {
   const rolled = await env.KV.get("events:recent", "json");
   assert.ok(Array.isArray(rolled) && rolled.length >= 3, "events merged into events:recent");
   assert.ok(rolled.some((e) => e.t === "clienterror"), "client error appears in events");
+  const completedEvent = rolled.find((e) => e.t === "file" && e.f === "IMG.HEIC");
+  assert.equal(completedEvent?.si, "session-1", "completion event remains attached to its upload session");
+  assert.equal(completedEvent?.n, 1, "completion event stores an explicit file count");
   const today = new Date().toISOString().slice(0, 10);
   assert.ok(Array.isArray(await env.KV.get(`events:day:${today}`, "json")), "events are also stored in a day bucket");
   res = await worker.fetch(request(`/api/admin/events?before=${today}&days=1`, { headers: { authorization: "Bearer test-admin" } }), env);
@@ -635,6 +647,17 @@ async function main() {
     assert.equal(res.status, 200, "admin can browse a nested Drive folder");
     const folderBrowse = await res.json();
     assert.deepEqual(folderBrowse.breadcrumbs.map((crumb) => crumb.id), ["root", "nested-folder"], "Drive browser returns a usable breadcrumb chain");
+
+    res = await worker.fetch(
+      request("/api/admin/drive/folders", {
+        method: "POST",
+        headers: { cookie: adminCookie, "content-type": "application/json" },
+        body: JSON.stringify({ name: "Day 2", parentId: "nested-folder" }),
+      }),
+      driveEnv,
+    );
+    assert.equal(res.status, 201, "admin can create a child folder from the Drive browser");
+    assert.deepEqual(await res.json(), { folder: { id: "created-folder", name: "Day 2" } });
 
     const wrongAdminEnv = makeEnv({
       GOOGLE_CLIENT_ID: "google-client",
