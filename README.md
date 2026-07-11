@@ -1,165 +1,301 @@
-# LostHusky's DropBox
+<p align="center">
+  <img src="docs/assets/readme/husky-drop-banner.png" alt="Husky Drop — direct browser-to-cloud file delivery" width="100%" />
+</p>
 
-Private Smash-style receive-only file drops for trip photos and videos. Friends
-open a secure link, upload original files from their phones, and files land
-directly in Google Drive.
+<h1 align="center">Husky Drop</h1>
 
-File bytes never pass through Cloudflare Workers. The Worker only mints Google
-Drive resumable upload sessions, enforces link security, records analytics, and
-relays live progress through a Durable Object.
+<p align="center">
+  <strong>A private, direct-to-Google-Drive dropbox for original photos, videos, and large files.</strong>
+  <br />
+  Send a link. Friends upload from any browser. You watch the transfer live.
+</p>
 
-## Features
+<p align="center">
+  <a href="https://dropbox.losthusky.qzz.io/"><img alt="Live site" src="https://img.shields.io/badge/live-open_the_site-2f6bff?style=for-the-badge" /></a>
+  <img alt="Cloudflare Workers" src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" />
+  <img alt="Google Drive" src="https://img.shields.io/badge/storage-Google_Drive-0F9D58?style=for-the-badge&logo=googledrive&logoColor=white" />
+  <img alt="Vanilla JavaScript" src="https://img.shields.io/badge/frontend-Vanilla_JS-F7DF1E?style=for-the-badge&logo=javascript&logoColor=111" />
+  <img alt="Tests passing" src="https://img.shields.io/badge/tests-passing-1fb27a?style=for-the-badge" />
+</p>
 
-- Secure drop links with optional password/PIN (PBKDF2) and expiry up to 30 days.
-- Up to 5 TB per transfer by default, bounded by Google Drive quota/limits.
-- Browser-to-Google resumable uploads with retry/resume, adaptive 8-128 MB
-  chunks, byte-window parallel scheduling, stall watchdog, and session
-  prefetch for the fastest possible path.
-- Resume-after-reload: interrupted uploads continue from Drive's last byte
-  after re-selecting the same files (IndexedDB-persisted sessions).
-- Share links (`/s/slug`): give friends read access to chosen Drive folders -
-  private gallery mode (PIN, thumbnails, per-file + client-side zip download,
-  analytics) or redirect mode (temporary public Drive grant, auto-revoked).
-- Pause/resume any link, plus per-link budgets (max GB / files / sessions)
-  that auto-pause a leaked link before it fills your Drive.
-- Brute-force protection: per-IP lockouts plus per-link global damping;
-  cookie-based admin sessions with rate-limited login.
-- Admin dashboard: totals, 30-day activity chart (Durable Object SQLite
-  rollups), uploader leaderboard, history with Drive sync, activity feed with
-  client OS/geo, QR codes and share sheet for links, Drive free-space card.
-- Live progress uses Durable Object WebSockets, not KV heartbeat writes; all
-  events/stats are batched through the DO to stay inside KV free-tier limits.
-- Client error reporting from friends' phones + "Report a problem" button.
-- Folder uploads on desktop (webkitdirectory) with relative paths preserved
-  in Drive metadata.
-- Optional per-uploader Drive subfolders.
-- Per-link customization: logo, background, accent, welcome message, promo
-  video, and CTA.
-- Optional Resend email notifications: upload start + one digest per finished
-  session (not per file).
-- Optional Cloudflare Web Analytics beacon (set `CF_BEACON_TOKEN`).
-- Admin-side Drive preview/open action for completed files.
+Husky Drop is a receive-and-share system for the files that group chats, email attachments, and compressed social uploads handle badly. It combines a friendly public uploader, a real-time operations dashboard, and private Drive-backed galleries in one Cloudflare Worker application.
 
-Entry point is `src/worker.js` (modules: `util.js`, `drive.js`, `store.js`,
-`live.js`, `share.js`). See **`docs/SETUP-REQUIRED.md`** for the one-time
-setup steps after deploying this version.
+File bytes move from the browser directly to Google Drive through resumable upload sessions. The Worker validates access, mints those sessions, records compact metadata, and coordinates live state—it does not proxy incoming file bytes.
 
-## Architecture
+> [!NOTE]
+> This is a focused personal-cloud project, not a multi-tenant file-hosting SaaS. It is designed for a trusted owner collecting from invited people.
+
+## See it in action
+
+<p align="center">
+  <img src="docs/assets/readme/admin-overview.png" alt="Husky Drop admin overview with live transfers and analytics" width="100%" />
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/readme/drop-page.png" alt="Public Husky Drop uploader and transfer progress" width="100%" />
+      <br /><strong>For uploaders</strong><br />A clear, phone-friendly flow for originals, whole folders, huge files, pause, cancel, retry, and resume.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/readme/share-links.png" alt="Husky Drop private share-link management" width="100%" />
+      <br /><strong>For collectors</strong><br />Private galleries or Drive redirects with PINs, viewer attribution, analytics, ZIP delivery, pause, and expiry.
+    </td>
+  </tr>
+</table>
+
+<sub>Interface previews are rendered from the checked-in redesign package with demonstration data.</sub>
+
+## Why Husky Drop
+
+| | Capability | What makes it useful |
+| --- | --- | --- |
+| ⚡ | **Direct-to-Drive uploads** | Incoming chunks go to Google's resumable-upload endpoint instead of being relayed through a Worker. |
+| 🔁 | **Real recovery** | Interrupted sessions are stored in IndexedDB; re-selecting the same file resumes from Drive's confirmed byte offset. |
+| 🧠 | **Adaptive transfer engine** | Automatic mode adjusts between 2–8 parallel files, grows or shrinks chunks, prewarms sessions, detects stalls, and backs off after errors. |
+| 📡 | **Live command center** | Durable Object WebSockets stream active uploaders, file progress, throughput, ETA, and recent completions to the admin. |
+| 🖼️ | **Private share galleries** | Share existing Drive folders through PIN-capable galleries with thumbnails, media viewing, signed downloads, and streaming ZIP64 archives. |
+| 🧯 | **Abuse containment** | Link budgets, expiry, pause controls, Drive-space checks, brute-force damping, and signed short-lived download tokens limit damage. |
+| 🗂️ | **Drive-native organization** | Choose a destination in the Drive browser, create per-uploader folders, or preserve uploaded relative paths in metadata. |
+| 🎨 | **Per-link presentation** | Labels, welcome copy, colors, backgrounds, logos, promo media, and calls to action can be configured per drop. |
+
+### One application, three experiences
+
+- **Drop links** — private `/d/:slug` receive-only pages for originals and large batches.
+- **Admin** — one `/admin` shell with Overview, Live transfers, Drop links, Share links, Activity, link details, and New drop link flows.
+- **Share links** — `/s/:slug` galleries for controlled read access, plus redirect mode when a public Drive handoff is intentional.
+
+## How it works
+
+```mermaid
+flowchart LR
+    U[Friend's browser] -->|Request an upload session| W[Cloudflare Worker]
+    W -->|Create resumable session| G[Google Drive API]
+    U ==>|Upload file chunks directly| G
+    U -.->|Live progress WebSocket| D[Durable Object]
+    A[Admin dashboard] <-.->|Live snapshots| D
+    W <-->|Links, counters, recent history| K[Cloudflare KV]
+    D -->|Batched completions and rollups| K
+```
+
+The Worker is the control plane:
+
+1. It validates the link, expiry, pause state, budgets, Drive headroom, and optional PIN.
+2. It asks Google Drive for a file-scoped resumable upload URL.
+3. The browser sends chunks to Google and reports compact live progress over a WebSocket.
+4. The Durable Object reconciles live sessions, derives throughput and ETA, batches completion writes, and stores daily SQLite rollups.
+5. Google Drive remains the durable source of file truth; the app keeps only the metadata needed for operation and analytics.
+
+### Transfer behavior
+
+- Automatic or fixed parallelism from 1–8 active files.
+- 8–128 MB adaptive chunks, always aligned to Drive's required upload granularity.
+- Exponential retry, dead-session replacement, and a 60-second no-progress watchdog.
+- Two prefetched Drive sessions to reduce gaps between files.
+- Bounded DOM rendering and constant-time aggregate counters for 600+ file queues.
+- Resume records kept locally for roughly six days; the uploader must re-select files because browsers cannot silently reopen local files.
+
+For the deeper write-path and state model, read [Architecture](docs/ARCHITECTURE.md).
+
+## Security model
+
+Husky Drop assumes a private owner account and invitation links that can still leak. Its controls focus on credential safety, guessing resistance, spam containment, and keeping Drive identifiers out of public APIs.
+
+| Control | Implementation |
+| --- | --- |
+| PIN storage | PBKDF2-SHA256, 100,000 iterations, unique salt, constant-time comparison, and transparent migration of legacy hashes. |
+| Guessing protection | Per-IP exponential lockouts plus per-link global damping for distributed attempts. |
+| Admin access | HMAC-signed, HttpOnly, Secure, SameSite=Strict session cookie; optional allow-listed Google sign-in; bearer token retained for scripts. |
+| Admin mutations | Same-origin checks and rate-limited login. |
+| Gallery downloads | HMAC-signed tokens bound to scope, share, file, and expiry; risky executable/archive source types are blocked from public delivery. |
+| Capacity protection | Link-level byte, file, and session budgets; manual pause; automatic pause at a limit; 5 GB Drive quota reserve. |
+| Secret handling | Worker secrets or local `.dev.vars`; both are kept out of Git. Public metadata never exposes Drive folder IDs or PIN hashes. |
+
+The direct upload path is a performance and exposure reduction—not end-to-end encryption. Google still receives and stores the uploaded files. Antivirus scanning, Turnstile, and reduced `drive.file` OAuth scope are not implemented. See the complete [Security model](docs/SECURITY.md) before exposing a deployment broadly.
+
+## Stack
+
+| Layer | Technology |
+| --- | --- |
+| Edge application | Cloudflare Workers |
+| Static application | Worker Assets, semantic HTML, CSS, vanilla JavaScript |
+| Durable live state | Cloudflare Durable Objects + WebSockets |
+| Rollups | Durable Object SQLite |
+| Persistent metadata | Cloudflare KV |
+| File storage | Google Drive resumable uploads |
+| Authentication | PBKDF2 PINs, HMAC sessions/tokens, optional Google OAuth |
+| Notifications | Optional Resend email digests |
+| Media experience | PhotoSwipe, Swiper, native media, streaming ZIP64 |
+| Validation | Node.js smoke, structure, icon, workflow, and README tests |
+
+There is no frontend framework, application bundler, database server, or file-storage proxy to operate.
+
+## Quick start
+
+### Prerequisites
+
+- A current Node.js LTS release and npm.
+- A Cloudflare account with Workers, KV, and Durable Objects available.
+- A Google Cloud project with the Google Drive API enabled.
+- A Google OAuth web client and refresh token for the Drive account that will receive files.
+- A hostname for the Worker if you want a custom domain.
+
+### 1. Install and create safe local configuration
+
+```bash
+git clone https://github.com/DhakadG/husky-drop.git
+cd husky-drop
+npm install
+cp wrangler.example.jsonc wrangler.jsonc
+npx wrangler kv namespace create KV
+```
+
+On PowerShell, use `Copy-Item wrangler.example.jsonc wrangler.jsonc`. Put the new KV namespace ID, route, owner display name, and optional parent Drive folder in your local `wrangler.jsonc`.
+
+### 2. Create a Google refresh token
+
+Add `http://localhost:8765/cb` as an authorized redirect URI on your Google OAuth client, then run:
+
+```bash
+node scripts/get-refresh-token.mjs YOUR_GOOGLE_CLIENT_ID YOUR_GOOGLE_CLIENT_SECRET
+```
+
+### 3. Add required secrets
+
+```bash
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put GOOGLE_REFRESH_TOKEN
+npx wrangler secret put ADMIN_TOKEN
+```
+
+Recommended for separate signing and passwordless admin access:
+
+```bash
+npx wrangler secret put SHARE_SIGNING_KEY
+npx wrangler secret put ADMIN_EMAIL
+```
+
+If `ADMIN_EMAIL` is configured, add `https://YOUR_HOST/api/admin/auth/callback` to the Google OAuth client's redirect URIs.
+
+### 4. Validate and run locally
+
+```bash
+npm test
+npm run dev
+```
+
+For local API calls, create an ignored `.dev.vars` file containing the same required secrets. The full guided checklist is in [Setup required](docs/SETUP-REQUIRED.md).
+
+## Configuration
+
+### Worker bindings
+
+| Binding | Required | Purpose |
+| --- | :---: | --- |
+| `ASSETS` | Yes | Serves the application in `public/`. |
+| `KV` | Yes | Stores links, stats, events, recent history, guards, and cached Drive metadata. |
+| `LIVE_TRACKER` | Yes | Durable Object for WebSockets, batching, rate limits, and SQLite rollups. |
+
+### Secrets
+
+| Name | Required | Purpose |
+| --- | :---: | --- |
+| `GOOGLE_CLIENT_ID` | Yes | Google OAuth client identifier. |
+| `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret. |
+| `GOOGLE_REFRESH_TOKEN` | Yes | Refresh token for the receiving Drive account. |
+| `ADMIN_TOKEN` | Yes | Admin bootstrap login and signing-key fallback. |
+| `SHARE_SIGNING_KEY` | Recommended | Dedicated key for share downloads, ZIP tickets, and viewer sessions. |
+| `ADMIN_EMAIL` | Optional | Exact Google account allowed to sign in to `/admin`. |
+| `RESEND_API_KEY` | Optional | Enables upload-start and session-digest email notifications. |
+| `NOTIFY_TO` / `NOTIFY_FROM` | Optional | Notification recipient and verified sender used with Resend. |
+
+### Non-secret variables
+
+| Name | Purpose |
+| --- | --- |
+| `DRIVE_PARENT_ID` | Parent folder under which automatically created drop folders live. Leave empty for My Drive root. |
+| `OWNER_DISPLAY_NAME` | Public collector name shown on drop pages. |
+| `LINK_SLUGS` | Optional recovery/fast-path list of existing drop slugs. |
+| `CF_BEACON_TOKEN` | Optional Cloudflare Web Analytics token injected into HTML. |
+| `CLARITY_PROJECT_ID` | Optional Microsoft Clarity project identifier injected into HTML. |
+
+## Project map
 
 ```text
-friend phone -- ask session --> Worker -- mint session URI --> Drive API
-friend phone -- chunk PUTs directly to googleapis.com
-friend phone -- live progress WS --> Durable Object <-- admin dashboard WS
-Worker <--> KV for links, events, counters, upload history
+husky-drop/
+├── src/
+│   ├── worker.js       # router, public/admin APIs, upload sessions
+│   ├── auth.js         # Google sign-in and admin session cookies
+│   ├── drive.js        # Drive OAuth, folders, quota, file metadata
+│   ├── live.js         # Durable Object, WebSockets, batching, rollups
+│   ├── share.js        # galleries, signed downloads, streaming ZIP64
+│   ├── store.js        # KV events, counters, lockouts, notifications
+│   └── util.js         # normalizers, security helpers, constants
+├── public/             # home, admin, drop, share, legal pages and assets
+├── scripts/            # OAuth helper and automated test suites
+├── docs/               # architecture, API, security, setup, deployment
+├── wrangler.example.jsonc
+└── package.json
 ```
 
-See `docs/` for the full plan, architecture, API, and security notes.
+## Testing
 
-## One-Time Google Setup
-
-1. Create a Google Cloud project.
-2. Enable Google Drive API.
-3. Configure OAuth consent screen.
-4. Create a Web OAuth client with redirect URI:
-
-```text
-http://localhost:8765/cb
+```bash
+npm test
 ```
 
-5. Mint a refresh token while logged into the target Drive account:
+The test chain covers Worker behavior, authentication and security headers, Drive and share flows, UI structure, icon fidelity, admin workflows, adaptive concurrency, README claims, and local asset/link integrity.
 
-```powershell
-node scripts/get-refresh-token.mjs <CLIENT_ID> <CLIENT_SECRET>
+For a deploy-shaped build without publishing:
+
+```bash
+npx wrangler deploy --dry-run
 ```
 
-## Cloudflare Setup
+## Deployment
 
-Create a local `wrangler.jsonc` from the example:
+GitHub and Cloudflare are independent release targets. Ship in this order:
 
-```powershell
-Copy-Item wrangler.example.jsonc wrangler.jsonc
-wrangler kv namespace create KV
-```
-
-Put the returned KV namespace ID into `wrangler.jsonc`. Configure the route as:
-
-```jsonc
-"routes": [{ "pattern": "dropbox.losthusky.qzz.io", "custom_domain": true }]
-```
-
-Set secrets:
-
-```powershell
-wrangler secret put GOOGLE_CLIENT_ID
-wrangler secret put GOOGLE_CLIENT_SECRET
-wrangler secret put GOOGLE_REFRESH_TOKEN
-wrangler secret put ADMIN_TOKEN
-
-# Optional email notifications
-wrangler secret put RESEND_API_KEY
-wrangler secret put NOTIFY_TO
-wrangler secret put NOTIFY_FROM
-```
-
-## Deploying Changes (always two steps)
-
-Every change ships in this order — see **`docs/DEPLOY.md`** for the full guide:
-
-1. **Push to GitHub** (history / source of truth)
-2. **Deploy to Cloudflare** with Wrangler (makes it live)
-
-```powershell
-# 1. validate
+```bash
+# 1. verify
 npm test
 
-# 2. push to GitHub (origin/main → github.com/DhakadG/husky-drop)
+# 2. update source history
 git add -A
 git commit -m "describe the change"
 git push origin main
 
-# 3. deploy to Cloudflare (live at dropbox.losthusky.qzz.io)
+# 3. publish the Worker and static assets
 npm run deploy
 ```
 
-`wrangler deploy` does **not** update GitHub, and `git push` does **not** update
-the live site. Do both, in this order, every time.
+`git push` does not update the live Worker, and `wrangler deploy` does not update GitHub. Read [Deploy workflow](docs/DEPLOY.md) before shipping.
 
-## Local Dev
+## Documentation
 
-```powershell
-npm install
-npm test
-wrangler dev
-```
+| Document | Use it for |
+| --- | --- |
+| [Setup required](docs/SETUP-REQUIRED.md) | First deployment and post-upgrade checklist. |
+| [Deploy workflow](docs/DEPLOY.md) | Safe GitHub → Cloudflare release order. |
+| [Architecture](docs/ARCHITECTURE.md) | Data path, Durable Object state, batching, recovery, and performance. |
+| [Security](docs/SECURITY.md) | Threat model, lockouts, authentication, budgets, and non-goals. |
+| [API reference](docs/API.md) | Public and admin HTTP/WebSocket endpoints. |
+| [Email notifications](docs/EMAIL.md) | Optional Resend setup and delivery behavior. |
+| [GitHub setup](docs/GITHUB.md) | Files to commit and files that must remain local. |
 
-For local Google calls, add `.dev.vars`:
+## Known limits
 
-```text
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_REFRESH_TOKEN=...
-ADMIN_TOKEN=dev-token
-RESEND_API_KEY=...
-NOTIFY_TO=you@example.com
-NOTIFY_FROM=LostHusky's DropBox <dropbox@example.com>
-```
+- This is a single-owner personal service, not an isolated multi-tenant platform.
+- Upload recovery requires the sender to re-select the same local files; browsers do not let a page reopen files silently.
+- Gallery safety filtering is metadata-based and is not malware scanning.
+- Redirect-mode share links grant anyone-with-the-link Drive reader access while active; use gallery mode for private material.
+- Drive OAuth currently uses a broad Drive scope; a reduced `drive.file` migration is future hardening work.
+- Turnstile and client-side file encryption are not implemented.
+- Active transfer state is ephemeral if the Durable Object restarts, but Google-owned resumable uploads continue and completed files remain in Drive.
 
-## GitHub Redaction
+---
 
-The real `wrangler.jsonc` is ignored because it contains account-specific IDs.
-Commit `wrangler.example.jsonc` instead. Never commit:
-
-- `.dev.vars`
-- `.wrangler/`
-- OAuth refresh tokens
-- Cloudflare API tokens
-- real notification sender/recipient secrets
-
-Suggested repo command:
-
-```powershell
-git init
-git add .
-git commit -m "feat: build losthusky dropbox"
-gh repo create DhakadG/husky-drop --private --source=. --remote=origin --push
-```
+<p align="center">
+  Built for the moment after a trip when everyone has the originals—and nobody wants another compressed group-chat upload.
+</p>
