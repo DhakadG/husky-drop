@@ -40,6 +40,12 @@ function fmtTime(seconds) {
   return `${h}h ${m % 60}m`;
 }
 
+function fmtDateDMY(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return [String(date.getDate()).padStart(2, "0"), String(date.getMonth() + 1).padStart(2, "0"), date.getFullYear()].join(" ");
+}
+
 function chip(text, cls = "", iconName = "") {
   const el = document.createElement("span");
   el.className = `chip ${cls}`;

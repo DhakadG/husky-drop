@@ -17,6 +17,7 @@ let allowZip = true;
 let listFetchedAt = 0;
 let current = null; // active listing: { folders: [...] }
 let sortMode = localStorage.getItem("lhdb_sort") || "name";
+let tileSize = localStorage.getItem("lhdb_tile_size") || "comfortable";
 // crumbs: [{ fid, name, token }]. fid "" = root. Navigation is keyed on the
 // stable fid, never on `token` (a signed "ls" token that is re-minted with a
 // new signature on every listing call and therefore compares unequal across
@@ -29,6 +30,9 @@ let summarySeq = 0;
 const TOKEN_REFRESH_MS = 90 * 1000;
 const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
+const warmedImages = new Set();
+const warmingImages = new Map();
+const fileInfoCache = new Map();
 const cardObserver =
   "IntersectionObserver" in window
     ? new IntersectionObserver(
@@ -217,6 +221,7 @@ async function showGallery() {
     localStorage.setItem("lhdb_sort", sortMode);
     render();
   });
+  installTileSizeControl();
   window.addEventListener("resize", scheduleLayout);
   window.addEventListener("popstate", onPopState);
   installTracking();
@@ -394,7 +399,7 @@ function sortFiles(files) {
   return arr;
 }
 
-function render() {
+function render(revealOnlyIds = null) {
   renderCrumbs();
   renderMeta();
   const host = $("folders");
@@ -407,6 +412,7 @@ function render() {
     return;
   }
   const revealTargets = [];
+  const newRevealTargets = [];
   for (const folder of folders) {
     const section = document.createElement("section");
     section.className = "gallery-folder";
@@ -438,6 +444,7 @@ function render() {
       file._el = el;
       grid.appendChild(el);
       revealTargets.push(el);
+      if (revealOnlyIds?.has(file.id)) newRevealTargets.push(el);
       if (isViewable(file)) {
         file._lbIndex = lightboxItems.length;
         lightboxItems.push(file);
@@ -452,7 +459,7 @@ function render() {
   }
   updateSelInfo();
   scheduleLayout();
-  fx.reveal(revealTargets);
+  fx.reveal(revealOnlyIds ? newRevealTargets : revealTargets);
 }
 
 function loadMoreButton(folder) {
@@ -495,12 +502,13 @@ async function loadMore(folder, button) {
     folder._prefetch = null;
     folder._prefetchPromise = null;
     if (!page) throw new Error("No page returned");
+    const newIds = new Set((page.files || []).map((file) => file.id));
     folder.files.push(...page.files);
     for (const sub of page.subfolders || []) {
       if (!folder.subfolders.some((s) => s.fid === sub.fid)) folder.subfolders.push(sub);
     }
     folder.nextPageToken = page.nextPageToken;
-    render();
+    render(newIds);
   } catch {
     button.disabled = false;
     updateLoadMoreCopy(button, folder, "error");
@@ -556,6 +564,27 @@ function renderMeta() {
     const days = Math.max(0, Math.ceil((meta.expiresAt - Date.now()) / 86400000));
     el.append(chip(`closes in ${days} day${days === 1 ? "" : "s"}`, days <= 2 ? "warn" : ""));
   }
+}
+
+function installTileSizeControl() {
+  const control = $("tile-size");
+  if (!control) return;
+  const apply = (next, report = false) => {
+    tileSize = ["compact", "comfortable", "large"].includes(next) ? next : "comfortable";
+    localStorage.setItem("lhdb_tile_size", tileSize);
+    control.querySelectorAll("button").forEach((button) => {
+      const active = button.dataset.size === tileSize;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    scheduleLayout();
+    if (report) trackEvent("layout", tileSize, { control: "tile-size" });
+  };
+  control.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-size]");
+    if (button) apply(button.dataset.size, true);
+  });
+  apply(tileSize);
 }
 
 function folderCard(sub) {
@@ -706,7 +735,7 @@ async function ensureFreshDownload(file) {
 // every single download (Chrome/Edge only; unsupported elsewhere), which
 // reads as broken compared to how downloads work on every other site.
 async function downloadFile(file) {
-  trackEvent("download", file.name);
+  trackEvent("download", file.name, { size: file.size, mime: file.mime, blocked: !!file.downloadBlocked });
   if (file.downloadBlocked) {
     toast("Download blocked", file.downloadBlockReason || "This public share blocks risky file types.", "warn");
     return;
@@ -719,7 +748,9 @@ async function downloadFile(file) {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    trackEvent("download_handoff", file.name, { size: file.size, mime: file.mime });
   } catch (err) {
+    trackEvent("download_failed", file.name, { message: String(err.message || err).slice(0, 120) });
     toast("Download failed", String(err.message || err).slice(0, 80), "err");
   }
 }
@@ -1144,7 +1175,8 @@ function layoutGallery(grid) {
   const W = grid.clientWidth;
   if (!W || !files.length) return;
   const GAP = 2;
-  const target = W < 640 ? 148 : W < 1280 ? 210 : 250;
+  const base = tileSize === "compact" ? 0.72 : tileSize === "large" ? 1.36 : 1;
+  const target = Math.round((W < 640 ? 148 : W < 1280 ? 210 : 250) * base);
   const rows = [];
   let row = [];
   let sum = 0;
@@ -1185,7 +1217,7 @@ function loadPswp() {
 function pswpItem(file) {
   const isVideo = /^video\//.test(file.mime);
   const ratio = file.aspect || (file.w && file.h ? file.w / file.h : 16 / 9);
-  const width = 1600;
+  const width = file.w || 1600;
   const height = Math.round(width / Math.min(2.8, Math.max(0.4, ratio)));
   return {
     file,
@@ -1193,16 +1225,65 @@ function pswpItem(file) {
     width,
     height,
     msrc: file.thumb ? thumbUrl(file, 512) : "",
-    src: isVideo ? undefined : thumbUrl(file, 2048),
+    src: isVideo ? undefined : previewUrl(file),
   };
+}
+
+function inlineUrl(file) {
+  if (!file?.dl) return thumbUrl(file, 2048);
+  return `${file.dl}${file.dl.includes("?") ? "&" : "?"}inline=1`;
+}
+
+function previewUrl(file) {
+  // RAW formats can be 50 MB+ but are not browser-decodable. Drive's large
+  // rendered preview is their full-screen visual; common web formats use the
+  // original inline stream and benefit from the Worker's edge cache.
+  return /^image\/(jpeg|jpg|png|webp|gif|avif|bmp)$/i.test(file?.mime || "") ? inlineUrl(file) : thumbUrl(file, 2560);
+}
+
+function warmImage(file) {
+  if (!file || !/^image\//.test(file.mime)) return Promise.resolve(false);
+  if (warmedImages.has(file.id)) return Promise.resolve(true);
+  if (warmingImages.has(file.id)) return warmingImages.get(file.id);
+  const promise = ensureFreshDownload(file)
+    .then(
+      () =>
+        new Promise((resolve) => {
+          const image = new Image();
+          image.decoding = "async";
+          image.onload = () => {
+            warmedImages.add(file.id);
+            warmingImages.delete(file.id);
+            resolve(true);
+          };
+          image.onerror = () => {
+            warmingImages.delete(file.id);
+            resolve(false);
+          };
+          image.src = previewUrl(file);
+          if (image.complete && image.naturalWidth) image.onload();
+        }),
+    )
+    .catch(() => {
+      warmingImages.delete(file.id);
+      return false;
+    });
+  warmingImages.set(file.id, promise);
+  return promise;
+}
+
+function warmNeighbors(index) {
+  for (const n of [index - 2, index - 1, index + 1, index + 2]) {
+    const file = lightboxItems[n];
+    if (file && /^image\//.test(file.mime)) warmImage(file);
+  }
 }
 
 async function openViewer(index, sourceEl) {
   if (index < 0 || index >= lightboxItems.length) return;
   const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
-  trackEvent("view", file.name);
-
+  if (/^image\//.test(file.mime)) await ensureFreshDownload(file).catch(() => {});
   pswp = new PhotoSwipe({
     dataSource: lightboxItems.map(pswpItem),
     index,
@@ -1223,7 +1304,9 @@ async function openViewer(index, sourceEl) {
     const current = lightboxItems[pswp.currIndex];
     updateCaption(current);
     syncStrip(pswp.currIndex);
-    animateSlideIn(pswp.currSlide?.content?.element);
+    animateSlideIn(pswp.currSlide?.content?.element, current);
+    warmNeighbors(pswp.currIndex);
+    refreshFileInfo(current);
     trackEvent("view", current?.name || "");
   });
   const onViewerKeydown = (e) => {
@@ -1237,6 +1320,8 @@ async function openViewer(index, sourceEl) {
   };
   window.addEventListener("keydown", onViewerKeydown);
   pswp.on("destroy", () => {
+    const closing = lightboxItems[pswp.currIndex];
+    window.shareTrekker?.track("media_view_end", closing?.name || "", { reason: "viewer_close" });
     window.removeEventListener("keydown", onViewerKeydown);
     destroyStrip();
     pswp = null;
@@ -1245,22 +1330,27 @@ async function openViewer(index, sourceEl) {
   pswp.init();
   mountBottomBar(pswp);
   updateCaption(file);
-  // Warm neighbour full-res images so arrow navigation feels instant.
-  for (const n of [index - 1, index + 1]) {
-    const f = lightboxItems[n];
-    if (f && /^image\//.test(f.mime) && f.thumb) new Image().src = thumbUrl(f, 2048);
-  }
+  warmImage(file);
+  warmNeighbors(index);
 }
 
 // A very short, purely-opacity fade on the slide's own content each time it
 // becomes active. PhotoSwipe already pans the whole slide horizontally on
 // prev/next; this just softens the cut on the content itself without
 // touching (or fighting) PhotoSwipe's own pan/zoom transform.
-function animateSlideIn(el) {
-  if (!el) return;
+function animateSlideIn(el, file) {
+  if (!el || !file || warmedImages.has(file.id)) {
+    el?.classList.remove("pswp-slide-in", "pswp-slide-loading");
+    return;
+  }
   el.classList.remove("pswp-slide-in");
-  void el.offsetWidth; // restart the CSS animation
-  el.classList.add("pswp-slide-in");
+  el.classList.add("pswp-slide-loading");
+  warmImage(file).then((ready) => {
+    if (!ready || pswp?.currSlide?.data?.file?.id !== file.id) return;
+    el.classList.remove("pswp-slide-loading");
+    void el.offsetWidth;
+    el.classList.add("pswp-slide-in");
+  });
 }
 
 function registerVideoContent(instance) {
@@ -1360,6 +1450,20 @@ function registerUi(instance) {
 
   instance.on("uiRegister", () => {
     instance.ui.registerElement({
+      name: "file-info-button",
+      order: 6,
+      isButton: true,
+      tagName: "button",
+      html: {
+        isCustomSVG: true,
+        inner:
+          '<rect x="4" y="3" width="16" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="16" x2="13" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+        outlineID: "pswp__icn-file-info",
+      },
+      onClick: () => toggleFileInfo(true),
+      title: "File info and EXIF",
+    });
+    instance.ui.registerElement({
       name: "shortcuts-button",
       order: 7,
       isButton: true,
@@ -1402,12 +1506,30 @@ function registerUi(instance) {
 let captionEl = null;
 function updateCaption(file) {
   if (!captionEl || !file) return;
-  const parts = [fmtBytes(file.size)];
-  if (file.at) parts.push(new Date(file.at).toLocaleDateString());
+  const parts = [];
+  if (file.w && file.h) parts.push(`${file.w} × ${file.h}`, `${megapixels(file)} MP`);
+  parts.push(fmtBytes(file.size));
+  if (file.at) parts.push(formatLongDate(file.at));
   captionEl.classList.remove("pswp-caption-in");
   captionEl.innerHTML = `<b>${esc(file.name)}</b><span>${esc(parts.join(" - "))}</span>`;
   void captionEl.offsetWidth;
   captionEl.classList.add("pswp-caption-in");
+}
+
+function megapixels(file) {
+  return file?.w && file?.h ? Math.round((file.w * file.h) / 10000) / 100 : 0;
+}
+
+function formatLongDate(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const month = new Intl.DateTimeFormat(undefined, { month: "long" }).format(date);
+  return `${String(date.getDate()).padStart(2, "0")} ${month} ${date.getFullYear()}`;
+}
+
+function formatShortDate(value) {
+  const date = new Date(value);
+  return [String(date.getDate()).padStart(2, "0"), String(date.getMonth() + 1).padStart(2, "0"), date.getFullYear()].join(" ");
 }
 
 // Bottom bar = caption + thumbstrip stacked in one flex column, so they
@@ -1433,6 +1555,119 @@ function mountBottomBar(instance) {
   bar.appendChild(captionEl);
   instance.element.appendChild(bar);
   mountStrip(instance, bar);
+  mountFileInfo(instance);
+}
+
+let fileInfoPanel = null;
+let fileInfoPinned = false;
+let fileInfoRequest = 0;
+
+function mountFileInfo(instance) {
+  const hoverZone = document.createElement("div");
+  hoverZone.className = "pswp-info-hover-zone";
+  hoverZone.setAttribute("aria-hidden", "true");
+  hoverZone.addEventListener("mouseenter", () => toggleFileInfo(false, true));
+  instance.element.appendChild(hoverZone);
+  instance.on("destroy", () => {
+    fileInfoPanel = null;
+    fileInfoPinned = false;
+  });
+}
+
+function toggleFileInfo(pinPanel = false, forceOpen = false) {
+  if (!pswp?.element) return;
+  if (!fileInfoPanel) {
+    fileInfoPanel = document.createElement("aside");
+    fileInfoPanel.className = "pswp-file-info";
+    fileInfoPanel.setAttribute("aria-label", "File info and EXIF");
+    fileInfoPanel.innerHTML = `<header><div><span>File info</span><b>EXIF & attributes</b></div><button type="button" aria-label="Close file info">×</button></header><div class="pswp-file-info-body"></div>`;
+    fileInfoPanel.querySelector("button").addEventListener("click", () => {
+      fileInfoPinned = false;
+      fileInfoPanel.classList.remove("open");
+    });
+    fileInfoPanel.addEventListener("mouseenter", () => fileInfoPanel.classList.add("open"));
+    fileInfoPanel.addEventListener("mouseleave", () => {
+      if (!fileInfoPinned) fileInfoPanel.classList.remove("open");
+    });
+    pswp.element.appendChild(fileInfoPanel);
+  }
+  if (pinPanel) fileInfoPinned = !fileInfoPanel.classList.contains("open") || !fileInfoPinned;
+  const shouldOpen = forceOpen || pinPanel ? !fileInfoPanel.classList.contains("open") || fileInfoPinned : true;
+  fileInfoPanel.classList.toggle("open", shouldOpen);
+  if (shouldOpen) {
+    refreshFileInfo(pswp.currSlide?.data?.file);
+    trackEvent("file_info_open", pswp.currSlide?.data?.file?.name || "");
+  }
+}
+
+async function fetchFileInfo(file) {
+  if (fileInfoCache.has(file.id)) return fileInfoCache.get(file.id);
+  const promise = ensureFreshDownload(file).then(() =>
+    fetch("/api/share/file-info", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug, pin, dl: file.dl }),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Metadata unavailable");
+      return response.json();
+    }),
+  );
+  fileInfoCache.set(file.id, promise);
+  promise.catch(() => fileInfoCache.delete(file.id));
+  return promise;
+}
+
+async function refreshFileInfo(file) {
+  if (!fileInfoPanel?.classList.contains("open") || !file) return;
+  const body = fileInfoPanel.querySelector(".pswp-file-info-body");
+  const seq = ++fileInfoRequest;
+  body.innerHTML = `<div class="pswp-info-loading"><i></i><span>Reading image metadata…</span></div>`;
+  try {
+    const data = await fetchFileInfo(file);
+    if (seq !== fileInfoRequest) return;
+    renderFileInfo(body, data, file);
+  } catch (error) {
+    if (seq === fileInfoRequest) body.innerHTML = `<p class="pswp-info-error">${esc(String(error.message || error))}</p>`;
+  }
+}
+
+function renderFileInfo(body, data, fallback) {
+  const file = data.file || fallback;
+  const exif = data.exif || {};
+  const general = [
+    ["File name", file.name],
+    ["Position", pswp ? `${pswp.currIndex + 1} / ${lightboxItems.length}` : ""],
+    ["Type", file.mime],
+    ["Size", fmtBytes(file.size)],
+    ["Dimensions", file.width && file.height ? `${file.width} × ${file.height} (${file.megapixels || megapixels(fallback)} MP)` : ""],
+    ["Date taken", exif.time ? formatLongDate(exif.time) : ""],
+    ["Modified", file.modifiedAt ? formatLongDate(file.modifiedAt) : ""],
+  ];
+  const camera = [
+    ["Make", exif.cameraMake],
+    ["Model", exif.cameraModel],
+    ["Lens", exif.lens],
+    ["Exposure", exif.exposureTime ? `${exif.exposureTime} sec` : ""],
+    ["Aperture", exif.aperture ? `f/${exif.aperture}` : ""],
+    ["ISO", exif.isoSpeed ? `ISO ${exif.isoSpeed}` : ""],
+    ["Focal length", exif.focalLength ? `${exif.focalLength} mm` : ""],
+    ["Exposure bias", exif.exposureBias != null ? `${exif.exposureBias} EV` : ""],
+    ["Exposure mode", exif.exposureMode],
+    ["Metering", exif.meteringMode],
+    ["White balance", exif.whiteBalance],
+    ["Flash", exif.flashUsed == null ? "" : exif.flashUsed ? "Fired" : "Did not fire"],
+    ["Color space", exif.colorSpace],
+    ["Sensor", exif.sensor],
+    ["Subject distance", exif.subjectDistance ? `${exif.subjectDistance} m` : ""],
+    ["GPS", exif.location?.latitude != null && exif.location?.longitude != null ? `${exif.location.latitude}, ${exif.location.longitude}` : ""],
+  ];
+  body.innerHTML = infoSection("File and attributes", general) + infoSection("EXIF", camera);
+}
+
+function infoSection(title, rows) {
+  const available = rows.filter(([, value]) => value !== "" && value != null);
+  if (!available.length) return `<section><h3>${esc(title)}</h3><p class="pswp-info-empty">No metadata reported.</p></section>`;
+  return `<section><h3>${esc(title)}</h3><dl>${available.map(([key, value]) => `<div><dt>${esc(key)}</dt><dd>${esc(String(value))}</dd></div>`).join("")}</dl></section>`;
 }
 
 function mountStrip(instance, bar) {
@@ -1578,6 +1813,7 @@ function updateSelInfo() {
 }
 
 async function downloadZip() {
+  trackEvent("zip_requested", meta?.label || slug, { selected: selected.size });
   let files = [...selected.values()];
   if (!files.length) return;
   const locallyBlocked = files.filter((f) => f.downloadBlocked);
@@ -1608,8 +1844,10 @@ async function downloadZip() {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    trackEvent("zip_started", zipName, { count: ticket.count || files.length, bytes });
     toast("Zip download started", `${ticket.count || files.length} files - ${fmtBytes(bytes)}`, "ok");
   } catch (err) {
+    trackEvent("zip_failed", meta?.label || slug, { message: String(err.message || err).slice(0, 120) });
     toast(err.downloadBlocked ? "Zip blocked" : "Zip failed", String(err.message || err).slice(0, 100), "err");
   } finally {
     btn.disabled = false;
@@ -1646,10 +1884,16 @@ async function createServerZipTicket(files) {
 
 const trackQueue = [];
 const trackSessionId =
-  window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  window.shareTrekker?.sessionId || window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-function trackEvent(t, name) {
-  trackQueue.push({ t, name: String(name || "").slice(0, 160) });
+function trackEvent(t, name, data = {}) {
+  const mapped = t === "view" ? "media_view_start" : t;
+  if (window.shareTrekker) {
+    window.shareTrekker.track(mapped, name, data);
+    window.clarity?.("event", mapped);
+    return;
+  }
+  trackQueue.push({ t: mapped, name: String(name || "").slice(0, 160), data });
   if (trackQueue.length >= 20) flushTrack();
   window.clarity?.("event", t);
 }
@@ -1710,4 +1954,3 @@ function fmtDur(ms) {
   if (h) return `${h}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
-

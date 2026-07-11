@@ -27,7 +27,7 @@ import {
   timingSafeEqual,
 } from "./util.js";
 import { driveFileMeta, driveGrantAnyoneReader, driveListFolder, driveRevokePermission, accessToken } from "./drive.js";
-import { bumpShareStats, gatePin, liveStub, logEvent, mergeEventsKV } from "./store.js";
+import { bumpShareStats, gatePin, liveStub, logEvent, mergeEventsKV, rateLimitRemote } from "./store.js";
 import { getViewer } from "./auth.js";
 
 const BLOCKED_PUBLIC_DOWNLOAD_EXTS = new Set([
@@ -374,17 +374,26 @@ export async function logShareOpened(request, env) {
 // navigator.sendBeacon, so it survives tab close) so the owner can see who
 // viewed what and where load is slow, without a KV write per click.
 export async function shareTrack(request, env) {
+  const telemetryRate = await rateLimitRemote(env, `strack:${request.headers.get("cf-connecting-ip") || "local"}`, 90, 60);
+  if (!telemetryRate.allowed) return json({ error: "slow down", retryAfter: telemetryRate.retryAfter }, 429);
   const b = await request.json().catch(() => ({}));
   const slug = cleanText(b.slug || "", 60);
   const share = await env.KV.get(`share:${slug}`, "json");
   if (!share) return json({ error: "share not found" }, 404);
   const viewer = await getViewer(request, env);
-  const events = Array.isArray(b.events) ? b.events.slice(0, 40) : [];
+  const events = Array.isArray(b.events) ? b.events.slice(0, 40).map(normalizeTelemetryEvent) : [];
   const sessionId = cleanText(b.sessionId || "", 40);
   if (!events.length) return json({ ok: true });
-  const navEvents = events.filter((e) => e?.t === "nav");
-  const viewEvents = events.filter((e) => e?.t === "view");
-  const otherEvents = events.filter((e) => e?.t !== "nav" && e?.t !== "view");
+  await env.KV.put(
+    `telemetry:share:${slug}:${sessionId || "anonymous"}:${Date.now()}:${randomSlug(4)}`,
+    JSON.stringify({ at: Date.now(), startedAt: Number(b.startedAt) || 0, viewer: viewer?.email || "anonymous", events }),
+    { expirationTtl: 30 * 24 * 3600 },
+  );
+  const navEvents = events.filter((e) => e.t === "nav");
+  const viewEvents = events.filter((e) => e.t === "view" || e.t === "media_view_start");
+  const clickEvents = events.filter((e) => e.t === "click");
+  const meaningfulTypes = new Set(["download", "download_handoff", "zip_requested", "zip_started", "zip_failed", "file_info_open", "layout", "client_error", "promise_rejection", "performance", "session_end", "media_view_end"]);
+  const otherEvents = events.filter((e) => meaningfulTypes.has(e.t));
   const records = [];
   if (navEvents.length || viewEvents.length) {
     const last = viewEvents[viewEvents.length - 1] || navEvents[navEvents.length - 1] || {};
@@ -403,17 +412,30 @@ export async function shareTrack(request, env) {
       ),
     );
   }
+  if (clickEvents.length) {
+    const last = clickEvents.at(-1);
+    records.push(normalizeEvent({
+      type: "share-clicks",
+      slug,
+      label: share.label,
+      uploader: viewer?.email || "anonymous",
+      file: last.name,
+      count: clickEvents.length,
+      message: `${clickEvents.length} interaction${clickEvents.length === 1 ? "" : "s"}; last: ${last.name}`,
+      sessionId,
+    }, request));
+  }
   for (const e of otherEvents) {
-    const rawType = cleanText(e?.t || "event", 20);
+    const rawType = cleanText(e?.t || "event", 32);
     records.push(
       normalizeEvent(
         {
-          type: rawType === "download" || rawType === "dl" ? "share-dl" : rawType.startsWith("share-") ? rawType : `share-${rawType}`,
+          type: rawType === "download" || rawType === "download_handoff" || rawType === "dl" ? "share-dl" : rawType === "file_info_open" ? "share-file-info" : rawType.startsWith("share-") ? rawType : `share-${rawType}`,
           slug,
           label: share.label,
           uploader: viewer?.email || "anonymous",
           file: cleanText(e?.name || "", 160),
-          message: rawType,
+          message: telemetrySummary(e),
           sessionId,
         },
         request,
@@ -737,6 +759,102 @@ export async function refreshShareDownload(request, env) {
   if (failure) return failure;
   const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, parsed.fileId);
   return json({ dl: `/api/share/dl/${token}`, dlExpiresAt: expiresAt });
+}
+
+function normalizeTelemetryEvent(event = {}) {
+  let data = {};
+  if (event.data && typeof event.data === "object" && !Array.isArray(event.data)) {
+    try {
+      data = JSON.parse(JSON.stringify(event.data).slice(0, 1600));
+    } catch {
+      data = {};
+    }
+  }
+  return {
+    t: cleanText(event.t || "event", 40),
+    name: cleanText(event.name || "", 160),
+    at: Number(event.at) || Date.now(),
+    mono: Math.max(0, Number(event.mono) || 0),
+    data,
+  };
+}
+
+function telemetrySummary(event) {
+  const data = event.data || {};
+  if (event.t === "media_view_end" && data.durationMs) return `viewed for ${Math.round(data.durationMs / 100) / 10}s`;
+  if (event.t === "performance") return `TTFB ${Number(data.ttfbMs) || 0}ms; loaded ${Number(data.loadMs) || 0}ms`;
+  if (event.t === "session_end") return `session ${Math.round((Number(data.elapsedMs) || 0) / 1000)}s`;
+  if (event.t === "zip_failed" || event.t === "client_error" || event.t === "promise_rejection") return cleanText(data.message || event.name || event.t, 160);
+  return cleanText(event.t.replaceAll("_", " "), 160);
+}
+
+// Full image metadata is deliberately fetched on demand. Returning every EXIF
+// field in the 200-item gallery listing makes first paint slower and exposes
+// location data before the viewer asks for it. The signed download token proves
+// this file came from this share; auth/PIN gates are checked again here.
+export async function shareFileInfo(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const oldToken = downloadTokenFrom(b.dl || b.token);
+  const parsed = await verifyShareToken(env, oldToken, "dl");
+  if (!parsed) return json({ error: "invalid file token" }, 403);
+  const slug = cleanText(b.slug || parsed.slug, 60);
+  if (slug !== parsed.slug) return json({ error: "file token does not belong to this share" }, 403);
+  const { share, error } = await loadActiveShare(env, slug);
+  if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
+  const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
+  if (failure) return failure;
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
+
+  const meta = await driveFileMeta(env, parsed.fileId);
+  if (!meta?.id) return json({ error: "file not found" }, 404);
+  const image = meta.imageMediaMetadata || {};
+  const video = meta.videoMediaMetadata || {};
+  let width = Number(image.width || video.width) || 0;
+  let height = Number(image.height || video.height) || 0;
+  if (Number(image.rotation) % 2 === 1) [width, height] = [height, width];
+  return json({
+    file: {
+      id: meta.id,
+      name: cleanText(meta.name || "file", 240),
+      mime: cleanText(meta.mimeType || "", 140),
+      size: Number(meta.size) || 0,
+      createdAt: Date.parse(meta.createdTime) || 0,
+      modifiedAt: Date.parse(meta.modifiedTime) || 0,
+      width,
+      height,
+      megapixels: width && height ? Math.round((width * height) / 10000) / 100 : 0,
+      durationMs: Number(video.durationMillis) || 0,
+    },
+    exif: {
+      cameraMake: cleanText(image.cameraMake || "", 160),
+      cameraModel: cleanText(image.cameraModel || "", 160),
+      lens: cleanText(image.lens || "", 240),
+      time: cleanText(image.time || "", 80),
+      aperture: image.aperture ?? null,
+      exposureTime: image.exposureTime ?? null,
+      exposureBias: image.exposureBias ?? null,
+      exposureMode: cleanText(image.exposureMode || "", 80),
+      isoSpeed: image.isoSpeed ?? null,
+      focalLength: image.focalLength ?? null,
+      flashUsed: image.flashUsed ?? null,
+      meteringMode: cleanText(image.meteringMode || "", 80),
+      whiteBalance: cleanText(image.whiteBalance || "", 80),
+      colorSpace: cleanText(image.colorSpace || "", 80),
+      sensor: cleanText(image.sensor || "", 160),
+      maxApertureValue: image.maxApertureValue ?? null,
+      subjectDistance: image.subjectDistance ?? null,
+      rotation: image.rotation ?? null,
+      location: image.location && typeof image.location === "object"
+        ? {
+            latitude: Number(image.location.latitude) || null,
+            longitude: Number(image.location.longitude) || null,
+            altitude: Number(image.location.altitude) || null,
+          }
+        : null,
+    },
+  });
 }
 
 export async function createShareZipTicket(request, env) {

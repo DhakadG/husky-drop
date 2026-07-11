@@ -142,7 +142,11 @@ export async function driveFileMeta(env, fileId) {
   if (!id) return null;
   const tok = await accessToken(env);
   const url = `https://www.googleapis.com/drive/v3/files/${id}?` + new URLSearchParams({
-    fields: "id,name,size,mimeType,parents,appProperties,thumbnailLink,webViewLink,iconLink",
+    fields:
+      "id,name,size,mimeType,parents,appProperties,thumbnailLink,webViewLink,iconLink,createdTime,modifiedTime," +
+      "imageMediaMetadata(aperture,cameraMake,cameraModel,colorSpace,exposureBias,exposureMode,exposureTime," +
+      "flashUsed,focalLength,height,isoSpeed,lens,location(latitude,longitude,altitude),maxApertureValue,meteringMode,rotation,sensor," +
+      "subjectDistance,time,whiteBalance,width),videoMediaMetadata(width,height,durationMillis)",
     supportsAllDrives: "true",
   });
   const r = await fetch(url, { headers: { authorization: `Bearer ${tok}` } });

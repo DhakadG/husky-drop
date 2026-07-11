@@ -285,7 +285,7 @@ export function extractClientInfo(request) {
 
 export function normalizeEvent(event, request) {
   return {
-    t: cleanText(event.type || "event", 20),
+    t: cleanText(event.type || "event", 32),
     at: Date.now(),
     s: cleanText(event.slug || "", 60),
     l: cleanText(event.label || "", 100),

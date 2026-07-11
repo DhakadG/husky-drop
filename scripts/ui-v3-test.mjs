@@ -10,9 +10,9 @@ const faviconSvg = await read("public/favicon.svg");
 assert.match(css, /--grad:\s*linear-gradient\(120deg/, "plan 00 uses the 120-degree signature gradient");
 assert.match(css, /\.bg-fx\s*\{/, "plan 00 defines the shared ambient background layer");
 assert.match(css, /\.grad-border\s*\{/, "plan 00 defines gradient-border hero cards");
-assert.match(css, /\.brand-mark::after\s*\{/, "plan 00 defines the droplet inside the logo mark");
-assert.match(css, /\.brand-mark\s*\{[\s\S]*?transform:\s*rotate\(84deg\)/, "logo mark is rotated exactly 90 degrees clockwise from its previous orientation");
-assert.match(faviconSvg, /transform="rotate\(90 60 60\)"/, "SVG logo asset uses the corrected orientation");
+assert.match(css, /\.brand-mark\s*\{[\s\S]*?url\("\/logo-mark\.svg"\)/, "every live brand mark uses the canonical SVG asset");
+assert.match(css, /\.brand-mark::after\s*\{[\s\S]*?content:\s*none/, "the retired CSS-drawn droplet cannot overlay the canonical logo");
+assert.match(faviconSvg, /<path[^>]+fill="#fff"/, "favicon contains the banner-derived white droplet");
 
 const workerSource = await read("src/worker.js");
 const liveSource = await read("src/live.js");

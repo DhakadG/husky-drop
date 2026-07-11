@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">LostHusky Drop</title>
+  <desc id="desc">A white water drop inside a blue and teal glass tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="48" y1="52" x2="458" y2="462" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#306CFF"/><stop offset=".48" stop-color="#338BF3"/><stop offset="1" stop-color="#18C5C9"/>
+    </linearGradient>
+    <linearGradient id="core" x1="208" y1="183" x2="308" y2="326" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2F6BFF"/><stop offset="1" stop-color="#18B9C9"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="92" y1="72" x2="313" y2="334" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".48"/><stop offset=".55" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-20%" width="150%" height="165%">
+      <feDropShadow dx="0" dy="28" stdDeviation="28" flood-color="#163A8D" flood-opacity=".34"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="32" y="32" width="448" height="448" rx="126" fill="url(#tile)"/>
+    <rect x="43" y="43" width="426" height="426" rx="115" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="6"/>
+    <path d="M76 194C89 110 143 63 237 49c-68 42-103 99-105 171-1 64 24 117 76 159-91-22-143-89-132-185Z" fill="url(#shine)" opacity=".6"/>
+    <path d="M256 131c-26 42-96 111-96 177 0 59 43 96 96 96s96-37 96-96c0-66-70-135-96-177Z" fill="#fff"/>
+    <path d="M256 201c-17 25-50 61-50 94 0 31 22 52 50 52s50-21 50-52c0-33-33-69-50-94Z" fill="url(#core)"/>
+    <ellipse cx="169" cy="118" rx="55" ry="25" transform="rotate(-32 169 118)" fill="#fff" opacity=".2"/>
+  </g>
+</svg>

@@ -52,6 +52,7 @@ import {
   logShareOpened,
   patchShare,
   refreshShareDownload,
+  shareFileInfo,
   shareDownload,
   shareRedirect,
   shareSummary,
@@ -144,6 +145,7 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/session") return createSession(request, env);
   if (m === "POST" && p === "/api/complete") return logComplete(request, env);
   if (m === "POST" && p === "/api/client-error") return logClientError(request, env);
+  if (m === "POST" && p === "/api/drop/track") return dropTrack(request, env);
 
   // Public share-link endpoints (gallery + redirect modes).
   if (m === "GET" && p.startsWith("/api/share/meta/")) {
@@ -155,6 +157,7 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/share/list") return listShareFiles(request, env);
   if (m === "POST" && p === "/api/share/summary") return shareSummary(request, env);
   if (m === "POST" && p === "/api/share/refresh-dl") return refreshShareDownload(request, env);
+  if (m === "POST" && p === "/api/share/file-info") return shareFileInfo(request, env);
   if (m === "POST" && p === "/api/share/zip-ticket") return createShareZipTicket(request, env);
   if (m === "POST" && p === "/api/share/redirect") return shareRedirect(request, env);
   if (m === "GET" && p.startsWith("/api/share/dl/")) {
@@ -636,6 +639,78 @@ async function logClientError(request, env) {
     },
     request,
   );
+  return json({ ok: true });
+}
+
+async function dropTrack(request, env) {
+  const rl = await rateLimitRemote(env, `dtrack:${clientIp(request)}`, 90, 60);
+  if (!rl.allowed) return retryJson("slow down", rl.retryAfter);
+  const b = await request.json().catch(() => ({}));
+  const slug = cleanText(b.slug || "", 60);
+  const link = await env.KV.get(`link:${slug}`, "json");
+  if (!link) return json({ error: "link not found" }, 404);
+  const sessionId = cleanText(b.sessionId || "", 80);
+  const events = Array.isArray(b.events)
+    ? b.events.slice(0, 40).map((event) => ({
+        t: cleanText(event?.t || "event", 40),
+        name: cleanText(event?.name || "", 160),
+        at: Number(event?.at) || Date.now(),
+        mono: Math.max(0, Number(event?.mono) || 0),
+        data: event?.data && typeof event.data === "object" && !Array.isArray(event.data) ? event.data : {},
+      }))
+    : [];
+  if (!events.length) return json({ ok: true });
+  await env.KV.put(
+    `telemetry:drop:${slug}:${sessionId || "anonymous"}:${Date.now()}:${randomSlug(4)}`,
+    JSON.stringify({ at: Date.now(), startedAt: Number(b.startedAt) || 0, events }).slice(0, 64 * 1024),
+    { expirationTtl: 30 * 24 * 3600 },
+  );
+
+  const clicks = events.filter((event) => event.t === "click");
+  if (clicks.length) {
+    await logEvent(env, {
+      type: "drop-clicks",
+      slug,
+      label: link.label,
+      file: clicks.at(-1).name,
+      count: clicks.length,
+      message: `${clicks.length} interaction${clicks.length === 1 ? "" : "s"}; last: ${clicks.at(-1).name}`,
+      sessionId,
+    }, request);
+  }
+  const progressEvents = events.filter((event) => event.t === "upload_progress");
+  if (progressEvents.length) {
+    const last = progressEvents.at(-1);
+    const data = last.data || {};
+    await logEvent(env, {
+      type: "drop-upload_progress",
+      slug,
+      label: link.label,
+      file: last.name,
+      bytes: Number(data.sent) || 0,
+      count: progressEvents.length,
+      message: `${Number(data.percent) || 0}% sent`,
+      sessionId: cleanText(data.uploadSessionId || sessionId, 80),
+    }, request);
+  }
+  const visible = new Set(["upload_start", "upload_session_created", "upload_resumed", "upload_retry", "upload_bytes_complete", "upload_complete", "upload_error", "network_offline", "network_online", "client_error", "session_end"]);
+  for (const event of events.filter((item) => visible.has(item.t))) {
+    const data = event.data || {};
+    const message = event.t === "upload_error"
+      ? cleanText(data.message || "upload error", 160)
+      : event.t === "session_end"
+        ? `browser session ${Math.round((Number(data.elapsedMs) || 0) / 1000)}s`
+        : cleanText(event.t.replaceAll("_", " "), 160);
+    await logEvent(env, {
+      type: `drop-${event.t}`,
+      slug,
+      label: link.label,
+      file: event.name,
+      bytes: Number(data.size) || 0,
+      message,
+      sessionId: cleanText(data.uploadSessionId || sessionId, 80),
+    }, request);
+  }
   return json({ ok: true });
 }
 

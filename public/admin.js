@@ -639,8 +639,8 @@ function updateActivityDay(section, day) {
   const date = new Date(`${day.key}T00:00:00`);
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
-  const prefix = day.key === today ? "Today" : day.key === yesterday ? "Yesterday" : date.toLocaleDateString(undefined, { weekday: "long" });
-  section._label.textContent = `${prefix} · ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  const prefix = day.key === today ? "Today" : day.key === yesterday ? "Yesterday" : "Activity";
+  section._label.textContent = `${prefix} · ${fmtDateDMY(date)}`;
   section._count.textContent = `${day.sessions.length} session${day.sessions.length === 1 ? "" : "s"}`;
   reconcile(section._list, day.sessions, (session) => session.key, makeActivitySession, updateActivitySession);
 }
@@ -705,7 +705,17 @@ function activityTimelineRow(event) {
 }
 
 function activityTypeLabel(type) {
-  const labels = { open: "Opened drop link", start: "Started upload", file: "Uploaded file", sessionclose: "Session finished", "share-open": "Opened share", "share-view": "Viewed file", "share-browse": "Browsed gallery", "share-dl": "Downloaded file", clienterror: "Client error", autopause: "Link auto-paused", lock: "Link locked", "global-lock": "Uploads locked" };
+  const labels = {
+    open: "Opened drop link", start: "Started upload", file: "Uploaded file", sessionclose: "Session finished",
+    "share-open": "Opened share", "share-view": "Viewed file", "share-browse": "Browsed gallery", "share-dl": "Downloaded file",
+    "share-clicks": "Interacted with share", "share-file-info": "Opened file information", "share-media_view_end": "Finished viewing media",
+    "share-layout": "Changed gallery layout", "share-performance": "Share performance sample",
+    "drop-clicks": "Interacted with drop page", "drop-upload_start": "Started a file", "drop-upload_session_created": "Prepared upload session",
+    "drop-upload_resumed": "Resumed a file", "drop-upload_retry": "Retried an upload", "drop-upload_progress": "Upload progress",
+    "drop-upload_bytes_complete": "Sent file bytes", "drop-upload_complete": "Upload verified complete", "drop-upload_error": "Upload error",
+    "drop-network_offline": "Uploader went offline", "drop-network_online": "Uploader came online",
+    clienterror: "Client error", autopause: "Link auto-paused", lock: "Link locked", "global-lock": "Uploads locked",
+  };
   return labels[type] || "Activity";
 }
 
@@ -732,9 +742,10 @@ function eventKey(event) {
 
 function eventTypeIcon(type) {
   if (type === "start") return "play";
-  if (type === "file" || type === "share-view" || type === "share-browse") return "image";
+  if (type === "file" || type === "share-view" || type === "share-browse" || type === "share-file-info" || type === "share-media_view_end") return "image";
   if (type === "open" || type === "share-open") return "eye";
   if (type === "share-dl") return "download";
+  if (type?.startsWith("drop-upload")) return type.includes("error") ? "alert" : "play";
   if (type === "lock" || type === "global-lock" || type === "autopause") return "lock";
   if (type === "sessionclose" || type === "clienterror") return "alert";
   return "list";
@@ -784,7 +795,7 @@ function makeLinkCard() {
 function updateLinkCard(article, link) {
   const budgetLimit = link.settings.maxTotalBytes || 0;
   const budgetPct = budgetLimit ? Math.min(100, Math.round((link.stats.bytes / budgetLimit) * 100)) : 0;
-  const expires = link.expiresAt ? `expires ${new Date(link.expiresAt).toLocaleDateString()}` : "never expires";
+  const expires = link.expiresAt ? `expires ${fmtDateDMY(link.expiresAt)}` : "never expires";
   const access = link.hasPin ? "PIN" : "open";
   article.className = `link-card panel ${escAttr(link.state || "active")}`;
   article.innerHTML = `
@@ -1100,7 +1111,7 @@ function makeShareCard() {
 }
 
 function updateShareCard(article, share) {
-  const closes = share.expiresAt ? `closes ${new Date(share.expiresAt).toLocaleDateString()}` : "never closes";
+  const closes = share.expiresAt ? `closes ${fmtDateDMY(share.expiresAt)}` : "never closes";
   const access = [share.mode, share.hasPin ? "PIN" : "no PIN", share.requireAuth ? "Google sign-in" : "link access"].join(" · ");
   const viewers = (share.recentViewers || []).map((viewer) => `<span class="viewer-chip" title="${escAttr(viewer.email)}"><i>${esc(initialsOf(viewer.name || viewer.email))}</i><span>${esc(viewer.name || viewer.email)}</span></span>`).join("");
   article.className = `share-card panel ${escAttr(share.state || "active")}`;
@@ -1269,7 +1280,7 @@ function renderDetail(d) {
     <section class="panel settings-fold">
       <div class="section-title"><div><p class="eyebrow">configuration</p><h2>${icon("sliders")} Settings</h2></div><span class="muted">Changes apply to this link only.</span></div>
       <div class="settings-accordion">
-        <details open><summary><span class="settings-summary-copy">${icon("lock", "settings-role-icon")}<span><b>Access</b><small>${l.hasPin ? "PIN protected" : "Open"} · ${l.expiresAt ? `expires ${new Date(l.expiresAt).toLocaleDateString()}` : "never expires"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Label</label><input id="d-label" type="text" value="${escAttr(l.label)}" /></div><div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" autocomplete="new-password" /></div><div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="${expiryDays}" /></div></div></details>
+        <details open><summary><span class="settings-summary-copy">${icon("lock", "settings-role-icon")}<span><b>Access</b><small>${l.hasPin ? "PIN protected" : "Open"} · ${l.expiresAt ? `expires ${fmtDateDMY(l.expiresAt)}` : "never expires"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Label</label><input id="d-label" type="text" value="${escAttr(l.label)}" /></div><div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" autocomplete="new-password" /></div><div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="${expiryDays}" /></div></div></details>
         <details><summary><span class="settings-summary-copy">${icon("sliders", "settings-role-icon")}<span><b>Transfer</b><small>${l.settings.adaptiveConcurrency ? "auto 2–8× parallel" : `${l.settings.concurrency}× parallel`} · ${l.settings.chunkMB} MB chunks · ${l.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Starting parallel files</label><select id="d-conc">${opts([1, 2, 3, 4, 6, 8], l.settings.concurrency)}</select></div><div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8, 16, 32, 64], l.settings.chunkMB, " MB")}</select></div><div class="field"><label>Max single file GB</label><input id="d-maxgb" type="number" min="0" value="${escAttr(maxTransferGb)}" /></div></div><div class="check-row"><label class="check"><input id="d-adaptive" type="checkbox" ${l.settings.adaptiveConcurrency ? "checked" : ""} /> Adapt parallelism to live network performance</label><label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Create subfolders per uploader</label></div></div></details>
         <details><summary><span class="settings-summary-copy">${icon("budget", "settings-role-icon")}<span><b>Budgets</b><small>${l.settings.maxTotalBytes ? `${fmtBytes(l.stats.bytes)} of ${fmtBytes(l.settings.maxTotalBytes)}` : "Unlimited"} · auto-pause at limit</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Max total GB</label><input id="d-budget-gb" type="number" min="0" value="${escAttr(budgetGb)}" /></div><div class="field"><label>Max files</label><input id="d-budget-files" type="number" min="0" value="${l.settings.maxTotalFiles || ""}" /></div><div class="field"><label>Max sessions</label><input id="d-budget-sessions" type="number" min="0" value="${l.settings.maxSessions || ""}" /></div></div></details>
         <details><summary><span class="settings-summary-copy">${icon("bell", "settings-role-icon")}<span><b>Notifications</b><small>${l.notify.enabled ? "Email enabled" : "Email disabled"} · ${l.notify.start ? "start alerts" : "no start alerts"} · ${l.notify.complete ? "completion digest" : "no completion digest"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body check-row"><label class="check"><input id="d-notify" type="checkbox" ${l.notify.enabled ? "checked" : ""} /> Email enabled</label><label class="check"><input id="d-notify-start" type="checkbox" ${l.notify.start ? "checked" : ""} /> On upload start</label><label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Session digest when done</label></div></details>

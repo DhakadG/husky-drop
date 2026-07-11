@@ -451,6 +451,7 @@ async function uploadFile(item) {
   item.canceled = false;
   item.stat = "";
   setState(item, "uploading");
+  window.dropTrekker?.track("upload_start", item.file.name, { size: item.file.size, mime: item.file.type || "", resumed: !!item.resumedUri, uploadSessionId: sessionId });
   schedulePaint();
   try {
     await ensureSession(item);
@@ -464,7 +465,10 @@ async function uploadFile(item) {
       try {
         offset = await probeOffset(item);
         setSent(item, offset);
-        if (offset > 0) toast("Resuming upload", `${item.file.name} continues from ${fmtBytes(offset)}.`, "ok");
+        if (offset > 0) {
+          toast("Resuming upload", `${item.file.name} continues from ${fmtBytes(offset)}.`, "ok");
+          window.dropTrekker?.track("upload_resumed", item.file.name, { offset, size: item.file.size, uploadSessionId: sessionId });
+        }
       } catch {
         item.uri = null;
         setSent(item, 0);
@@ -479,6 +483,11 @@ async function uploadFile(item) {
       const chunkStarted = Date.now();
       try {
         offset = await putChunk(item, offset);
+        const milestone = Math.min(100, Math.floor((offset / Math.max(1, item.file.size)) * 4) * 25);
+        if (milestone > (item._telemetryMilestone || 0)) {
+          item._telemetryMilestone = milestone;
+          window.dropTrekker?.track("upload_progress", item.file.name, { percent: milestone, sent: offset, size: item.file.size, chunk: item.chunk, uploadSessionId: sessionId });
+        }
         item.retries = 0;
         const took = Date.now() - chunkStarted;
         if (took < FAST_CHUNK_MS && item.chunk < MAX_CHUNK) {
@@ -496,6 +505,7 @@ async function uploadFile(item) {
         }
         if (item.chunk > MIN_CHUNK) item.chunk = Math.max(MIN_CHUNK, item.chunk / 2);
         if (++item.retries > MAX_RETRIES) throw err;
+        window.dropTrekker?.track("upload_retry", item.file.name, { retry: item.retries, status: err.status || 0, chunk: item.chunk, uploadSessionId: sessionId });
         const wait = Math.min(30000, 1000 * 2 ** item.retries);
         item.stat = `retrying in ${Math.round(wait / 1000)}s`;
         schedulePaint();
@@ -509,6 +519,7 @@ async function uploadFile(item) {
     setSent(item, item.file.size);
     setState(item, "done");
     finalizeComplete(item);
+    window.dropTrekker?.track("upload_bytes_complete", item.file.name, { size: item.file.size, retries: item.retries || 0, uploadSessionId: sessionId });
   } catch (err) {
     if (item.canceled) return;
     if (err.status === 413) {
@@ -519,6 +530,7 @@ async function uploadFile(item) {
     item.stat = err.message.slice(0, 80);
     setState(item, "error");
     reportError("upload", err, item.file.name);
+    window.dropTrekker?.track("upload_error", item.file.name, { size: item.file.size, status: err.status || 0, message: String(err.message || err).slice(0, 120), retries: item.retries || 0, uploadSessionId: sessionId });
     toast("Upload paused", `${item.file.name}: ${err.message.slice(0, 80)}`, "err");
   }
 }
@@ -551,6 +563,7 @@ async function ensureSession(item) {
     throw error;
   }
   item.uri = d.sessionUri;
+  window.dropTrekker?.track("upload_session_created", item.file.name, { size: item.file.size, mime: item.file.type || "", uploadSessionId: sessionId });
   saveResumeRecord(item);
 }
 
@@ -601,6 +614,7 @@ function finalizeComplete(item) {
   })
     .then((r) => {
       if (r.ok) {
+        window.dropTrekker?.track("upload_complete", item.file.name, { size: item.file.size, mime: item.file.type || "", fileId: item.fileId || "", uploadSessionId: sessionId });
         item.stat = "";
         if (item.state !== "done") {
           setState(item, "done");

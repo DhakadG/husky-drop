@@ -193,29 +193,23 @@ a {
   color: var(--accent);
 }
 
-/* Gradient logo tile — add <i class="brand-mark"></i> as first child of .brand */
+/* Canonical banner-derived droplet mark shared by every page and favicon. */
 .brand-mark {
   width: 40px;
   height: 40px;
   flex: 0 0 auto;
   border-radius: 14px;
-  background: var(--grad-logo);
+  background: url("/logo-mark.svg") center / contain no-repeat;
   box-shadow:
     0 10px 22px -8px rgba(47, 107, 255, 0.65),
     inset 0 1px 1px rgba(255, 255, 255, 0.55);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transform: rotate(84deg);
+  transform: none;
 }
 .brand-mark::after {
-  content: "";
-  width: 16px;
-  height: 16px;
-  border-radius: 50% 50% 50% 14%;
-  transform: rotate(51deg);
-  background: #fff;
-  box-shadow: 0 2px 5px rgba(10, 40, 90, 0.3);
+  content: none;
 }
 .brand .brand-slash {
   background: var(--grad);
@@ -2614,7 +2608,8 @@ body.selecting .g-check {
 }
 
 .pswp__icn-download,
-.pswp__icn-info {
+.pswp__icn-info,
+.pswp__icn-file-info {
   fill: none;
 }
 
@@ -2680,6 +2675,142 @@ body.selecting .g-check {
 }
 .pswp-slide-in {
   animation: pswpFadeIn 200ms ease;
+}
+.pswp-slide-loading {
+  opacity: 0.78;
+}
+
+.pswp .pswp-info-hover-zone {
+  position: absolute;
+  z-index: 108;
+  top: 64px;
+  right: 0;
+  bottom: 92px;
+  width: 28px;
+}
+.pswp .pswp-file-info {
+  position: absolute;
+  z-index: 115;
+  top: 58px;
+  right: 10px;
+  bottom: 92px;
+  width: min(380px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  background: rgba(10, 14, 23, 0.93);
+  box-shadow: 0 26px 70px -26px rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(22px) saturate(1.2);
+  color: #fff;
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 150ms ease;
+}
+.pswp .pswp-file-info.open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.pswp .pswp-file-info > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.pswp .pswp-file-info > header div {
+  display: grid;
+  gap: 3px;
+}
+.pswp .pswp-file-info > header span {
+  font: 700 10px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #58d8dd;
+}
+.pswp .pswp-file-info > header b {
+  font: 700 15px var(--font-body);
+}
+.pswp .pswp-file-info > header button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: 400 22px/1 var(--font-body);
+  cursor: pointer;
+}
+.pswp .pswp-file-info-body {
+  min-height: 0;
+  padding: 4px 14px 18px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.pswp .pswp-file-info section {
+  padding-top: 14px;
+}
+.pswp .pswp-file-info h3 {
+  margin: 0 0 8px;
+  font: 700 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.52);
+}
+.pswp .pswp-file-info dl {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+.pswp .pswp-file-info dl > div {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.78fr) minmax(0, 1.45fr);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.pswp .pswp-file-info dl > div:last-child {
+  border-bottom: 0;
+}
+.pswp .pswp-file-info dt,
+.pswp .pswp-file-info dd {
+  margin: 0;
+  padding: 8px 9px;
+  overflow-wrap: anywhere;
+  font: 500 11.5px/1.35 var(--font-body);
+}
+.pswp .pswp-file-info dt {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.57);
+}
+.pswp .pswp-file-info dd {
+  color: rgba(255, 255, 255, 0.94);
+}
+.pswp .pswp-info-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 4px;
+  color: rgba(255, 255, 255, 0.68);
+  font: 500 12px var(--font-body);
+}
+.pswp .pswp-info-loading i {
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-top-color: #58d8dd;
+  border-radius: 50%;
+  animation: pswpInfoSpin 650ms linear infinite;
+}
+@keyframes pswpInfoSpin {
+  to { transform: rotate(360deg); }
+}
+.pswp .pswp-info-error,
+.pswp .pswp-info-empty {
+  color: rgba(255, 255, 255, 0.6);
+  font: 500 12px/1.5 var(--font-body);
 }
 
 /* Bottom info bar: caption stacked directly above the thumbstrip, one
@@ -4971,6 +5102,34 @@ table.uploads .empty-cell {
   background: transparent;
   font: inherit;
   cursor: pointer;
+}
+
+.tile-size-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+.tile-size-control button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: 700 11px var(--font-mono);
+  cursor: pointer;
+}
+.tile-size-control button:hover {
+  color: var(--accent);
+  background: rgba(47, 107, 255, 0.08);
+}
+.tile-size-control button.active {
+  color: #fff;
+  background: var(--grad);
+  box-shadow: 0 5px 14px -8px rgba(47, 107, 255, 0.8);
 }
 .folder-breadcrumbs button[aria-current="page"] {
   color: var(--ink);

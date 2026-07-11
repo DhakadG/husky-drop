@@ -6,6 +6,8 @@
 <meta name="robots" content="noindex" />
 <title>Shared files - LostHusky's DropBox</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin />
@@ -97,6 +99,11 @@
     <div class="gallery-toolbar panel">
       <nav class="crumbs" id="crumbs" aria-label="folders"></nav>
       <div class="toolbar-tools">
+        <div class="tile-size-control" id="tile-size" role="group" aria-label="photo tile size">
+          <button type="button" data-size="compact" title="Smaller tiles">S</button>
+          <button type="button" data-size="comfortable" title="Balanced tiles">M</button>
+          <button type="button" data-size="large" title="Larger tiles">L</button>
+        </div>
         <select id="sort" class="sort-select" aria-label="sort files">
           <option value="name">Name A-Z</option>
           <option value="new">Newest first</option>
@@ -125,6 +132,7 @@
 <script src="/vendor/gsap.min.js"></script>
 <script src="/share-fx.js"></script>
 <script src="/public.js"></script>
+<script src="/share-trekker.js"></script>
 <script type="module" src="/share.js"></script>
 </body>
 </html>
