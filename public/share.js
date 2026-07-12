@@ -37,6 +37,7 @@ const warmedImages = new Set();
 const warmingImages = new Map();
 const warmingImageElements = new Map();
 const decodedImages = new Map();
+const viewerTransforms = new Map();
 const fileInfoCache = new Map();
 const cardObserver =
   "IntersectionObserver" in window
@@ -1233,8 +1234,10 @@ function loadPswp() {
 function pswpItem(file) {
   const isVideo = /^video\//.test(file.mime);
   const ratio = file.aspect || (file.w && file.h ? file.w / file.h : 16 / 9);
-  const width = file.w || 1600;
-  const height = Math.round(width / Math.min(2.8, Math.max(0.4, ratio)));
+  let width = file.w || 1600;
+  let height = file.h || Math.round(width / Math.min(2.8, Math.max(0.4, ratio)));
+  const rotation = viewerTransforms.get(file.id)?.rotation || 0;
+  if (Math.abs(rotation / 90) % 2 === 1) [width, height] = [height, width];
   return {
     file,
     type: isVideo ? "video" : "image",
@@ -1344,7 +1347,7 @@ async function openViewer(index, sourceEl) {
     wheelToZoom: true,
     preload: [1, 2],
     loop: false,
-    paddingFn: () => ({ top: 60, bottom: stripHeightForScale() + 70, left: 0, right: 0 }),
+    paddingFn: () => ({ top: window.innerWidth <= 640 ? 94 : 60, bottom: stripHeightForScale() + 70, left: 0, right: 0 }),
     appendToEl: document.body,
   });
 
@@ -1352,6 +1355,7 @@ async function openViewer(index, sourceEl) {
   registerVideoContent(pswp);
   registerUi(pswp);
   pswp.on("change", () => {
+    closeViewerPanels();
     const current = lightboxItems[pswp.currIndex];
     updateCaption(current);
     syncStrip(pswp.currIndex);
@@ -1360,12 +1364,23 @@ async function openViewer(index, sourceEl) {
     trackEvent("view", current?.name || "");
   });
   const onViewerKeydown = (e) => {
+    if (e.target instanceof Element && e.target.closest("input, button, select, textarea, [contenteditable]")) return;
     if (e.key === "Home") {
       e.preventDefault();
       pswp.goTo(0);
     } else if (e.key === "End") {
       e.preventDefault();
       pswp.goTo(lightboxItems.length - 1);
+    } else if (e.key === "[") {
+      e.preventDefault();
+      rotateCurrentImage(-90);
+    } else if (e.key === "]") {
+      e.preventDefault();
+      rotateCurrentImage(90);
+    } else if (e.key === "Escape" && hasOpenViewerPanel()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeViewerPanels();
     }
   };
   window.addEventListener("keydown", onViewerKeydown);
@@ -1374,6 +1389,7 @@ async function openViewer(index, sourceEl) {
     window.shareTrekker?.track("media_view_end", closing?.name || "", { reason: "viewer_close" });
     window.removeEventListener("keydown", onViewerKeydown);
     destroyStrip();
+    closeViewerPanels();
     pswp = null;
   });
 
@@ -1400,6 +1416,7 @@ function registerProgressiveImageContent(instance) {
     wrap.className = "pswp-progressive-wrap";
     content.element = wrap;
     content._progressiveManaged = true;
+    applyImageTransform(wrap, file);
 
     const cached = decodedImages.get(file.id);
     if (cached?.complete && cached.naturalWidth) {
@@ -1467,6 +1484,25 @@ function setProgressiveLoading(content, loading, isError = false) {
   if (changed && !loading && content.slide) {
     content.instance.dispatch("loadComplete", { slide: content.slide, content, isError });
   }
+}
+
+function applyImageTransform(wrap, file) {
+  const transform = viewerTransforms.get(file.id) || { rotation: 0 };
+  const rotation = ((transform.rotation % 360) + 360) % 360;
+  wrap.style.setProperty("--media-rotation", `${rotation}deg`);
+  wrap.classList.toggle("quarter-turn", rotation === 90 || rotation === 270);
+}
+
+function rotateCurrentImage(delta) {
+  const file = pswp?.currSlide?.data?.file;
+  if (!file || !/^image\//.test(file.mime)) return;
+  closeViewerPanels();
+  const current = viewerTransforms.get(file.id) || { rotation: 0 };
+  const rotation = ((current.rotation + delta) % 360 + 360) % 360;
+  viewerTransforms.set(file.id, { ...current, rotation });
+  pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
+  pswp.refreshSlideContent(pswp.currIndex);
+  trackEvent("image_rotate", `${rotation}°`, { file: file.name, direction: delta < 0 ? "left" : "right" });
 }
 
 function registerVideoContent(instance) {
@@ -1544,26 +1580,69 @@ function cleanupTilePreview(file) {
 const SHORTCUTS = [
   ["&larr; &rarr;", "Previous / next"],
   ["Home / End", "First / last file"],
-  ["Esc", "Close"],
+  ["[ / ]", "Rotate left / right"],
+  ["Esc", "Close the active panel, then viewer"],
   ["Scroll wheel or drag", "Browse the filmstrip"],
   ["Shift + hover a tile", "Scrub a video (desktop)"],
   ["Touch + hold a tile", "Scrub a video (touch)"],
 ];
 
-function registerUi(instance) {
-  let panel = null;
-  const closePanel = () => {
-    panel?.remove();
-    panel = null;
-  };
-  const togglePanel = () => {
-    if (panel) return closePanel();
-    panel = document.createElement("div");
-    panel.className = "pswp-shortcuts";
-    panel.innerHTML = `<b>Shortcuts</b><ul>` + SHORTCUTS.map(([key, desc]) => `<li><span>${key}</span>${esc(desc)}</li>`).join("") + `</ul>`;
-    instance.element.appendChild(panel);
-  };
+const GUIDE_SECTIONS = [
+  ["Navigate", ["Use the arrow buttons, keyboard arrows, or click a filmstrip thumbnail.", "Drag or wheel-scroll the filmstrip to move through a large set."]],
+  ["Inspect", ["Zoom with the mouse wheel, pinch gesture, or Zoom button.", "Open File info for dimensions, exposure settings, camera, lens, and GPS metadata."]],
+  ["Organize the view", ["Filmstrip scale offers 13 sizes from overview to inspection.", "Rotate the current image left or right; rotation is remembered while this page remains open."]],
+];
 
+let viewerGuidePanel = null;
+let stripSettingsPanel = null;
+
+function hasOpenViewerPanel() {
+  return Boolean(viewerGuidePanel || stripSettingsPanel || fileInfoPanel?.classList.contains("open"));
+}
+
+function syncViewerPanelState() {
+  pswp?.element?.classList.toggle("pswp-panel-open", hasOpenViewerPanel());
+}
+
+function closeViewerPanels(except = "") {
+  if (except !== "guide") {
+    viewerGuidePanel?.remove();
+    viewerGuidePanel = null;
+  }
+  if (except !== "filmstrip") {
+    stripSettingsPanel?.remove();
+    stripSettingsPanel = null;
+  }
+  if (except !== "file-info") {
+    fileInfoPinned = false;
+    setFileInfoOpen(false);
+  }
+  syncViewerPanelState();
+}
+
+function toggleViewerGuide(instance) {
+  if (viewerGuidePanel) return closeViewerPanels();
+  closeViewerPanels("guide");
+  const panel = document.createElement("section");
+  panel.className = "pswp-guide";
+  panel.setAttribute("aria-label", "Viewer guide");
+  panel.innerHTML = `<header><div><span>Viewer guide</span><b>Browse, inspect, and control media</b></div><button type="button" aria-label="Close viewer guide">×</button></header><p class="pswp-guide-intro">Everything stays keyboard- and pointer-friendly. Opening another viewer tool automatically closes this guide.</p><div class="pswp-guide-grid">${GUIDE_SECTIONS.map(([title, items]) => `<section><h3>${esc(title)}</h3><ul>${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>`).join("")}</div><section class="pswp-guide-shortcuts"><h3>Keyboard map</h3><ul>${SHORTCUTS.map(([key, desc]) => `<li><span>${key}</span>${esc(desc)}</li>`).join("")}</ul></section>`;
+  panel.querySelector("button").addEventListener("click", () => closeViewerPanels());
+  panel.addEventListener("pointerdown", (event) => event.stopPropagation());
+  instance.element.appendChild(panel);
+  viewerGuidePanel = panel;
+  syncViewerPanelState();
+}
+
+function registerUi(instance) {
+  const rotateButtons = [];
+  const syncRotateButtons = () => {
+    const enabled = /^image\//.test(instance.currSlide?.data?.file?.mime || "");
+    rotateButtons.forEach((button) => {
+      button.disabled = !enabled;
+      button.setAttribute("aria-disabled", String(!enabled));
+    });
+  };
   instance.on("uiRegister", () => {
     instance.ui.registerElement({
       name: "file-info-button",
@@ -1592,8 +1671,8 @@ function registerUi(instance) {
           '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><line x1="12" y1="11" x2="12" y2="16.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="7.4" r="1.15" fill="currentColor"/>',
         outlineID: "pswp__icn-info",
       },
-      onClick: togglePanel,
-      title: "Keyboard shortcuts",
+      onClick: () => toggleViewerGuide(instance),
+      title: "Viewer guide and keyboard shortcuts",
     });
     instance.ui.registerElement({
       name: "download-button",
@@ -1608,14 +1687,67 @@ function registerUi(instance) {
         outlineID: "pswp__icn-download",
       },
       onClick: (_evt, _el, pswpInstance) => {
+        closeViewerPanels();
         const file = pswpInstance.currSlide?.data?.file;
         if (file) downloadFile(file);
       },
       title: "Download",
     });
+    instance.ui.registerElement({
+      name: "filmstrip-settings-button",
+      order: 14,
+      isButton: true,
+      tagName: "button",
+      html: {
+        isCustomSVG: true,
+        size: 24,
+        inner: '<rect x="3" y="6" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="7" y1="6" x2="7" y2="18" stroke="currentColor" stroke-width="2"/><line x1="17" y1="6" x2="17" y2="18" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/>',
+        outlineID: "pswp__icn-filmstrip-settings",
+      },
+      onClick: () => mountStripSizeControl(instance),
+      onInit: (element) => {
+        element.hidden = lightboxItems.length < 2;
+      },
+      title: "Filmstrip size",
+    });
+    instance.ui.registerElement({
+      name: "rotate-left-button",
+      order: 15,
+      isButton: true,
+      tagName: "button",
+      html: {
+        isCustomSVG: true,
+        size: 24,
+        inner: '<path d="M7.2 7.2H3.5V3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 7a9 9 0 1 1-1 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
+        outlineID: "pswp__icn-rotate-left",
+      },
+      onClick: () => rotateCurrentImage(-90),
+      onInit: (element) => rotateButtons.push(element),
+      title: "Rotate left",
+    });
+    instance.ui.registerElement({
+      name: "rotate-right-button",
+      order: 16,
+      isButton: true,
+      tagName: "button",
+      html: {
+        isCustomSVG: true,
+        size: 24,
+        inner: '<path d="M16.8 7.2h3.7V3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 7a9 9 0 1 0 1 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
+        outlineID: "pswp__icn-rotate-right",
+      },
+      onClick: () => rotateCurrentImage(90),
+      onInit: (element) => rotateButtons.push(element),
+      title: "Rotate right",
+    });
   });
-  instance.on("change", closePanel);
-  instance.on("destroy", closePanel);
+  instance.on("change", syncRotateButtons);
+  instance.on("afterInit", () => {
+    syncRotateButtons();
+    instance.scrollWrap?.addEventListener("pointerdown", () => closeViewerPanels());
+    instance.element?.querySelector(".pswp__button--zoom")?.addEventListener("click", () => closeViewerPanels());
+  });
+  instance.on("destroy", closeViewerPanels);
 }
 
 // Caption updates are deliberately immediate: the image and its identity are
@@ -1684,6 +1816,7 @@ function mountFileInfo(instance) {
 
 function toggleFileInfo(pinPanel = false, forceOpen = false) {
   if (!pswp?.element) return;
+  closeViewerPanels("file-info");
   if (!fileInfoPanel) {
     fileInfoPanel = document.createElement("aside");
     fileInfoPanel.className = "pswp-file-info";
@@ -1712,6 +1845,7 @@ function toggleFileInfo(pinPanel = false, forceOpen = false) {
 function setFileInfoOpen(open) {
   fileInfoPanel?.classList.toggle("open", open);
   pswp?.element?.classList.toggle("pswp-info-open", open);
+  syncViewerPanelState();
 }
 
 function clearFileInfoClose() {
@@ -1789,7 +1923,18 @@ function renderFileInfo(body, data, fallback) {
     ["GPS", exif.location?.latitude != null && exif.location?.longitude != null ? `${exif.location.latitude}, ${exif.location.longitude}` : ""],
     ["GPS altitude", exif.location?.altitude != null ? `${exif.location.altitude} m` : ""],
   ];
-  body.innerHTML = infoSection("File and attributes", general) + infoSection("EXIF", camera);
+  body.innerHTML = exposureSummary(exif) + infoSection("File and attributes", general) + infoSection("EXIF", camera);
+}
+
+function exposureSummary(exif) {
+  const shutter = formatShutterSpeed(exif.exposureTime).split(" (")[0];
+  const values = [
+    ["Shutter", shutter],
+    ["Aperture", exif.aperture ? `f/${exif.aperture}` : ""],
+    ["Sensitivity", exif.isoSpeed ? `ISO ${exif.isoSpeed}` : ""],
+  ].filter(([, value]) => value);
+  if (!values.length) return "";
+  return `<section class="pswp-exposure-summary" aria-label="Exposure triangle">${values.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join("")}</section>`;
 }
 
 function formatShutterSpeed(value) {
@@ -1830,7 +1975,6 @@ function mountStrip(instance, bar) {
   wrapper.className = "swiper-wrapper";
   host.appendChild(wrapper);
   lightboxItems.forEach((f, i) => wrapper.appendChild(stripSlide(f, i)));
-  mountStripSizeControl(bar, instance);
   bar.appendChild(host);
   strip = new Swiper(host, {
     slidesPerView: "auto",
@@ -1870,7 +2014,13 @@ function stopFilmstripPropagation(host) {
   }
 }
 
-function mountStripSizeControl(bar, instance) {
+function mountStripSizeControl(instance) {
+  if (stripSettingsPanel) return closeViewerPanels();
+  closeViewerPanels("filmstrip");
+  const panel = document.createElement("section");
+  panel.className = "pswp-strip-settings";
+  panel.setAttribute("aria-label", "Filmstrip size settings");
+  panel.innerHTML = `<header><div><span>Viewer layout</span><b>Filmstrip size</b></div><button type="button" aria-label="Close filmstrip settings">×</button></header>`;
   const control = document.createElement("div");
   control.className = "pswp-strip-size size-control";
   control.innerHTML = `<div class="size-control-head"><span>Filmstrip scale</span><output class="size-control-value">${stripSizeDescription(stripScale)}</output></div><div class="size-control-rail"><span class="size-control-end"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="5" height="12" rx="1"/><rect x="11" y="6" width="5" height="12" rx="1"/><rect x="18" y="6" width="2" height="12" rx="1"/></svg><small>Browse</small></span><input type="range" min="1" max="13" step="1" value="${stripScale}" aria-label="Filmstrip thumbnail size" aria-valuetext="${stripSizeDescription(stripScale)}"/><span class="size-control-end"><svg class="large" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2"/></svg><small>Inspect</small></span></div>`;
@@ -1884,10 +2034,16 @@ function mountStripSizeControl(bar, instance) {
     applyStripScale(instance.element, true);
     trackEvent("filmstrip_size", label, { step: stripScale });
   });
+  range.addEventListener("keydown", (event) => event.stopPropagation());
   for (const type of ["pointerdown", "mousedown", "touchstart", "touchmove", "wheel", "click"]) {
     control.addEventListener(type, (event) => event.stopPropagation());
   }
-  bar.appendChild(control);
+  panel.querySelector("button").addEventListener("click", () => closeViewerPanels());
+  panel.appendChild(control);
+  instance.element.appendChild(panel);
+  stripSettingsPanel = panel;
+  applyStripScale(instance.element, false);
+  syncViewerPanelState();
 }
 
 function applyStripScale(root, update) {
