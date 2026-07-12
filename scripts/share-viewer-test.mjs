@@ -20,12 +20,34 @@ assert.match(shareJs, /File info/);
 assert.match(shareJs, /megapixels/);
 assert.match(shareJs, /\?inline=1/);
 assert.match(shareJs, /warmedImages/);
+assert.match(shareJs, /decodedImages/);
+assert.match(shareJs, /pswp-progressive-thumb/);
+assert.match(shareJs, /pswp-progressive-full/);
+assert.match(shareJs, /Keep the thumbnail visible until the full image has decoded/);
+assert.match(shareJs, /showHideAnimationType:\s*"none"/);
+assert.doesNotMatch(shareJs, /function animateSlideIn/);
+assert.doesNotMatch(shareJs, /pswp-caption-in/);
 assert.match(shareHtml, /id="tile-size"/);
+assert.match(shareHtml, /type="range"[^>]+max="9"/);
 assert.match(shareJs, /newRevealTargets/);
+assert.match(shareJs, /mountStripSizeControl/);
+assert.match(shareJs, /stopFilmstripPropagation/);
+assert.doesNotMatch(shareJs, /bar\.addEventListener\([^\n]+capture:\s*true/);
 assert.match(shareCss, /\.pswp-file-info/);
+assert.match(shareCss, /\.pswp-progressive-thumb/);
+assert.match(shareCss, /\.pswp-progressive-full/);
+assert.match(shareCss, /\.pswp__counter[\s\S]+left:\s*50%/);
+assert.match(shareCss, /\.pswp-info-hover-zone[\s\S]+width:\s*(?:9[6-9]|1\d\d)px/);
+assert.match(shareCss, /--info-drawer-width/);
+assert.match(shareCss, /\.pswp-info-open[\s\S]+arrow--next/);
 assert.match(shareCss, /\.tile-size-control/);
 assert.match(shareCss, /url\("\/logo-mark\.svg"\)/);
 assert.match(pkg, /share-viewer-test\.mjs/);
+assert.match(shareBackend, /if\s*\(!inline[^)]*\)\s*await bumpDownloadStats/);
+for (const call of shareBackend.matchAll(/await bumpDownloadStats/g)) {
+  const guard = shareBackend.slice(Math.max(0, call.index - 160), call.index);
+  assert.match(guard, /!inline/, `download stat call at ${call.index} must be guarded from inline viewing`);
+}
 
 for (const asset of [
   "public/logo-mark.svg",

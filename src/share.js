@@ -1157,7 +1157,7 @@ export async function shareDownload(request, env, token, ctx) {
   if (cache) {
     const hit = await cache.match(cacheKey);
     if (hit) {
-      if (!range || /bytes=0-/.test(range)) {
+      if (!inline && (!range || /bytes=0-/.test(range))) {
         await bumpDownloadStats(env, share, request, cacheHitName(hit), Number(hit.headers.get("content-length")) || 0, viewer);
       }
       return hit;
@@ -1189,13 +1189,13 @@ export async function shareDownload(request, env, token, ctx) {
       await putPromise;
       const served = await cache.match(cacheKey);
       if (served) {
-        if (/bytes=0-/.test(range)) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
+        if (!inline && /bytes=0-/.test(range)) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
         return served;
       }
     } else {
       if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(putPromise);
       else await putPromise;
-      await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
+      if (!inline) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
       return new Response(clientBody, { status: 200, headers });
     }
     // Cache write raced or was rejected (e.g. size limits) - fall through
@@ -1212,7 +1212,7 @@ export async function shareDownload(request, env, token, ctx) {
   // Count the transfer once: skip stat bumps for mid-file seeks so scrubbing
   // a video does not inflate the download counters.
   const firstChunk = !range || /bytes=0-/.test(range);
-  if (firstChunk) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
+  if (!inline && firstChunk) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
 
   const headers = shareMediaHeaders(meta, inline);
   for (const h of ["content-range", "content-length"]) {

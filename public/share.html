@@ -99,10 +99,11 @@
     <div class="gallery-toolbar panel">
       <nav class="crumbs" id="crumbs" aria-label="folders"></nav>
       <div class="toolbar-tools">
-        <div class="tile-size-control" id="tile-size" role="group" aria-label="photo tile size">
-          <button type="button" data-size="compact" title="Smaller tiles">S</button>
-          <button type="button" data-size="comfortable" title="Balanced tiles">M</button>
-          <button type="button" data-size="large" title="Larger tiles">L</button>
+        <div class="tile-size-control size-control" id="tile-size">
+          <span>Tile size</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>
+          <input id="tile-size-range" type="range" min="1" max="9" step="1" value="5" aria-label="Gallery tile size" aria-valuetext="Balanced" />
+          <svg class="large" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
         </div>
         <select id="sort" class="sort-select" aria-label="sort files">
           <option value="name">Name A-Z</option>

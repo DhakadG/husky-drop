@@ -17,7 +17,8 @@ let allowZip = true;
 let listFetchedAt = 0;
 let current = null; // active listing: { folders: [...] }
 let sortMode = localStorage.getItem("lhdb_sort") || "name";
-let tileSize = localStorage.getItem("lhdb_tile_size") || "comfortable";
+let tileScale = readScale("lhdb_gallery_scale", localStorage.getItem("lhdb_tile_size") === "compact" ? 3 : localStorage.getItem("lhdb_tile_size") === "large" ? 7 : 5);
+let stripScale = readScale("lhdb_strip_scale", 5);
 // crumbs: [{ fid, name, token }]. fid "" = root. Navigation is keyed on the
 // stable fid, never on `token` (a signed "ls" token that is re-minted with a
 // new signature on every listing call and therefore compares unequal across
@@ -32,6 +33,8 @@ const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
 const warmedImages = new Set();
 const warmingImages = new Map();
+const warmingImageElements = new Map();
+const decodedImages = new Map();
 const fileInfoCache = new Map();
 const cardObserver =
   "IntersectionObserver" in window
@@ -568,23 +571,28 @@ function renderMeta() {
 
 function installTileSizeControl() {
   const control = $("tile-size");
-  if (!control) return;
+  const range = $("tile-size-range");
+  if (!control || !range) return;
   const apply = (next, report = false) => {
-    tileSize = ["compact", "comfortable", "large"].includes(next) ? next : "comfortable";
-    localStorage.setItem("lhdb_tile_size", tileSize);
-    control.querySelectorAll("button").forEach((button) => {
-      const active = button.dataset.size === tileSize;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
+    tileScale = readScale("", next);
+    range.value = String(tileScale);
+    range.setAttribute("aria-valuetext", sizeDescription(tileScale));
+    control.style.setProperty("--size-progress", `${((tileScale - 1) / 8) * 100}%`);
+    localStorage.setItem("lhdb_gallery_scale", String(tileScale));
     scheduleLayout();
-    if (report) trackEvent("layout", tileSize, { control: "tile-size" });
+    if (report) trackEvent("layout", sizeDescription(tileScale), { control: "tile-size", step: tileScale });
   };
-  control.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-size]");
-    if (button) apply(button.dataset.size, true);
-  });
-  apply(tileSize);
+  range.addEventListener("input", () => apply(range.value, true));
+  apply(tileScale);
+}
+
+function readScale(key, fallback) {
+  const value = key ? Number(localStorage.getItem(key)) : Number(fallback);
+  return Math.max(1, Math.min(9, Number.isFinite(value) ? Math.round(value) : 5));
+}
+
+function sizeDescription(step) {
+  return ["Tiny", "Very small", "Small", "Compact", "Balanced", "Roomy", "Large", "Very large", "Cinematic"][step - 1];
 }
 
 function folderCard(sub) {
@@ -708,8 +716,8 @@ function tokenFresh(file) {
   return file.dl && file.dlExpiresAt && file.dlExpiresAt - Date.now() > TOKEN_REFRESH_MS;
 }
 
-async function ensureFreshDownload(file) {
-  if (tokenFresh(file)) return file.dl;
+async function ensureFreshDownload(file, force = false) {
+  if (!force && tokenFresh(file)) return file.dl;
   const r = await fetch("/api/share/refresh-dl", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1175,7 +1183,7 @@ function layoutGallery(grid) {
   const W = grid.clientWidth;
   if (!W || !files.length) return;
   const GAP = 2;
-  const base = tileSize === "compact" ? 0.72 : tileSize === "large" ? 1.36 : 1;
+  const base = [0.52, 0.62, 0.72, 0.84, 1, 1.18, 1.36, 1.58, 1.82][tileScale - 1];
   const target = Math.round((W < 640 ? 148 : W < 1280 ? 210 : 250) * base);
   const rows = [];
   let row = [];
@@ -1243,33 +1251,68 @@ function previewUrl(file) {
 
 function warmImage(file) {
   if (!file || !/^image\//.test(file.mime)) return Promise.resolve(false);
-  if (warmedImages.has(file.id)) return Promise.resolve(true);
-  if (warmingImages.has(file.id)) return warmingImages.get(file.id);
-  const promise = ensureFreshDownload(file)
+  return getOrStartDecodedImage(file).promise;
+}
+
+function getOrStartDecodedImage(file, force = false) {
+  const cached = decodedImages.get(file.id);
+  if (!force && cached?.complete && cached.naturalWidth) return { image: cached, promise: Promise.resolve(true), cached: true };
+  if (!force && warmingImages.has(file.id)) {
+    return { image: warmingImageElements.get(file.id), promise: warmingImages.get(file.id), cached: false };
+  }
+  if (force) {
+    const stale = warmingImageElements.get(file.id);
+    if (stale) stale.onload = stale.onerror = null;
+    warmingImages.delete(file.id);
+    warmingImageElements.delete(file.id);
+    decodedImages.delete(file.id);
+    warmedImages.delete(file.id);
+  }
+  const image = new Image();
+  image.decoding = "async";
+  image.referrerPolicy = "no-referrer";
+  const promise = ensureFreshDownload(file, force)
     .then(
       () =>
         new Promise((resolve) => {
-          const image = new Image();
-          image.decoding = "async";
-          image.onload = () => {
-            warmedImages.add(file.id);
-            warmingImages.delete(file.id);
+          const finish = async () => {
+            if (!image.naturalWidth) return fail();
+            try {
+              await image.decode();
+            } catch {
+              // onload + naturalWidth still means the browser has a usable frame.
+            }
+            if (warmingImageElements.get(file.id) === image) {
+              decodedImages.set(file.id, image);
+              warmedImages.add(file.id);
+              warmingImages.delete(file.id);
+              warmingImageElements.delete(file.id);
+            }
             resolve(true);
           };
-          image.onerror = () => {
-            warmingImages.delete(file.id);
+          const fail = () => {
+            if (warmingImageElements.get(file.id) === image) {
+              warmingImages.delete(file.id);
+              warmingImageElements.delete(file.id);
+            }
             resolve(false);
           };
+          image.onload = finish;
+          image.onerror = fail;
           image.src = previewUrl(file);
-          if (image.complete && image.naturalWidth) image.onload();
+          if (image.complete && image.naturalWidth) queueMicrotask(finish);
         }),
     )
     .catch(() => {
-      warmingImages.delete(file.id);
+      if (warmingImageElements.get(file.id) === image) {
+        warmingImages.delete(file.id);
+        warmingImageElements.delete(file.id);
+      }
       return false;
     });
+  warmingImageElements.set(file.id, image);
   warmingImages.set(file.id, promise);
-  return promise;
+  return { image, promise, cached: false };
 }
 
 function warmNeighbors(index) {
@@ -1283,28 +1326,27 @@ async function openViewer(index, sourceEl) {
   if (index < 0 || index >= lightboxItems.length) return;
   const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
-  if (/^image\//.test(file.mime)) await ensureFreshDownload(file).catch(() => {});
   pswp = new PhotoSwipe({
     dataSource: lightboxItems.map(pswpItem),
     index,
     bgOpacity: 0.96,
-    showHideAnimationType: sourceEl ? "zoom" : "fade",
-    showAnimationDuration: 320,
-    hideAnimationDuration: 260,
+    showHideAnimationType: "none",
+    showAnimationDuration: 0,
+    hideAnimationDuration: 0,
     wheelToZoom: true,
     preload: [1, 2],
     loop: false,
-    paddingFn: () => ({ top: 60, bottom: 96, left: 0, right: 0 }),
+    paddingFn: () => ({ top: 60, bottom: stripHeightForScale() + 70, left: 0, right: 0 }),
     appendToEl: document.body,
   });
 
+  registerProgressiveImageContent(pswp);
   registerVideoContent(pswp);
   registerUi(pswp);
   pswp.on("change", () => {
     const current = lightboxItems[pswp.currIndex];
     updateCaption(current);
     syncStrip(pswp.currIndex);
-    animateSlideIn(pswp.currSlide?.content?.element, current);
     warmNeighbors(pswp.currIndex);
     refreshFileInfo(current);
     trackEvent("view", current?.name || "");
@@ -1334,22 +1376,68 @@ async function openViewer(index, sourceEl) {
   warmNeighbors(index);
 }
 
-// A very short, purely-opacity fade on the slide's own content each time it
-// becomes active. PhotoSwipe already pans the whole slide horizontally on
-// prev/next; this just softens the cut on the content itself without
-// touching (or fighting) PhotoSwipe's own pan/zoom transform.
-function animateSlideIn(el, file) {
-  if (!el || !file || warmedImages.has(file.id)) {
-    el?.classList.remove("pswp-slide-in", "pswp-slide-loading");
-    return;
-  }
-  el.classList.remove("pswp-slide-in");
-  el.classList.add("pswp-slide-loading");
-  warmImage(file).then((ready) => {
-    if (!ready || pswp?.currSlide?.data?.file?.id !== file.id) return;
-    el.classList.remove("pswp-slide-loading");
-    void el.offsetWidth;
-    el.classList.add("pswp-slide-in");
+function registerProgressiveImageContent(instance) {
+  instance.on("contentLoad", (event) => {
+    const { content } = event;
+    if (content.data.type !== "image") return;
+    event.preventDefault();
+    const file = content.data.file;
+    const wrap = document.createElement("div");
+    wrap.className = "pswp-progressive-wrap";
+    content.element = wrap;
+
+    const cached = decodedImages.get(file.id);
+    if (cached?.complete && cached.naturalWidth) {
+      cached.className = "pswp-progressive-full";
+      cached.alt = file.name;
+      wrap.classList.add("ready", "from-cache");
+      wrap.appendChild(cached);
+      content._fullImage = cached;
+      return;
+    }
+
+    // Keep the thumbnail visible until the full image has decoded. Hiding the
+    // progressive JPEG layer prevents its undecoded rows from painting blank.
+    if (file.thumb) {
+      const thumb = document.createElement("img");
+      thumb.className = "pswp-progressive-thumb";
+      thumb.src = thumbUrl(file, 1024);
+      thumb.alt = "";
+      thumb.referrerPolicy = "no-referrer";
+      wrap.appendChild(thumb);
+    }
+    attachProgressiveImage(wrap, file, content, false);
+  });
+}
+
+function attachProgressiveImage(wrap, file, content, force) {
+  wrap.querySelector(".pswp-progressive-error")?.remove();
+  wrap.classList.remove("ready", "failed", "from-cache");
+  const record = getOrStartDecodedImage(file, force);
+  const image = record.image;
+  image.className = "pswp-progressive-full";
+  image.alt = file.name;
+  wrap.appendChild(image);
+  content._fullImage = image;
+  record.promise.then((ready) => {
+    // PhotoSwipe preloads adjacent slides while their wrappers are detached.
+    // Mark them ready even off-DOM so navigating to an already decoded image
+    // never gets stuck on the thumbnail or a stale loading state.
+    if (content._fullImage !== image) return;
+    if (ready && image.naturalWidth) {
+      wrap.classList.add("ready");
+      return;
+    }
+    wrap.classList.add("failed");
+    const error = document.createElement("div");
+    error.className = "pswp-progressive-error";
+    error.innerHTML = `<b>Full-resolution image could not be loaded.</b><span>The preview is still available. Refresh the page if this keeps happening.</span><button type="button">Try again</button>`;
+    error.querySelector("button").addEventListener("click", (event) => {
+      event.stopPropagation();
+      attachProgressiveImage(wrap, file, content, true);
+    });
+    wrap.appendChild(error);
+    trackEvent("preview_failed", file.name, { mime: file.mime, size: file.size });
   });
 }
 
@@ -1451,11 +1539,12 @@ function registerUi(instance) {
   instance.on("uiRegister", () => {
     instance.ui.registerElement({
       name: "file-info-button",
-      order: 6,
+      order: 11,
       isButton: true,
       tagName: "button",
       html: {
         isCustomSVG: true,
+        size: 24,
         inner:
           '<rect x="4" y="3" width="16" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="16" x2="13" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
         outlineID: "pswp__icn-file-info",
@@ -1465,11 +1554,12 @@ function registerUi(instance) {
     });
     instance.ui.registerElement({
       name: "shortcuts-button",
-      order: 7,
+      order: 12,
       isButton: true,
       tagName: "button",
       html: {
         isCustomSVG: true,
+        size: 24,
         inner:
           '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><line x1="12" y1="11" x2="12" y2="16.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="7.4" r="1.15" fill="currentColor"/>',
         outlineID: "pswp__icn-info",
@@ -1479,11 +1569,12 @@ function registerUi(instance) {
     });
     instance.ui.registerElement({
       name: "download-button",
-      order: 8,
+      order: 13,
       isButton: true,
       tagName: "button",
       html: {
         isCustomSVG: true,
+        size: 24,
         inner:
           '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="7 10 12 15 17 10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
         outlineID: "pswp__icn-download",
@@ -1499,10 +1590,8 @@ function registerUi(instance) {
   instance.on("destroy", closePanel);
 }
 
-// Caption lives in its own bottom info bar now, not PhotoSwipe's cramped top
-// toolbar (squeezed between square icon buttons, baseline-aligned against
-// them, which is what made it look stuck at an odd position). A short fade
-// on text change keeps it feeling responsive without being showy.
+// Caption updates are deliberately immediate: the image and its identity are
+// one unit, so the text must never trail the current slide with an animation.
 let captionEl = null;
 function updateCaption(file) {
   if (!captionEl || !file) return;
@@ -1510,10 +1599,7 @@ function updateCaption(file) {
   if (file.w && file.h) parts.push(`${file.w} × ${file.h}`, `${megapixels(file)} MP`);
   parts.push(fmtBytes(file.size));
   if (file.at) parts.push(formatLongDate(file.at));
-  captionEl.classList.remove("pswp-caption-in");
   captionEl.innerHTML = `<b>${esc(file.name)}</b><span>${esc(parts.join(" - "))}</span>`;
-  void captionEl.offsetWidth;
-  captionEl.classList.add("pswp-caption-in");
 }
 
 function megapixels(file) {
@@ -1538,18 +1624,6 @@ function formatShortDate(value) {
 function mountBottomBar(instance) {
   const bar = document.createElement("div");
   bar.className = "pswp-bottom-bar";
-  bar.addEventListener("wheel", (e) => e.stopPropagation(), { capture: true, passive: true });
-  // PhotoSwipe's own pan/swipe/close gesture listens for these on its root
-  // element and will contest a drag that starts on the strip (grabbing it
-  // as a main-image swipe), which is why a strip drag looked like it
-  // "snapped back" - it was never reaching Swiper's own handler uncontested.
-  // Same capture+stopPropagation trick as the wheel isolation above: it
-  // blocks propagation to ancestors but not to other listeners already on
-  // this element or its descendants (Swiper's drag handlers live on the
-  // strip host itself), so Swiper still gets the gesture.
-  for (const type of ["pointerdown", "mousedown", "touchstart"]) {
-    bar.addEventListener(type, (e) => e.stopPropagation(), { capture: true });
-  }
   captionEl = document.createElement("div");
   captionEl.className = "pswp-caption";
   bar.appendChild(captionEl);
@@ -1561,14 +1635,20 @@ function mountBottomBar(instance) {
 let fileInfoPanel = null;
 let fileInfoPinned = false;
 let fileInfoRequest = 0;
+let fileInfoCloseTimer = 0;
 
 function mountFileInfo(instance) {
   const hoverZone = document.createElement("div");
   hoverZone.className = "pswp-info-hover-zone";
   hoverZone.setAttribute("aria-hidden", "true");
-  hoverZone.addEventListener("mouseenter", () => toggleFileInfo(false, true));
+  hoverZone.addEventListener("mouseenter", () => {
+    clearFileInfoClose();
+    toggleFileInfo(false, true);
+  });
+  hoverZone.addEventListener("mouseleave", scheduleFileInfoClose);
   instance.element.appendChild(hoverZone);
   instance.on("destroy", () => {
+    clearFileInfoClose();
     fileInfoPanel = null;
     fileInfoPinned = false;
   });
@@ -1583,21 +1663,38 @@ function toggleFileInfo(pinPanel = false, forceOpen = false) {
     fileInfoPanel.innerHTML = `<header><div><span>File info</span><b>EXIF & attributes</b></div><button type="button" aria-label="Close file info">×</button></header><div class="pswp-file-info-body"></div>`;
     fileInfoPanel.querySelector("button").addEventListener("click", () => {
       fileInfoPinned = false;
-      fileInfoPanel.classList.remove("open");
+      setFileInfoOpen(false);
     });
-    fileInfoPanel.addEventListener("mouseenter", () => fileInfoPanel.classList.add("open"));
-    fileInfoPanel.addEventListener("mouseleave", () => {
-      if (!fileInfoPinned) fileInfoPanel.classList.remove("open");
+    fileInfoPanel.addEventListener("mouseenter", () => {
+      clearFileInfoClose();
+      setFileInfoOpen(true);
     });
+    fileInfoPanel.addEventListener("mouseleave", scheduleFileInfoClose);
     pswp.element.appendChild(fileInfoPanel);
   }
   if (pinPanel) fileInfoPinned = !fileInfoPanel.classList.contains("open") || !fileInfoPinned;
   const shouldOpen = forceOpen || pinPanel ? !fileInfoPanel.classList.contains("open") || fileInfoPinned : true;
-  fileInfoPanel.classList.toggle("open", shouldOpen);
+  setFileInfoOpen(shouldOpen);
   if (shouldOpen) {
     refreshFileInfo(pswp.currSlide?.data?.file);
     trackEvent("file_info_open", pswp.currSlide?.data?.file?.name || "");
   }
+}
+
+function setFileInfoOpen(open) {
+  fileInfoPanel?.classList.toggle("open", open);
+  pswp?.element?.classList.toggle("pswp-info-open", open);
+}
+
+function clearFileInfoClose() {
+  clearTimeout(fileInfoCloseTimer);
+  fileInfoCloseTimer = 0;
+}
+
+function scheduleFileInfoClose() {
+  clearFileInfoClose();
+  if (fileInfoPinned) return;
+  fileInfoCloseTimer = setTimeout(() => setFileInfoOpen(false), 360);
 }
 
 async function fetchFileInfo(file) {
@@ -1678,6 +1775,7 @@ function mountStrip(instance, bar) {
   wrapper.className = "swiper-wrapper";
   host.appendChild(wrapper);
   lightboxItems.forEach((f, i) => wrapper.appendChild(stripSlide(f, i)));
+  mountStripSizeControl(bar, instance);
   bar.appendChild(host);
   strip = new Swiper(host, {
     slidesPerView: "auto",
@@ -1686,13 +1784,15 @@ function mountStrip(instance, bar) {
     grabCursor: true,
     simulateTouch: true,
     slideToClickedSlide: true,
-    centeredSlides: true,
-    centeredSlidesBounds: true,
+    centeredSlides: false,
+    centeredSlidesBounds: false,
     watchOverflow: true,
+    nested: true,
+    touchMoveStopPropagation: true,
     // Swiper's mousewheel module defaults to disabled; { forceToAxis: true }
     // alone does NOT turn it on - enabled: true is required. Without it,
     // scrolling the wheel over the strip silently did nothing.
-    mousewheel: { enabled: true, forceToAxis: true, sensitivity: 0.7 },
+    mousewheel: { enabled: true, forceToAxis: false, releaseOnEdges: false, sensitivity: 0.8 },
     keyboard: false, // PhotoSwipe already owns arrow keys for the main image
     initialSlide: instance.currIndex,
     on: {
@@ -1702,7 +1802,55 @@ function mountStrip(instance, bar) {
       },
     },
   });
+  stopFilmstripPropagation(host);
+  applyStripScale(instance.element, false);
   syncStripActive();
+}
+
+function stopFilmstripPropagation(host) {
+  // These listeners are installed after Swiper, so Swiper receives the event
+  // first and PhotoSwipe's parent gesture/zoom handlers do not receive it.
+  for (const type of ["pointerdown", "mousedown", "touchstart", "touchmove", "wheel", "click"]) {
+    host.addEventListener(type, (event) => event.stopPropagation(), { passive: type !== "touchmove" });
+  }
+}
+
+function mountStripSizeControl(bar, instance) {
+  const control = document.createElement("div");
+  control.className = "pswp-strip-size size-control";
+  control.innerHTML = `<span>Filmstrip</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="5" height="12" rx="1"/><rect x="11" y="6" width="5" height="12" rx="1"/><rect x="18" y="6" width="2" height="12" rx="1"/></svg><input type="range" min="1" max="9" step="1" value="${stripScale}" aria-label="Filmstrip thumbnail size" aria-valuetext="${sizeDescription(stripScale)}"/><svg class="large" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/></svg>`;
+  const range = control.querySelector("input");
+  range.addEventListener("input", () => {
+    stripScale = readScale("", range.value);
+    localStorage.setItem("lhdb_strip_scale", String(stripScale));
+    range.setAttribute("aria-valuetext", sizeDescription(stripScale));
+    applyStripScale(instance.element, true);
+    trackEvent("filmstrip_size", sizeDescription(stripScale), { step: stripScale });
+  });
+  for (const type of ["pointerdown", "mousedown", "touchstart", "touchmove", "wheel", "click"]) {
+    control.addEventListener(type, (event) => event.stopPropagation());
+  }
+  bar.appendChild(control);
+}
+
+function applyStripScale(root, update) {
+  const widths = [34, 40, 46, 50, 54, 62, 70, 82, 96];
+  const heights = [26, 31, 35, 39, 42, 48, 54, 63, 74];
+  const width = widths[stripScale - 1];
+  const height = heights[stripScale - 1];
+  root?.style.setProperty("--strip-w", `${width}px`);
+  root?.style.setProperty("--strip-h", `${height}px`);
+  root?.querySelector(".pswp-strip-size")?.style.setProperty("--size-progress", `${((stripScale - 1) / 8) * 100}%`);
+  root?.querySelectorAll(".lb-thumb").forEach((slide) => Object.assign(slide.style, { width: `${width}px`, height: `${height}px` }));
+  if (update && strip && !strip.destroyed) {
+    strip.update();
+    centerStripSlide(pswp?.currIndex || 0);
+    pswp?.updateSize(true);
+  }
+}
+
+function stripHeightForScale() {
+  return [26, 31, 35, 39, 42, 48, 54, 63, 74][stripScale - 1];
 }
 
 // Explicit inline size on every slide, in addition to the CSS - belt and
@@ -1714,7 +1862,7 @@ function stripSlide(f, i) {
   const el = document.createElement("div");
   el.className = "swiper-slide lb-thumb";
   el.dataset.i = i;
-  Object.assign(el.style, { width: "54px", height: "42px", flex: "0 0 auto" });
+  Object.assign(el.style, { width: "var(--strip-w, 54px)", height: "var(--strip-h, 42px)", flex: "0 0 auto" });
   const isVideo = /^video\//.test(f.mime);
   if (f.thumb) {
     const img = document.createElement("img");
@@ -1744,7 +1892,7 @@ function syncStripActive() {
 function syncStrip(index) {
   if (!strip) return;
   strip.update();
-  strip.slideTo(index, 220, false);
+  strip.slideTo(index, 0, false);
   requestAnimationFrame(() => centerStripSlide(index));
   syncStripActive();
 }
@@ -1757,7 +1905,7 @@ function centerStripSlide(index) {
   if (!slide || !host || !wrapper || !host.clientWidth) return;
   const max = Math.max(0, wrapper.scrollWidth - host.clientWidth);
   const target = Math.max(0, Math.min(max, slide.offsetLeft - host.clientWidth / 2 + slide.clientWidth / 2));
-  strip.setTransition(220);
+  strip.setTransition(0);
   strip.setTranslate(-target);
   strip.updateProgress(-target);
   strip.updateActiveIndex(index);
