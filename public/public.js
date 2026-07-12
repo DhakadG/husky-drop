@@ -61,6 +61,24 @@ function chip(text, cls = "", iconName = "") {
 // Exact SVG geometry from the approved UI redesign mockups. Dynamic views use
 // this catalog so an icon cannot quietly drift to a substitute library glyph.
 const UI_ICONS = {
+  // Viewer subset copied verbatim from Lucide Icons (ISC License; the
+  // Feather-derived Aperture icon is MIT). No icon CDN is used at runtime.
+  // Source: https://github.com/lucide-icons/lucide/tree/main/icons
+  "file-text": { mode: "stroke", body: '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"></path><path d="M14 2v5a1 1 0 0 0 1 1h5"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path>' },
+  "circle-help": { mode: "stroke", body: '<circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path>' },
+  "gallery-horizontal-end": { mode: "stroke", body: '<path d="M2 7v10"></path><path d="M6 5v14"></path><rect width="12" height="18" x="10" y="3" rx="2"></rect>' },
+  "rotate-ccw": { mode: "stroke", body: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path>' },
+  "rotate-cw": { mode: "stroke", body: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path>' },
+  "rotate-ccw-square": { mode: "stroke", body: '<path d="M20 9V7a2 2 0 0 0-2-2h-6"></path><path d="m15 2-3 3 3 3"></path><path d="M20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"></path>' },
+  pin: { mode: "stroke", body: '<path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>' },
+  "pin-off": { mode: "stroke", body: '<path d="M12 17v5"></path><path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89"></path><path d="m2 2 20 20"></path><path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"></path>' },
+  aperture: { mode: "stroke", body: '<circle cx="12" cy="12" r="10"></circle><path d="m14.31 8 5.74 9.94"></path><path d="M9.69 8h11.48"></path><path d="m7.38 12 5.74-9.94"></path><path d="M9.69 16 3.95 6.06"></path><path d="M14.31 16H2.83"></path><path d="m16.62 12-5.74 9.94"></path>' },
+  timer: { mode: "stroke", body: '<path d="M10 2h4"></path><path d="m12 14 3-3"></path><circle cx="12" cy="14" r="8"></circle>' },
+  gauge: { mode: "stroke", body: '<path d="m12 14 4-4"></path><path d="M3.34 19a10 10 0 1 1 17.32 0"></path>' },
+  "wand-sparkles": { mode: "stroke", body: '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path>' },
+  "chevrons-left": { mode: "stroke", body: '<path d="m11 17-5-5 5-5"></path><path d="m18 17-5-5 5-5"></path>' },
+  "chevrons-right": { mode: "stroke", body: '<path d="m6 17 5-5-5-5"></path><path d="m13 17 5-5-5-5"></path>' },
+  maximize: { mode: "stroke", body: '<path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="m3 3 5 5"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="m21 3-5 5"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="m3 21 5-5"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path><path d="m21 21-5-5"></path>' },
   list: { mode: "stroke", body: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path>' },
   lock: { mode: "fill", body: '<rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.3"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6z"></path>' },
   "lock-small": { mode: "fill", body: '<rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.4"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7z"></path>' },
@@ -99,13 +117,24 @@ const UI_ICONS = {
   globe: { mode: "stroke", body: '<circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>' },
 };
 
-function uiIcon(name, className = "ico") {
+function uiIconDefinition(name) {
   const definition = UI_ICONS[name];
   if (!definition) throw new Error(`Unknown icon: ${name}`);
+  return definition;
+}
+
+function uiIcon(name, className = "ico") {
+  const definition = uiIconDefinition(name);
   const modeClass = definition.mode === "fill" ? " ico-fill" : "";
   const classes = className === "ico" ? "ico" : `ico ${className}`;
   return `<svg class="${classes}${modeClass}" viewBox="0 0 24 24" aria-hidden="true">${definition.body}</svg>`;
 }
+
+// The share viewer is an ES module loaded after this classic shared script.
+// Publish the catalog helpers explicitly rather than relying on global lexical
+// lookup rules that vary between inline, classic, and module scripts.
+window.uiIcon = uiIcon;
+window.uiIconDefinition = uiIconDefinition;
 
 // Keyed-list DOM reconciliation: creates/updates/reorders elements in
 // `container` to match `items`, removing stragglers. Reuses one element per

@@ -181,6 +181,69 @@
     setCursorState(on ? "scrub" : cursorStateForTarget(target));
   }
 
+  function animateViewerLed(element, state) {
+    if (!element || reduced || !hasGsap) return;
+    gsap.killTweensOf(element);
+    if (/fetching|intent/.test(state)) {
+      gsap.fromTo(element, { scale: 0.72, opacity: 0.45 }, { scale: 1, opacity: 1, duration: 0.24, ease: "back.out(2)" });
+    } else {
+      gsap.fromTo(element, { scale: 0.82 }, { scale: 1, duration: 0.14, ease: "power2.out" });
+    }
+  }
+
+  function animateViewerRotation(element, delta, complete) {
+    if (!element || reduced || !hasGsap) {
+      complete?.();
+      return;
+    }
+    gsap.killTweensOf(element);
+    gsap.fromTo(
+      element,
+      { rotate: 0 },
+      { rotate: delta, duration: 0.14, ease: "power2.inOut", onComplete: complete },
+    );
+  }
+
+  function animateViewerTransition(element, mode, speed) {
+    if (!element || reduced || !hasGsap || mode === "immediate") return;
+    const duration = Math.max(0.08, Math.min(0.7, Number(speed) / 1000));
+    const presets = {
+      fade: [{ opacity: 0 }, { opacity: 1 }],
+      "soft-zoom": [{ opacity: 0, scale: 0.97 }, { opacity: 1, scale: 1 }],
+      "zoom-in": [{ opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1 }],
+      "zoom-out": [{ opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1 }],
+      "scale-up": [{ opacity: 0, scale: 0.78 }, { opacity: 1, scale: 1 }],
+      "slide-horizontal": [{ opacity: 0, x: 28 }, { opacity: 1, x: 0 }],
+      "slide-vertical": [{ opacity: 0, y: 22 }, { opacity: 1, y: 0 }],
+      "slide-up": [{ opacity: 0, y: 38 }, { opacity: 1, y: 0 }],
+      "slide-down": [{ opacity: 0, y: -38 }, { opacity: 1, y: 0 }],
+      "slide-left": [{ opacity: 0, x: 48 }, { opacity: 1, x: 0 }],
+      "slide-right": [{ opacity: 0, x: -48 }, { opacity: 1, x: 0 }],
+      skew: [{ opacity: 0, skewX: 4, x: 16 }, { opacity: 1, skewX: 0, x: 0 }],
+      rotate: [{ opacity: 0, rotate: -2, scale: 0.96 }, { opacity: 1, rotate: 0, scale: 1 }],
+      "rotate-left": [{ opacity: 0, rotate: -7, scale: 0.94 }, { opacity: 1, rotate: 0, scale: 1 }],
+      "rotate-right": [{ opacity: 0, rotate: 7, scale: 0.94 }, { opacity: 1, rotate: 0, scale: 1 }],
+      "flip-x": [{ opacity: 0, rotateY: 36, transformPerspective: 900 }, { opacity: 1, rotateY: 0, transformPerspective: 900 }],
+      "flip-y": [{ opacity: 0, rotateX: 30, transformPerspective: 900 }, { opacity: 1, rotateX: 0, transformPerspective: 900 }],
+      blur: [{ opacity: 0.35, filter: "blur(12px)" }, { opacity: 1, filter: "blur(0px)" }],
+      brightness: [{ opacity: 0.65, filter: "brightness(1.8)" }, { opacity: 1, filter: "brightness(1)" }],
+      "film-cut": [
+        { opacity: 0, filter: "brightness(1.45) contrast(0.9)" },
+        { opacity: 1, filter: "brightness(1) contrast(1)" },
+      ],
+      bounce: [{ opacity: 0, scale: 0.9, y: 16 }, { opacity: 1, scale: 1, y: 0, ease: "back.out(1.5)" }],
+      swing: [{ opacity: 0, rotateZ: -3, transformOrigin: "50% 0%" }, { opacity: 1, rotateZ: 0, transformOrigin: "50% 0%" }],
+    };
+    const preset = presets[mode] || presets.fade;
+    gsap.killTweensOf(element);
+    gsap.fromTo(element, preset[0], {
+      ...preset[1],
+      duration,
+      ease: preset[1].ease || "power2.out",
+      clearProps: "transform,opacity,filter",
+    });
+  }
+
   // Tile hover lift/depth is pure CSS now (see .g-card:hover in style.css) -
   // a per-pointermove GSAP 3D tilt used to run here at the same time as the
   // CSS hover transform, fighting over the same `transform` property every
@@ -199,6 +262,9 @@
     setCursorState,
     setScrubbing,
     tileDepth,
+    animateViewerLed,
+    animateViewerRotation,
+    animateViewerTransition,
     hasMotion: hasGsap && !reduced,
     canHoverPreview: canHover,
   };

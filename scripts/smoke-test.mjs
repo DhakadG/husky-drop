@@ -33,6 +33,21 @@ class FakeKV {
   }
 }
 
+class FakeCache {
+  constructor() {
+    this.values = new Map();
+  }
+
+  async match(request) {
+    const response = this.values.get(typeof request === "string" ? request : request.url);
+    return response?.clone() || undefined;
+  }
+
+  async put(request, response) {
+    this.values.set(typeof request === "string" ? request : request.url, response.clone());
+  }
+}
+
 function makeEnv(extra = {}) {
   const assets =
     extra.ASSETS || {
@@ -74,7 +89,8 @@ function publicJsonRequest(path, body, method = "POST") {
 
 async function withMockedGoogleDrive(fn) {
   const originalFetch = globalThis.fetch;
-  const calls = { listPageSizes: [], mediaRanges: [] };
+  const originalCaches = globalThis.caches;
+  const calls = { listPageSizes: [], mediaRanges: [], thumbnailUrls: [], thumbnailAuth: [] };
   const files = {
     "drive-folder": {
       id: "drive-folder",
@@ -136,6 +152,14 @@ async function withMockedGoogleDrive(fn) {
 
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url);
+    if (/^lh[3-6]\.googleusercontent\.com$/.test(url.hostname)) {
+      calls.thumbnailUrls.push(url.href);
+      const headers = new Headers(init.headers || {});
+      calls.thumbnailAuth.push(headers.get("authorization") || "");
+      return new Response(new TextEncoder().encode("THUMBNAIL"), {
+        headers: { "content-type": "image/jpeg", "content-length": "9" },
+      });
+    }
     if (url.hostname === "oauth2.googleapis.com") {
       if (url.pathname === "/tokeninfo") {
         return new Response(
@@ -216,11 +240,14 @@ async function withMockedGoogleDrive(fn) {
     }
     return originalFetch(input, init);
   };
+  globalThis.caches = { default: new FakeCache() };
 
   try {
     return await fn(calls);
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
   }
 }
 
@@ -700,6 +727,32 @@ async function main() {
     assert.equal(listed.folders[0].loadedCount, 2, "list response reports loaded count");
     assert.equal(listed.folders[0].hasMore, true, "list response reports more pages");
     assert.ok(Number.isFinite(listed.folders[0].files[0].dlExpiresAt), "list response includes download expiry");
+    const firstImage = listed.folders[0].files[0];
+    assert.deepEqual(Object.keys(firstImage.thumbs), ["base", "mid", "max"], "share list returns named thumbnail tiers");
+    assert.match(firstImage.thumbs.base, /^\/api\/share\/thumb\/.+\/base$/, "base thumbnail is an app-owned signed route");
+    assert.equal(firstImage.thumb, firstImage.thumbs.base, "legacy thumb field points at the Base tier");
+    assert.equal(JSON.stringify(firstImage).includes("googleusercontent.com"), false, "listing does not expose Google's thumbnail URL");
+
+    const thumbnailCallsBefore = calls.thumbnailUrls.length;
+    res = await worker.fetch(request(firstImage.thumbs.base), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.status, 200, "signed Base thumbnail route succeeds");
+    assert.equal(res.headers.get("content-type"), "image/jpeg");
+    assert.equal(res.headers.get("x-husky-asset-tier"), "base");
+    assert.equal(await res.text(), "THUMBNAIL");
+    assert.equal(calls.thumbnailUrls.at(-1).endsWith("=s512"), true, "Base tier requests the bounded Drive derivative");
+    assert.equal(calls.thumbnailAuth.at(-1), "Bearer google-token", "thumbnail retrieval stays credentialed server-side");
+    res = await worker.fetch(request(firstImage.thumbs.base), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.status, 200, "cached Base thumbnail succeeds");
+    assert.equal(calls.thumbnailUrls.length, thumbnailCallsBefore + 1, "second thumbnail request reuses cached bytes");
+
+    const invalidTierUrl = firstImage.thumbs.base.replace(/\/base$/, "/huge");
+    res = await worker.fetch(request(invalidTierUrl), driveEnv);
+    assert.equal(res.status, 404, "unrecognized thumbnail tiers are rejected");
+    const thumbParts = firstImage.thumbs.base.split("/");
+    thumbParts[thumbParts.length - 2] = thumbParts.at(-2).replace(/.$/, thumbParts.at(-2).endsWith("A") ? "B" : "A");
+    const tamperedThumb = thumbParts.join("/");
+    res = await worker.fetch(request(tamperedThumb), driveEnv);
+    assert.equal(res.status, 403, "tampered thumbnail capability is rejected");
 
     res = await worker.fetch(
       publicJsonRequest("/api/share/summary", { slug: "drive-share", pin: "2468" }),
@@ -747,6 +800,8 @@ async function main() {
       const refreshed = await res.json();
       assert.match(refreshed.dl, /^\/api\/share\/dl\//, "refresh returns a new download URL");
       assert.ok(refreshed.dlExpiresAt > Date.now(), "refresh returns the new expiry");
+      assert.match(refreshed.thumbs.base, /^\/api\/share\/thumb\/.+\/base$/, "refresh renews thumbnail capabilities too");
+      assert.ok(refreshed.thumbsExpireAt > Date.now(), "refresh returns the thumbnail expiry");
     } finally {
       Date.now = originalNow;
     }

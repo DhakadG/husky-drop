@@ -54,6 +54,7 @@ import {
   refreshShareDownload,
   shareFileInfo,
   shareDownload,
+  shareThumbnail,
   shareRedirect,
   shareSummary,
   shareTrack,
@@ -160,6 +161,11 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/share/file-info") return shareFileInfo(request, env);
   if (m === "POST" && p === "/api/share/zip-ticket") return createShareZipTicket(request, env);
   if (m === "POST" && p === "/api/share/redirect") return shareRedirect(request, env);
+  if (m === "GET" && p.startsWith("/api/share/thumb/")) {
+    const parts = p.slice("/api/share/thumb/".length).split("/");
+    if (parts.length !== 2) return json({ error: "invalid thumbnail path" }, 400);
+    return shareThumbnail(request, env, parts[0], parts[1], ctx);
+  }
   if (m === "GET" && p.startsWith("/api/share/dl/")) {
     return shareDownload(request, env, p.slice("/api/share/dl/".length), ctx);
   }

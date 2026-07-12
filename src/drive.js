@@ -154,6 +154,37 @@ export async function driveFileMeta(env, fileId) {
   return r.json();
 }
 
+// Google documents thumbnailLink as short-lived and unsuitable for direct
+// browser use. These bounded tiers are fetched with OAuth on the Worker and
+// served through Husky Drop's own signed route. The =sNNN suffix is a guarded,
+// best-effort Google image-host convention rather than a Drive API guarantee.
+const DRIVE_THUMB_SIZES = Object.freeze({ base: 512, mid: 1024, max: 1600 });
+const DRIVE_THUMB_HOST = /^lh[3-6]\.googleusercontent\.com$/i;
+
+export function driveThumbnailSize(tier) {
+  return DRIVE_THUMB_SIZES[tier] || 0;
+}
+
+export function scaleDriveThumbnailUrl(value, size) {
+  const url = new URL(String(value || ""));
+  if (!DRIVE_THUMB_HOST.test(url.hostname)) throw new Error("unsupported Drive thumbnail host");
+  return url.href.replace(/=s\d+(?:-[a-z0-9-]+)?$/i, `=s${size}`);
+}
+
+export async function driveThumbnail(env, meta, tier) {
+  const size = driveThumbnailSize(tier);
+  if (!size || !meta?.id || !meta.thumbnailLink) return null;
+  const tok = await accessToken(env);
+  const original = String(meta.thumbnailLink);
+  const scaled = scaleDriveThumbnailUrl(original, size);
+  let response = await fetch(scaled, { headers: { authorization: `Bearer ${tok}` } });
+  if (!response.ok && scaled !== original) {
+    response = await fetch(original, { headers: { authorization: `Bearer ${tok}` } });
+  }
+  if (!response.ok || !response.body || !/^image\//i.test(response.headers.get("content-type") || "")) return null;
+  return { response, size, tier };
+}
+
 export async function driveListFolder(env, folderId, pageToken, options = {}) {
   const tok = await accessToken(env);
   const pageSize = Math.max(1, Math.min(Number(options.pageSize) || 200, 1000));

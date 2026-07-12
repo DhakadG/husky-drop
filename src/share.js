@@ -26,7 +26,7 @@ import {
   slugify,
   timingSafeEqual,
 } from "./util.js";
-import { driveFileMeta, driveGrantAnyoneReader, driveListFolder, driveRevokePermission, accessToken } from "./drive.js";
+import { driveFileMeta, driveGrantAnyoneReader, driveListFolder, driveRevokePermission, driveThumbnail, driveThumbnailSize, accessToken } from "./drive.js";
 import { bumpShareStats, gatePin, liveStub, logEvent, mergeEventsKV, rateLimitRemote } from "./store.js";
 import { getViewer } from "./auth.js";
 
@@ -559,7 +559,10 @@ async function resolveShareTargets(env, share, body) {
 }
 
 async function publicShareFile(env, share, f) {
-  const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, f.id);
+  const [{ token, expiresAt }, { token: thumbToken, expiresAt: thumbsExpireAt }] = await Promise.all([
+    signShareTokenWithExpiry(env, "dl", share.slug, f.id),
+    signShareTokenWithExpiry(env, "th", share.slug, f.id),
+  ]);
   const img = f.imageMediaMetadata || {};
   const vid = f.videoMediaMetadata || {};
   const safety = publicDownloadSafety(f);
@@ -567,13 +570,18 @@ async function publicShareFile(env, share, f) {
   let h = Number(img.height || vid.height) || 0;
   // EXIF rotation of 90/270 means the rendered thumb is portrait.
   if (Number(img.rotation) % 2 === 1) [w, h] = [h, w];
+  const thumbs = f.thumbnailLink
+    ? Object.fromEntries(["base", "mid", "max"].map((tier) => [tier, `/api/share/thumb/${thumbToken}/${tier}`]))
+    : {};
   return {
     id: f.id,
     name: cleanText(f.name || "file", 200),
     size: Number(f.size) || 0,
     mime: cleanText(f.mimeType || "", 100),
     at: Date.parse(f.modifiedTime || f.createdTime) || 0,
-    thumb: f.thumbnailLink || "",
+    thumb: thumbs.base || "",
+    thumbs,
+    thumbsExpireAt,
     w,
     h,
     aspect: w && h ? w / h : 0,
@@ -757,8 +765,16 @@ export async function refreshShareDownload(request, env) {
   if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
-  const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, parsed.fileId);
-  return json({ dl: `/api/share/dl/${token}`, dlExpiresAt: expiresAt });
+  const [{ token, expiresAt }, { token: thumbToken, expiresAt: thumbsExpireAt }] = await Promise.all([
+    signShareTokenWithExpiry(env, "dl", share.slug, parsed.fileId),
+    signShareTokenWithExpiry(env, "th", share.slug, parsed.fileId),
+  ]);
+  return json({
+    dl: `/api/share/dl/${token}`,
+    dlExpiresAt: expiresAt,
+    thumbs: Object.fromEntries(["base", "mid", "max"].map((tier) => [tier, `/api/share/thumb/${thumbToken}/${tier}`])),
+    thumbsExpireAt,
+  });
 }
 
 function normalizeTelemetryEvent(event = {}) {
@@ -1133,6 +1149,51 @@ function dedupeZipName(name, central) {
 // copy, so a second view - or the second half of a scrub - never touches
 // Drive again. Larger files always stream straight through (uncached).
 const EDGE_CACHEABLE_BYTES = 100 * 1024 * 1024;
+
+function shareThumbnailHeaders(source, tier, browserCache = true) {
+  const headers = new Headers({
+    "content-type": source.get("content-type") || "image/jpeg",
+    "cache-control": browserCache ? "private, max-age=900" : "public, max-age=86400",
+    "x-content-type-options": "nosniff",
+    "x-robots-tag": "noindex, nofollow, noarchive",
+    "x-husky-asset-tier": tier,
+  });
+  const length = source.get("content-length");
+  if (length) headers.set("content-length", length);
+  return headers;
+}
+
+export async function shareThumbnail(request, env, token, tier, ctx) {
+  const parsed = await verifyShareToken(env, token, "th");
+  if (!parsed) return json({ error: "invalid or expired thumbnail token" }, 403);
+  if (!driveThumbnailSize(tier)) return json({ error: "thumbnail tier not found" }, 404);
+  const { share, error } = await loadActiveShare(env, parsed.slug);
+  if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
+
+  const meta = await driveFileMeta(env, parsed.fileId);
+  if (!meta?.id || !meta.thumbnailLink) return json({ error: "thumbnail unavailable" }, 404);
+  const revision = encodeURIComponent(meta.modifiedTime || "0");
+  const cache = caches.default;
+  const cacheKey = new Request(`https://media.internal.share/thumb/${parsed.fileId}/${tier}/${revision}`);
+  const hit = await cache.match(cacheKey);
+  if (hit?.body) {
+    return new Response(hit.body, { status: 200, headers: shareThumbnailHeaders(hit.headers, tier, true) });
+  }
+
+  const asset = await driveThumbnail(env, meta, tier);
+  if (!asset?.response?.body) return json({ error: "thumbnail unavailable" }, 404);
+  const [clientBody, cacheBody] = asset.response.body.tee();
+  const cacheWrite = cache.put(
+    cacheKey,
+    new Response(cacheBody, { status: 200, headers: shareThumbnailHeaders(asset.response.headers, tier, false) }),
+  );
+  if (ctx?.waitUntil) ctx.waitUntil(cacheWrite);
+  else await cacheWrite;
+  return new Response(clientBody, { status: 200, headers: shareThumbnailHeaders(asset.response.headers, tier, true) });
+}
 
 export async function shareDownload(request, env, token, ctx) {
   const parsed = await verifyShareToken(env, token, "dl");

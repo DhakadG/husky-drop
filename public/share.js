@@ -1,3 +1,12 @@
+import {
+  VIEWER_MOTION_MODES,
+  assetLampState,
+  createRapidSurfController,
+  createViewerAssetEngine,
+  normalizeRotation,
+  normalizeViewerMotion,
+} from "./share-viewer-engine.js";
+
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
 // stable folder id (never on the rotating signed "ls" token), a justified
 // (Google-Photos-style) tile layout, a PhotoSwipe + Swiper media viewer,
@@ -9,6 +18,7 @@ const slug = location.pathname.split("/").filter(Boolean).pop();
 // ponytail: share-fx.js is a plain <script> loaded before this module in
 // share.html, so window.shareFx is always set by the time this runs.
 const fx = window.shareFx;
+const { uiIcon, uiIconDefinition } = window;
 
 let meta = null;
 let viewer = null;
@@ -33,12 +43,37 @@ let summarySeq = 0;
 const TOKEN_REFRESH_MS = 90 * 1000;
 const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
-const warmedImages = new Set();
-const warmingImages = new Map();
-const warmingImageElements = new Map();
-const decodedImages = new Map();
+const decodedImages = new Map(); // `${fileId}:${tier}` -> decoded blob-backed image asset
+const assetControllers = new Map();
 const viewerTransforms = new Map();
 const fileInfoCache = new Map();
+const FULL_CACHE_LIMIT = 4;
+const VIEWER_MOTION_KEY = "husky-share-viewer-motion-v1";
+const VIEWER_MOTION_LABELS = Object.freeze({
+  fade: "Fade",
+  "soft-zoom": "Soft zoom",
+  "zoom-in": "Zoom in",
+  "zoom-out": "Zoom out",
+  "scale-up": "Scale up",
+  "slide-horizontal": "Slide horizontal",
+  "slide-vertical": "Slide vertical",
+  "slide-up": "Slide up",
+  "slide-down": "Slide down",
+  "slide-left": "Slide left",
+  "slide-right": "Slide right",
+  skew: "Skew",
+  rotate: "Rotate",
+  "rotate-left": "Rotate left",
+  "rotate-right": "Rotate right",
+  "flip-x": "Flip horizontal",
+  "flip-y": "Flip vertical",
+  blur: "Focus blur",
+  brightness: "Light flash",
+  "film-cut": "Film cut",
+  bounce: "Soft bounce",
+  swing: "Swing",
+});
+let viewerMotion = loadViewerMotion();
 const cardObserver =
   "IntersectionObserver" in window
     ? new IntersectionObserver(
@@ -621,10 +656,15 @@ function isViewable(file) {
   return (/^image\//.test(file.mime) && file.thumb) || /^video\//.test(file.mime);
 }
 
-function thumbUrl(file, size) {
-  if (!file.thumb) return "";
-  if (/^data:/i.test(file.thumb)) return file.thumb;
-  return file.thumb.replace(/=s\d+(-c)?$/, `=s${size}`);
+function thumbTierForSize(size) {
+  return size <= 512 ? "base" : size <= 1280 ? "mid" : "max";
+}
+
+function thumbUrl(file, sizeOrTier = "base") {
+  if (!file?.thumb && !file?.thumbs) return "";
+  if (/^data:/i.test(file.thumb || "")) return file.thumb;
+  const tier = typeof sizeOrTier === "string" ? sizeOrTier : thumbTierForSize(sizeOrTier);
+  return file.thumbs?.[tier] || file.thumb || "";
 }
 
 function card(file) {
@@ -725,17 +765,21 @@ function tokenFresh(file) {
   return file.dl && file.dlExpiresAt && file.dlExpiresAt - Date.now() > TOKEN_REFRESH_MS;
 }
 
-async function ensureFreshDownload(file, force = false) {
+async function ensureFreshDownload(file, force = false, signal) {
   if (!force && tokenFresh(file)) return file.dl;
   const r = await fetch("/api/share/refresh-dl", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ slug, pin, dl: file.dl }),
+    signal,
   });
   if (!r.ok) throw new Error("download link expired");
   const d = await r.json();
   file.dl = d.dl;
   file.dlExpiresAt = d.dlExpiresAt;
+  file.thumbs = d.thumbs || file.thumbs;
+  file.thumbsExpireAt = d.thumbsExpireAt || file.thumbsExpireAt;
+  file.thumb = file.thumbs?.base || file.thumb;
   if (file._el) {
     const a = file._el.querySelector(".g-dl");
     if (a) a.href = file.dl;
@@ -1225,6 +1269,264 @@ function layoutGallery(grid) {
 let pswp = null;
 let pswpModulePromise = null;
 let strip = null;
+let viewerAssets = null;
+let rapidController = null;
+let rapidSurf = false;
+let activeAssetState = null;
+let assetLadderElement = null;
+let viewerMotionButton = null;
+let viewerMotionPanel = null;
+let syncRotationUi = () => {};
+
+function loadViewerMotion() {
+  try {
+    return normalizeViewerMotion(JSON.parse(localStorage.getItem(VIEWER_MOTION_KEY) || "null"));
+  } catch {
+    return normalizeViewerMotion(null);
+  }
+}
+
+function saveViewerMotion() {
+  localStorage.setItem(VIEWER_MOTION_KEY, JSON.stringify(viewerMotion));
+}
+
+function rotationFor(file) {
+  return normalizeRotation(viewerTransforms.get(file?.id)?.rotation);
+}
+
+function setRotation(file, value) {
+  const rotation = normalizeRotation(value);
+  if (rotation) viewerTransforms.set(file.id, { rotation });
+  else viewerTransforms.delete(file.id);
+  return rotation;
+}
+
+function assetKey(file, tier) {
+  return `${file.id}:${tier}`;
+}
+
+function highestCachedTier(file) {
+  return ["full", "max", "mid", "base"].find((tier) => decodedImages.has(assetKey(file, tier))) || "";
+}
+
+function canDecodeOriginal(file) {
+  return /^image\/(jpeg|jpg|png|webp|gif|avif|bmp)$/i.test(file?.mime || "");
+}
+
+function inlineUrl(file) {
+  if (!file?.dl) return thumbUrl(file, "max");
+  return `${file.dl}${file.dl.includes("?") ? "&" : "?"}inline=1`;
+}
+
+function previewUrl(file) {
+  return canDecodeOriginal(file) ? inlineUrl(file) : thumbUrl(file, "max");
+}
+
+function tierUrl(file, tier) {
+  return tier === "full" ? previewUrl(file) : thumbUrl(file, tier);
+}
+
+function abortAssetLoad(fileId) {
+  const controller = assetControllers.get(fileId);
+  if (controller) controller.abort();
+  assetControllers.delete(fileId);
+}
+
+function enforceFullCacheLimit() {
+  const full = [...decodedImages.entries()]
+    .filter(([key]) => key.endsWith(":full"))
+    .sort((a, b) => a[1].at - b[1].at);
+  while (full.length > FULL_CACHE_LIMIT) {
+    const [key, asset] = full.shift();
+    if (asset.objectUrl) URL.revokeObjectURL(asset.objectUrl);
+    decodedImages.delete(key);
+  }
+}
+
+async function responseBlobWithProgress(response, signal, onProgress) {
+  const length = Number(response.headers.get("content-length")) || 0;
+  if (!response.body || !length) return response.blob();
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
+  while (true) {
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    onProgress?.(received / length);
+  }
+  return new Blob(chunks, { type: response.headers.get("content-type") || "image/jpeg" });
+}
+
+async function decodeAssetUrl(url, file, tier, objectUrl = "") {
+  const image = new Image();
+  image.decoding = "async";
+  image.referrerPolicy = "no-referrer";
+  image.alt = file.name;
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = () => reject(new Error(`${tier} preview could not be decoded`));
+    image.src = url;
+  });
+  try {
+    await image.decode();
+  } catch {
+    // onload + naturalWidth is still a browser-usable decoded frame.
+  }
+  if (!image.naturalWidth) throw new Error(`${tier} preview is empty`);
+  return { image, url, objectUrl, tier, at: performance.now() };
+}
+
+async function loadTierAsset(file, tier, onProgress) {
+  const key = assetKey(file, tier);
+  const cached = decodedImages.get(key);
+  if (cached?.image?.complete && cached.image.naturalWidth) {
+    cached.at = performance.now();
+    return cached;
+  }
+  abortAssetLoad(file.id);
+  const controller = new AbortController();
+  assetControllers.set(file.id, controller);
+  let objectUrl = "";
+  try {
+    const thumbnailsExpiring = tier !== "full" && file.thumbsExpireAt && file.thumbsExpireAt - Date.now() < TOKEN_REFRESH_MS;
+    if (tier === "full") await ensureFreshDownload(file, false, controller.signal);
+    else if (thumbnailsExpiring) await ensureFreshDownload(file, true, controller.signal);
+    if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
+    const url = tierUrl(file, tier);
+    if (!url) throw new Error(`${tier} preview is unavailable`);
+    if (/^data:/i.test(url)) {
+      const asset = await decodeAssetUrl(url, file, tier);
+      decodedImages.set(key, asset);
+      return asset;
+    }
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`${tier} preview returned HTTP ${response.status}`);
+    const blob = await responseBlobWithProgress(response, controller.signal, onProgress);
+    objectUrl = URL.createObjectURL(blob);
+    const asset = await decodeAssetUrl(objectUrl, file, tier, objectUrl);
+    decodedImages.set(key, asset);
+    if (tier === "full") enforceFullCacheLimit();
+    return asset;
+  } catch (error) {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    throw error;
+  } finally {
+    if (assetControllers.get(file.id) === controller) assetControllers.delete(file.id);
+  }
+}
+
+function readyTierFor(file, state, forceBase = false) {
+  if (forceBase) return "base";
+  const order = ["full", "max", "mid", "base"];
+  const ceiling = Math.max(1, ["empty", "base", "mid", "max", "full"].indexOf(state?.tier || "base"));
+  return order.find((tier) => ["empty", "base", "mid", "max", "full"].indexOf(tier) <= ceiling && decodedImages.has(assetKey(file, tier))) || "base";
+}
+
+function imageForTier(file, tier, className) {
+  const cached = decodedImages.get(assetKey(file, tier));
+  const image = document.createElement("img");
+  image.className = className;
+  image.alt = className === "pswp-progressive-thumb" ? "" : file.name;
+  image.decoding = "async";
+  image.referrerPolicy = "no-referrer";
+  image.src = cached?.url || tierUrl(file, tier);
+  return image;
+}
+
+function renderTierIntoWrap(wrap, file, state) {
+  if (!wrap || wrap.dataset.fileId !== file.id) return;
+  const tier = readyTierFor(file, state, rapidSurf);
+  if (wrap.dataset.displayTier === tier) return;
+  const className = tier === "full" ? "pswp-progressive-full" : "pswp-progressive-tier";
+  const image = imageForTier(file, tier, className);
+  const finish = () => {
+    if (!wrap.isConnected && !wrap.parentNode) return;
+    wrap.querySelectorAll(".pswp-progressive-tier, .pswp-progressive-full").forEach((node) => {
+      if (node !== image) node.remove();
+    });
+    wrap.dataset.displayTier = tier;
+    wrap.dataset.assetTier = tier;
+    wrap.classList.add("ready");
+  };
+  wrap.appendChild(image);
+  if (image.complete && image.naturalWidth) finish();
+  else image.addEventListener("load", finish, { once: true });
+}
+
+function renderActiveAsset(state) {
+  const file = pswp?.currSlide?.data?.file;
+  if (!file || state?.fileId !== file.id) return;
+  pswp.element?.querySelectorAll(`.pswp-progressive-wrap[data-file-id="${CSS.escape(file.id)}"]`).forEach((wrap) => {
+    renderTierIntoWrap(wrap, file, state);
+  });
+}
+
+function updateAssetLadder(state = activeAssetState) {
+  if (!assetLadderElement || !state) return;
+  const mapped = assetLampState(state);
+  assetLadderElement.dataset.state = mapped.key;
+  assetLadderElement.dataset.tier = state.tier;
+  assetLadderElement.querySelector(".pswp-asset-label").textContent = mapped.label;
+  const filled = state.tier === "full" ? 10 : Math.round((state.intentStep / state.intentSteps) * 10);
+  assetLadderElement.querySelectorAll("[data-intent-step]").forEach((cell, index) => cell.classList.toggle("active", index < filled));
+  fx.animateViewerLed(assetLadderElement.querySelector(".pswp-asset-lamp"), mapped.key);
+}
+
+function handleAssetState(state) {
+  const currentFile = pswp?.currSlide?.data?.file;
+  if (!currentFile || currentFile.id !== state.fileId) return;
+  activeAssetState = state;
+  updateAssetLadder(state);
+  syncAssetError(state, currentFile);
+  if (!state.loading || rapidSurf) renderActiveAsset(state);
+}
+
+function syncAssetError(state, file) {
+  pswp?.element?.querySelectorAll(`.pswp-progressive-wrap[data-file-id="${CSS.escape(file.id)}"]`).forEach((wrap) => {
+    let notice = wrap.querySelector(".pswp-progressive-error");
+    if (!state.error) {
+      notice?.remove();
+      return;
+    }
+    if (notice) return;
+    notice = document.createElement("div");
+    notice.className = "pswp-progressive-error";
+    notice.innerHTML = `<b>This preview could not be upgraded.</b><span>The current preview remains available. Retry now, or refresh the page if this keeps happening.</span><button type="button">Retry</button>`;
+    notice.querySelector("button").addEventListener("click", (event) => {
+      event.stopPropagation();
+      notice.remove();
+      if (/^full\b/i.test(state.error)) void viewerAssets?.ensureFull(file);
+      else void viewerAssets?.activate(file);
+      trackEvent("viewer_asset_retry", file.name, { tier: state.tier, error: state.error });
+    });
+    wrap.appendChild(notice);
+  });
+}
+
+function noteRapidNavigation(reason, held = false) {
+  rapidController?.note(reason, held);
+}
+
+function endRapidNavigation(reason) {
+  rapidController?.release(reason);
+}
+
+function promoteActiveSlide(reason = "settled") {
+  const file = pswp?.currSlide?.data?.file;
+  if (!file || !/^image\//.test(file.mime) || rapidSurf) return;
+  void viewerAssets?.activate(file, { reason });
+}
+
+function bindRapidPointer(button, direction) {
+  if (!button) return;
+  button.addEventListener("pointerdown", () => noteRapidNavigation(`arrow-${direction}`, true));
+  for (const type of ["pointerup", "pointercancel", "pointerleave"]) {
+    button.addEventListener(type, () => endRapidNavigation(`arrow-${direction}-release`));
+  }
+}
 
 function loadPswp() {
   if (!pswpModulePromise) pswpModulePromise = import("/vendor/photoswipe.esm.min.js").then((m) => m.default);
@@ -1236,107 +1538,46 @@ function pswpItem(file) {
   const ratio = file.aspect || (file.w && file.h ? file.w / file.h : 16 / 9);
   let width = file.w || 1600;
   let height = file.h || Math.round(width / Math.min(2.8, Math.max(0.4, ratio)));
-  const rotation = viewerTransforms.get(file.id)?.rotation || 0;
+  const rotation = rotationFor(file);
   if (Math.abs(rotation / 90) % 2 === 1) [width, height] = [height, width];
   return {
     file,
     type: isVideo ? "video" : "image",
     width,
     height,
-    msrc: file.thumb ? thumbUrl(file, 512) : "",
-    src: isVideo ? undefined : previewUrl(file),
+    msrc: file.thumb ? thumbUrl(file, "base") : "",
+    src: isVideo ? undefined : thumbUrl(file, "mid"),
   };
-}
-
-function inlineUrl(file) {
-  if (!file?.dl) return thumbUrl(file, 2048);
-  return `${file.dl}${file.dl.includes("?") ? "&" : "?"}inline=1`;
-}
-
-function previewUrl(file) {
-  // RAW formats can be 50 MB+ but are not browser-decodable. Drive's large
-  // rendered preview is their full-screen visual; common web formats use the
-  // original inline stream and benefit from the Worker's edge cache.
-  return /^image\/(jpeg|jpg|png|webp|gif|avif|bmp)$/i.test(file?.mime || "") ? inlineUrl(file) : thumbUrl(file, 2560);
-}
-
-function warmImage(file) {
-  if (!file || !/^image\//.test(file.mime)) return Promise.resolve(false);
-  return getOrStartDecodedImage(file).promise;
-}
-
-function getOrStartDecodedImage(file, force = false) {
-  const cached = decodedImages.get(file.id);
-  if (!force && cached?.complete && cached.naturalWidth) return { image: cached, promise: Promise.resolve(true), cached: true };
-  if (!force && warmingImages.has(file.id)) {
-    return { image: warmingImageElements.get(file.id), promise: warmingImages.get(file.id), cached: false };
-  }
-  if (force) {
-    const stale = warmingImageElements.get(file.id);
-    if (stale) stale.onload = stale.onerror = null;
-    warmingImages.delete(file.id);
-    warmingImageElements.delete(file.id);
-    decodedImages.delete(file.id);
-    warmedImages.delete(file.id);
-  }
-  const image = new Image();
-  image.decoding = "async";
-  image.referrerPolicy = "no-referrer";
-  const promise = ensureFreshDownload(file, force)
-    .then(
-      () =>
-        new Promise((resolve) => {
-          const finish = async () => {
-            if (!image.naturalWidth) return fail();
-            try {
-              await image.decode();
-            } catch {
-              // onload + naturalWidth still means the browser has a usable frame.
-            }
-            if (warmingImageElements.get(file.id) === image) {
-              decodedImages.set(file.id, image);
-              warmedImages.add(file.id);
-              warmingImages.delete(file.id);
-              warmingImageElements.delete(file.id);
-            }
-            resolve(true);
-          };
-          const fail = () => {
-            if (warmingImageElements.get(file.id) === image) {
-              warmingImages.delete(file.id);
-              warmingImageElements.delete(file.id);
-            }
-            resolve(false);
-          };
-          image.onload = finish;
-          image.onerror = fail;
-          image.src = previewUrl(file);
-          if (image.complete && image.naturalWidth) queueMicrotask(finish);
-        }),
-    )
-    .catch(() => {
-      if (warmingImageElements.get(file.id) === image) {
-        warmingImages.delete(file.id);
-        warmingImageElements.delete(file.id);
-      }
-      return false;
-    });
-  warmingImageElements.set(file.id, image);
-  warmingImages.set(file.id, promise);
-  return { image, promise, cached: false };
-}
-
-function warmNeighbors(index) {
-  for (const n of [index - 2, index - 1, index + 1, index + 2]) {
-    const file = lightboxItems[n];
-    if (file && /^image\//.test(file.mime)) warmImage(file);
-  }
 }
 
 async function openViewer(index, sourceEl) {
   if (index < 0 || index >= lightboxItems.length) return;
   const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
+  viewerAssets = createViewerAssetEngine({
+    loadTier: loadTierAsset,
+    abort: abortAssetLoad,
+    onChange: handleAssetState,
+  });
+  for (const item of lightboxItems) {
+    if (!/^image\//.test(item.mime || "")) continue;
+    const cachedTier = highestCachedTier(item);
+    if (cachedTier) viewerAssets.seed(item, cachedTier);
+  }
+  rapidController = createRapidSurfController({
+    onChange: ({ active, reason }) => {
+      rapidSurf = active;
+      pswp?.element?.classList.toggle("pswp-rapid-surf", active);
+      viewerAssets?.setRapid(active);
+      if (active) {
+        const currentFile = pswp?.currSlide?.data?.file;
+        if (currentFile) renderActiveAsset({ ...viewerAssets.stateFor(currentFile), rapid: true });
+      } else {
+        promoteActiveSlide(reason);
+      }
+      updateAssetLadder();
+    },
+  });
   pswp = new PhotoSwipe({
     dataSource: lightboxItems.map(pswpItem),
     index,
@@ -1345,9 +1586,9 @@ async function openViewer(index, sourceEl) {
     showAnimationDuration: 0,
     hideAnimationDuration: 0,
     wheelToZoom: true,
-    preload: [1, 2],
+    preload: [1, 1],
     loop: false,
-    paddingFn: () => ({ top: window.innerWidth <= 640 ? 94 : 60, bottom: stripHeightForScale() + 70, left: 0, right: 0 }),
+    paddingFn: () => ({ top: window.innerWidth <= 640 ? 116 : 104, bottom: pswp?.element?.classList.contains("pswp-filmstrip-hidden") ? 56 : stripHeightForScale() + 70, left: 0, right: 0 }),
     appendToEl: document.body,
   });
 
@@ -1355,49 +1596,90 @@ async function openViewer(index, sourceEl) {
   registerVideoContent(pswp);
   registerUi(pswp);
   pswp.on("change", () => {
-    closeViewerPanels();
+    noteRapidNavigation("slide-change");
+    closeViewerPanels({ except: fileInfoPinned ? "file-info" : "" });
     const current = lightboxItems[pswp.currIndex];
     updateCaption(current);
     syncStrip(pswp.currIndex);
-    warmNeighbors(pswp.currIndex);
     refreshFileInfo(current);
+    if (/^image\//.test(current?.mime || "")) void viewerAssets.activate(current);
+    applyViewerTransition();
+    syncRotationUi();
     trackEvent("view", current?.name || "");
   });
-  const onViewerKeydown = (e) => {
-    if (e.target instanceof Element && e.target.closest("input, button, select, textarea, [contenteditable]")) return;
-    if (e.key === "Home") {
-      e.preventDefault();
-      pswp.goTo(0);
-    } else if (e.key === "End") {
-      e.preventDefault();
-      pswp.goTo(lightboxItems.length - 1);
-    } else if (e.key === "[") {
-      e.preventDefault();
-      rotateCurrentImage(-90);
-    } else if (e.key === "]") {
-      e.preventDefault();
-      rotateCurrentImage(90);
-    } else if (e.key === "Escape" && hasOpenViewerPanel()) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      closeViewerPanels();
+  const editableTarget = (target) => target instanceof Element && target.closest("input, button, select, textarea, [contenteditable]");
+  const goRelative = (amount) => pswp?.goTo(Math.max(0, Math.min(lightboxItems.length - 1, pswp.currIndex + amount)));
+  const onViewerKeydown = (event) => {
+    if (editableTarget(event.target)) return;
+    const key = event.key;
+    if ((key === "ArrowLeft" || key === "ArrowRight") && event.repeat) noteRapidNavigation("key-hold", true);
+    if (event.shiftKey && key === "ArrowLeft") return event.preventDefault(), goRelative(-10);
+    if (event.shiftKey && key === "ArrowRight") return event.preventDefault(), goRelative(10);
+    const action = {
+      Home: () => pswp.goTo(0),
+      End: () => pswp.goTo(lightboxItems.length - 1),
+      ",": () => goRelative(-10),
+      "<": () => goRelative(-10),
+      ".": () => goRelative(10),
+      ">": () => goRelative(10),
+      "[": () => rotateCurrentMedia(-90),
+      "]": () => rotateCurrentMedia(90),
+      "0": resetCurrentRotation,
+      i: () => toggleFileInfo(false),
+      I: () => toggleFileInfo(false),
+      p: toggleFileInfoPin,
+      P: toggleFileInfoPin,
+      t: toggleFilmstrip,
+      T: toggleFilmstrip,
+      a: toggleViewerMotion,
+      A: toggleViewerMotion,
+      f: toggleViewerFullscreen,
+      F: toggleViewerFullscreen,
+      "?": () => toggleViewerGuide(pswp),
+    }[key];
+    if (key === "Escape" && hasOpenViewerPanel()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeViewerPanels({ forceInfo: true });
+      return;
+    }
+    if (action) {
+      event.preventDefault();
+      action();
     }
   };
-  window.addEventListener("keydown", onViewerKeydown);
+  const onViewerKeyup = (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") endRapidNavigation("key-release");
+  };
+  const onViewerBlur = () => endRapidNavigation("window-blur");
+  window.addEventListener("keydown", onViewerKeydown, true);
+  window.addEventListener("keyup", onViewerKeyup, true);
+  window.addEventListener("blur", onViewerBlur);
   pswp.on("destroy", () => {
     const closing = lightboxItems[pswp.currIndex];
     window.shareTrekker?.track("media_view_end", closing?.name || "", { reason: "viewer_close" });
-    window.removeEventListener("keydown", onViewerKeydown);
+    window.removeEventListener("keydown", onViewerKeydown, true);
+    window.removeEventListener("keyup", onViewerKeyup, true);
+    window.removeEventListener("blur", onViewerBlur);
+    rapidController?.cancel("viewer-destroy");
+    viewerAssets?.destroy();
+    rapidController = null;
+    viewerAssets = null;
+    rapidSurf = false;
+    activeAssetState = null;
+    assetLadderElement = null;
+    syncRotationUi = () => {};
     destroyStrip();
-    closeViewerPanels();
+    closeViewerPanels({ forceInfo: true });
     pswp = null;
   });
 
   pswp.init();
   mountBottomBar(pswp);
   updateCaption(file);
-  warmImage(file);
-  warmNeighbors(index);
+  bindRapidPointer(pswp.element?.querySelector(".pswp__button--arrow--prev"), "previous");
+  bindRapidPointer(pswp.element?.querySelector(".pswp__button--arrow--next"), "next");
+  if (/^image\//.test(file.mime)) void viewerAssets.activate(file);
 }
 
 function registerProgressiveImageContent(instance) {
@@ -1414,72 +1696,30 @@ function registerProgressiveImageContent(instance) {
     const file = content.data.file;
     const wrap = document.createElement("div");
     wrap.className = "pswp-progressive-wrap";
+    wrap.dataset.fileId = file.id;
     content.element = wrap;
     content._progressiveManaged = true;
     applyImageTransform(wrap, file);
 
-    const cached = decodedImages.get(file.id);
-    if (cached?.complete && cached.naturalWidth) {
-      cached.className = "pswp-progressive-full";
-      cached.alt = file.name;
-      wrap.classList.add("ready", "from-cache");
-      wrap.appendChild(cached);
-      content._fullImage = cached;
-      setProgressiveLoading(content, false);
-      return;
-    }
-
-    // Keep the thumbnail visible until the full image has decoded. Hiding the
-    // progressive JPEG layer prevents its undecoded rows from painting blank.
+    // Keep the thumbnail visible until the full image has decoded. More
+    // precisely, each promoted tier replaces it only after that tier decodes, so no
+    // undecoded rows or blank canvas can replace a usable lightweight frame.
     if (file.thumb) {
-      const thumb = document.createElement("img");
-      thumb.className = "pswp-progressive-thumb";
-      thumb.src = thumbUrl(file, 1024);
-      thumb.alt = "";
-      thumb.referrerPolicy = "no-referrer";
+      const thumb = imageForTier(file, "base", "pswp-progressive-thumb");
       wrap.appendChild(thumb);
     }
-    attachProgressiveImage(wrap, file, content, false);
-  });
-}
-
-function attachProgressiveImage(wrap, file, content, force) {
-  wrap.querySelector(".pswp-progressive-error")?.remove();
-  wrap.classList.remove("ready", "failed", "from-cache");
-  const record = getOrStartDecodedImage(file, force);
-  const image = record.image;
-  image.className = "pswp-progressive-full";
-  image.alt = file.name;
-  wrap.appendChild(image);
-  content._fullImage = image;
-  setProgressiveLoading(content, true);
-  record.promise.then((ready) => {
-    // PhotoSwipe preloads adjacent slides while their wrappers are detached.
-    // Mark them ready even off-DOM so navigating to an already decoded image
-    // never gets stuck on the thumbnail or a stale loading state.
-    if (content._fullImage !== image) return;
-    if (ready && image.naturalWidth) {
-      wrap.classList.add("ready");
-      setProgressiveLoading(content, false);
-      return;
-    }
-    wrap.classList.add("failed");
-    setProgressiveLoading(content, false, true);
-    const error = document.createElement("div");
-    error.className = "pswp-progressive-error";
-    error.innerHTML = `<b>Full-resolution image could not be loaded.</b><span>The preview is still available. Refresh the page if this keeps happening.</span><button type="button">Try again</button>`;
-    error.querySelector("button").addEventListener("click", (event) => {
-      event.stopPropagation();
-      attachProgressiveImage(wrap, file, content, true);
-    });
-    wrap.appendChild(error);
-    trackEvent("preview_failed", file.name, { mime: file.mime, size: file.size });
+    const state = viewerAssets?.stateFor(file) || { fileId: file.id, tier: "base", loading: "", intentStep: 0, intentSteps: 6 };
+    renderTierIntoWrap(wrap, file, state);
+    setProgressiveLoading(content, false);
+    if (instance.currSlide?.data?.file?.id === file.id) applyViewerTransition(wrap);
   });
 }
 
 function setProgressiveLoading(content, loading, isError = false) {
-  const changed = content._progressiveLoading !== loading;
-  content._progressiveLoading = loading;
+  const visibleTier = content.element?.querySelector(".pswp-progressive-thumb, .pswp-progressive-tier, .pswp-progressive-full");
+  const next = Boolean(loading && !visibleTier);
+  const changed = content._progressiveLoading !== next;
+  content._progressiveLoading = next;
   content.instance?.ui?.updatePreloaderVisibility?.();
   if (changed && !loading && content.slide) {
     content.instance.dispatch("loadComplete", { slide: content.slide, content, isError });
@@ -1487,22 +1727,40 @@ function setProgressiveLoading(content, loading, isError = false) {
 }
 
 function applyImageTransform(wrap, file) {
-  const transform = viewerTransforms.get(file.id) || { rotation: 0 };
-  const rotation = ((transform.rotation % 360) + 360) % 360;
+  const rotation = rotationFor(file);
   wrap.style.setProperty("--media-rotation", `${rotation}deg`);
   wrap.classList.toggle("quarter-turn", rotation === 90 || rotation === 270);
 }
 
-function rotateCurrentImage(delta) {
+function rotateCurrentMedia(delta) {
   const file = pswp?.currSlide?.data?.file;
-  if (!file || !/^image\//.test(file.mime)) return;
+  if (!file || !/^(image|video)\//.test(file.mime)) return;
   closeViewerPanels();
-  const current = viewerTransforms.get(file.id) || { rotation: 0 };
-  const rotation = ((current.rotation + delta) % 360 + 360) % 360;
-  viewerTransforms.set(file.id, { ...current, rotation });
-  pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
-  pswp.refreshSlideContent(pswp.currIndex);
-  trackEvent("image_rotate", `${rotation}°`, { file: file.name, direction: delta < 0 ? "left" : "right" });
+  const rotation = setRotation(file, rotationFor(file) + delta);
+  const finish = () => {
+    if (!pswp) return;
+    pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
+    pswp.refreshSlideContent(pswp.currIndex);
+    syncRotationUi();
+  };
+  fx.animateViewerRotation(pswp.currSlide?.content?.element, delta, finish);
+  trackEvent("media_rotate", `${rotation}°`, { file: file.name, direction: delta < 0 ? "left" : "right", mime: file.mime });
+}
+
+function resetCurrentRotation() {
+  const file = pswp?.currSlide?.data?.file;
+  const currentRotation = rotationFor(file);
+  if (!file || !currentRotation) return;
+  const delta = currentRotation > 180 ? 360 - currentRotation : -currentRotation;
+  setRotation(file, 0);
+  const finish = () => {
+    if (!pswp) return;
+    pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
+    pswp.refreshSlideContent(pswp.currIndex);
+    syncRotationUi();
+  };
+  fx.animateViewerRotation(pswp.currSlide?.content?.element, delta, finish);
+  trackEvent("media_rotation_reset", file.name, { mime: file.mime });
 }
 
 function registerVideoContent(instance) {
@@ -1513,10 +1771,12 @@ function registerVideoContent(instance) {
     const file = content.data.file;
     const wrap = document.createElement("div");
     wrap.className = "pswp-video-wrap";
+    wrap.dataset.fileId = file.id;
+    applyImageTransform(wrap, file);
     if (file.thumb) {
       const poster = document.createElement("img");
       poster.className = "pswp-video-poster";
-      poster.src = thumbUrl(file, 1024);
+      poster.src = thumbUrl(file, "base");
       poster.alt = "";
       wrap.appendChild(poster);
     }
@@ -1524,7 +1784,7 @@ function registerVideoContent(instance) {
     loading.className = "pswp-video-loading";
     loading.textContent = "Loading video";
     wrap.appendChild(loading);
-    getPreviewVideo(file)
+    content._startVideo = () => content._videoPromise ||= getPreviewVideo(file)
       .then((video) => {
         cleanupTilePreview(file);
         video.pause();
@@ -1546,6 +1806,7 @@ function registerVideoContent(instance) {
     content.element = wrap;
   });
   instance.on("contentActivate", (e) => {
+    if (!e.content?._video) e.content?._startVideo?.();
     const video = e.content?._video;
     if (video) video.play().catch(() => {});
   });
@@ -1578,9 +1839,18 @@ function cleanupTilePreview(file) {
 }
 
 const SHORTCUTS = [
-  ["&larr; &rarr;", "Previous / next"],
+  ["← / →", "Previous / next"],
+  ["Shift + ← / →", "Skip back / forward 10"],
+  [", / .", "Skip back / forward 10"],
   ["Home / End", "First / last file"],
   ["[ / ]", "Rotate left / right"],
+  ["0", "Reset rotation"],
+  ["I", "Open or close File info"],
+  ["P", "Pin or unpin File info"],
+  ["T", "Show or hide the filmstrip"],
+  ["A", "Enable or disable viewer motion"],
+  ["F", "Enter or leave fullscreen"],
+  ["?", "Open this viewer guide"],
   ["Esc", "Close the active panel, then viewer"],
   ["Scroll wheel or drag", "Browse the filmstrip"],
   ["Shift + hover a tile", "Scrub a video (desktop)"],
@@ -1588,23 +1858,26 @@ const SHORTCUTS = [
 ];
 
 const GUIDE_SECTIONS = [
-  ["Navigate", ["Use the arrow buttons, keyboard arrows, or click a filmstrip thumbnail.", "Drag or wheel-scroll the filmstrip to move through a large set."]],
-  ["Inspect", ["Zoom with the mouse wheel, pinch gesture, or Zoom button.", "Open File info for dimensions, exposure settings, camera, lens, and GPS metadata."]],
-  ["Organize the view", ["Filmstrip scale offers 13 sizes from overview to inspection.", "Rotate the current image left or right; rotation is remembered while this page remains open."]],
+  ["Navigate", ["Use the arrow buttons, keyboard arrows, ±10 buttons, or a filmstrip thumbnail.", "Rapid browsing stays on small previews; the viewer promotes the settled image through higher-quality tiers."]],
+  ["Inspect", ["Zoom or use File info for dimensions, dates, exposure, camera, lens, and GPS metadata.", "Pin File info when you want it to remain visible while changing images or using other tools."]],
+  ["Shape the view", ["The filmstrip supports 13 sizes and can be hidden entirely.", "Rotation works for images and videos, shows its current angle, and can be reset with 0."]],
+  ["Motion", ["Motion is optional and defaults to Immediate for the fastest browsing.", "Choose a transition style and speed from the Motion settings panel."]],
 ];
 
 let viewerGuidePanel = null;
 let stripSettingsPanel = null;
 
 function hasOpenViewerPanel() {
-  return Boolean(viewerGuidePanel || stripSettingsPanel || fileInfoPanel?.classList.contains("open"));
+  return Boolean(viewerGuidePanel || stripSettingsPanel || viewerMotionPanel || fileInfoPanel?.classList.contains("open"));
 }
 
 function syncViewerPanelState() {
   pswp?.element?.classList.toggle("pswp-panel-open", hasOpenViewerPanel());
 }
 
-function closeViewerPanels(except = "") {
+function closeViewerPanels(options = {}) {
+  if (typeof options === "string") options = { except: options };
+  const { except = "", forceInfo = false } = options;
   if (except !== "guide") {
     viewerGuidePanel?.remove();
     viewerGuidePanel = null;
@@ -1613,10 +1886,77 @@ function closeViewerPanels(except = "") {
     stripSettingsPanel?.remove();
     stripSettingsPanel = null;
   }
-  if (except !== "file-info") {
-    fileInfoPinned = false;
+  if (except !== "motion") {
+    viewerMotionPanel?.remove();
+    viewerMotionPanel = null;
+  }
+  if (except !== "file-info" && (forceInfo || !fileInfoPinned)) {
+    if (forceInfo) fileInfoPinned = false;
     setFileInfoOpen(false);
   }
+  syncViewerPanelState();
+}
+
+function syncViewerMotionUi() {
+  viewerMotionButton?.classList.toggle("is-active", viewerMotion.enabled);
+  viewerMotionButton?.setAttribute("aria-pressed", String(viewerMotion.enabled));
+  viewerMotionPanel?.querySelector("[data-motion-toggle]")?.setAttribute("aria-pressed", String(viewerMotion.enabled));
+}
+
+function toggleViewerMotion() {
+  viewerMotion = normalizeViewerMotion({ ...viewerMotion, enabled: !viewerMotion.enabled });
+  saveViewerMotion();
+  syncViewerMotionUi();
+  trackEvent("viewer_motion_toggle", viewerMotion.enabled ? "on" : "off", { mode: viewerMotion.mode, speed: viewerMotion.speed });
+}
+
+function applyViewerTransition(element = pswp?.currSlide?.content?.element) {
+  if (!element || !viewerMotion.enabled || rapidSurf || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  fx.animateViewerTransition(element, viewerMotion.mode, viewerMotion.speed);
+}
+
+function toggleFilmstrip() {
+  const root = pswp?.element;
+  if (!root) return;
+  const hidden = root.classList.toggle("pswp-filmstrip-hidden");
+  pswp.updateSize(true);
+  trackEvent("filmstrip_toggle", hidden ? "hidden" : "visible");
+}
+
+async function toggleViewerFullscreen() {
+  if (!pswp?.element) return;
+  if (document.fullscreenElement) await document.exitFullscreen?.();
+  else await pswp.element.requestFullscreen?.();
+}
+
+function mountViewerMotionPanel(instance) {
+  if (viewerMotionPanel) return closeViewerPanels();
+  closeViewerPanels("motion");
+  const panel = document.createElement("section");
+  panel.className = "pswp-motion-settings";
+  panel.setAttribute("aria-label", "Viewer motion settings");
+  const options = VIEWER_MOTION_MODES.map((mode) => `<option value="${mode}"${mode === viewerMotion.mode ? " selected" : ""}>${esc(VIEWER_MOTION_LABELS[mode] || mode)}</option>`).join("");
+  panel.innerHTML = `<header><div><span>Viewer motion</span><b>Transitions and speed</b></div><button type="button" aria-label="Close motion settings">×</button></header><div class="pswp-motion-body"><button type="button" class="pswp-motion-toggle" data-motion-toggle aria-pressed="${viewerMotion.enabled}"><span>Transitions</span><b>${viewerMotion.enabled ? "On" : "Immediate"}</b></button><label><span>Style</span><select data-motion-mode>${options}</select></label><label><span>Speed</span><input data-motion-speed type="range" min="120" max="700" step="20" value="${viewerMotion.speed}"><output>${viewerMotion.speed} ms</output></label><p>Immediate is the default and always wins during rapid browsing.</p></div>`;
+  panel.querySelector("header button").addEventListener("click", () => closeViewerPanels());
+  panel.querySelector("[data-motion-toggle]").addEventListener("click", () => {
+    toggleViewerMotion();
+    panel.querySelector("[data-motion-toggle] b").textContent = viewerMotion.enabled ? "On" : "Immediate";
+  });
+  panel.querySelector("[data-motion-mode]").addEventListener("change", (event) => {
+    viewerMotion = normalizeViewerMotion({ ...viewerMotion, mode: event.target.value, enabled: true });
+    saveViewerMotion();
+    syncViewerMotionUi();
+    applyViewerTransition();
+  });
+  panel.querySelector("[data-motion-speed]").addEventListener("input", (event) => {
+    viewerMotion = normalizeViewerMotion({ ...viewerMotion, speed: Number(event.target.value) });
+    event.target.nextElementSibling.textContent = `${viewerMotion.speed} ms`;
+    saveViewerMotion();
+  });
+  panel.addEventListener("pointerdown", (event) => event.stopPropagation());
+  instance.element.appendChild(panel);
+  viewerMotionPanel = panel;
+  syncViewerMotionUi();
   syncViewerPanelState();
 }
 
@@ -1637,26 +1977,61 @@ function toggleViewerGuide(instance) {
 function registerUi(instance) {
   const rotateButtons = [];
   const syncRotateButtons = () => {
-    const enabled = /^image\//.test(instance.currSlide?.data?.file?.mime || "");
+    const enabled = /^(image|video)\//.test(instance.currSlide?.data?.file?.mime || "");
     rotateButtons.forEach((button) => {
       button.disabled = !enabled;
       button.setAttribute("aria-disabled", String(!enabled));
     });
   };
+  const icon = (name, id) => {
+    const definition = uiIconDefinition(name);
+    return { isCustomSVG: true, size: 24, inner: definition.body, outlineID: id };
+  };
+  const shortcut = (value) => (element) => element.setAttribute("aria-keyshortcuts", value);
   instance.on("uiRegister", () => {
+    instance.ui.registerElement({
+      name: "asset-ladder",
+      order: 7,
+      isButton: false,
+      tagName: "div",
+      html: '<span class="pswp-asset-lamp" aria-hidden="true"></span><span class="pswp-asset-label">Preview</span><span class="pswp-asset-cells" aria-hidden="true">' + Array.from({ length: 10 }, (_, index) => `<i data-intent-step="${index + 1}"></i>`).join("") + "</span>",
+      onInit: (element) => {
+        element.className += " pswp-asset-ladder";
+        element.setAttribute("role", "status");
+        element.setAttribute("aria-live", "polite");
+        assetLadderElement = element;
+        updateAssetLadder();
+      },
+    });
+    for (const [name, amount, iconName, title, keys] of [
+      ["skip-back-button", -10, "chevrons-left", "Skip back 10", "Shift+ArrowLeft ,"],
+      ["skip-forward-button", 10, "chevrons-right", "Skip forward 10", "Shift+ArrowRight ."],
+    ]) {
+      instance.ui.registerElement({
+        name,
+        order: amount < 0 ? 9 : 10,
+        isButton: true,
+        tagName: "button",
+        html: icon(iconName, `pswp__icn-${name}`),
+        onClick: () => instance.goTo(Math.max(0, Math.min(lightboxItems.length - 1, instance.currIndex + amount))),
+        onInit: (element) => {
+          element.dataset.step = "10";
+          shortcut(keys)(element);
+        },
+        title,
+      });
+    }
     instance.ui.registerElement({
       name: "file-info-button",
       order: 11,
       isButton: true,
       tagName: "button",
-      html: {
-        isCustomSVG: true,
-        size: 24,
-        inner:
-          '<rect x="4" y="3" width="16" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="16" x2="13" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
-        outlineID: "pswp__icn-file-info",
+      html: icon("file-text", "pswp__icn-file-info"),
+      onClick: () => toggleFileInfo(false),
+      onInit: (element) => {
+        fileInfoToolbarButton = element;
+        shortcut("I")(element);
       },
-      onClick: () => toggleFileInfo(true),
       title: "File info and EXIF",
     });
     instance.ui.registerElement({
@@ -1664,14 +2039,9 @@ function registerUi(instance) {
       order: 12,
       isButton: true,
       tagName: "button",
-      html: {
-        isCustomSVG: true,
-        size: 24,
-        inner:
-          '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><line x1="12" y1="11" x2="12" y2="16.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="7.4" r="1.15" fill="currentColor"/>',
-        outlineID: "pswp__icn-info",
-      },
+      html: icon("circle-help", "pswp__icn-info"),
       onClick: () => toggleViewerGuide(instance),
+      onInit: shortcut("?"),
       title: "Viewer guide and keyboard shortcuts",
     });
     instance.ui.registerElement({
@@ -1679,13 +2049,7 @@ function registerUi(instance) {
       order: 13,
       isButton: true,
       tagName: "button",
-      html: {
-        isCustomSVG: true,
-        size: 24,
-        inner:
-          '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="7 10 12 15 17 10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
-        outlineID: "pswp__icn-download",
-      },
+      html: icon("download", "pswp__icn-download"),
       onClick: (_evt, _el, pswpInstance) => {
         closeViewerPanels();
         const file = pswpInstance.currSlide?.data?.file;
@@ -1698,12 +2062,7 @@ function registerUi(instance) {
       order: 14,
       isButton: true,
       tagName: "button",
-      html: {
-        isCustomSVG: true,
-        size: 24,
-        inner: '<rect x="3" y="6" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="7" y1="6" x2="7" y2="18" stroke="currentColor" stroke-width="2"/><line x1="17" y1="6" x2="17" y2="18" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/>',
-        outlineID: "pswp__icn-filmstrip-settings",
-      },
+      html: icon("gallery-horizontal-end", "pswp__icn-filmstrip-settings"),
       onClick: () => mountStripSizeControl(instance),
       onInit: (element) => {
         element.hidden = lightboxItems.length < 2;
@@ -1711,18 +2070,27 @@ function registerUi(instance) {
       title: "Filmstrip size",
     });
     instance.ui.registerElement({
+      name: "motion-settings-button",
+      order: 15,
+      isButton: true,
+      tagName: "button",
+      html: icon("wand-sparkles", "pswp__icn-motion"),
+      onClick: () => mountViewerMotionPanel(instance),
+      onInit: (element) => {
+        viewerMotionButton = element;
+        shortcut("A")(element);
+        syncViewerMotionUi();
+      },
+      title: "Viewer motion settings",
+    });
+    instance.ui.registerElement({
       name: "rotate-left-button",
       order: 15,
       isButton: true,
       tagName: "button",
-      html: {
-        isCustomSVG: true,
-        size: 24,
-        inner: '<path d="M7.2 7.2H3.5V3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 7a9 9 0 1 1-1 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
-        outlineID: "pswp__icn-rotate-left",
-      },
-      onClick: () => rotateCurrentImage(-90),
-      onInit: (element) => rotateButtons.push(element),
+      html: icon("rotate-ccw", "pswp__icn-rotate-left"),
+      onClick: () => rotateCurrentMedia(-90),
+      onInit: (element) => (rotateButtons.push(element), shortcut("[")(element)),
       title: "Rotate left",
     });
     instance.ui.registerElement({
@@ -1730,24 +2098,75 @@ function registerUi(instance) {
       order: 16,
       isButton: true,
       tagName: "button",
-      html: {
-        isCustomSVG: true,
-        size: 24,
-        inner: '<path d="M16.8 7.2h3.7V3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 7a9 9 0 1 0 1 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
-        outlineID: "pswp__icn-rotate-right",
-      },
-      onClick: () => rotateCurrentImage(90),
-      onInit: (element) => rotateButtons.push(element),
+      html: icon("rotate-cw", "pswp__icn-rotate-right"),
+      onClick: () => rotateCurrentMedia(90),
+      onInit: (element) => (rotateButtons.push(element), shortcut("]")(element)),
       title: "Rotate right",
     });
+    let rotationStatus = null;
+    let rotationReset = null;
+    instance.ui.registerElement({
+      name: "rotation-status",
+      order: 18,
+      isButton: false,
+      tagName: "span",
+      html: "0°",
+      onInit: (element) => {
+        rotationStatus = element;
+        element.className += " pswp-rotation-status";
+      },
+    });
+    instance.ui.registerElement({
+      name: "rotation-reset-button",
+      order: 19,
+      isButton: true,
+      tagName: "button",
+      html: icon("rotate-ccw-square", "pswp__icn-rotation-reset"),
+      onClick: resetCurrentRotation,
+      onInit: (element) => {
+        rotationReset = element;
+        shortcut("0")(element);
+      },
+      title: "Reset rotation",
+    });
+    instance.ui.registerElement({
+      name: "fullscreen-button",
+      order: 20,
+      isButton: true,
+      tagName: "button",
+      html: icon("maximize", "pswp__icn-fullscreen"),
+      onClick: toggleViewerFullscreen,
+      onInit: shortcut("F"),
+      title: "Toggle fullscreen",
+    });
+    syncRotationUi = () => {
+      const rotation = rotationFor(instance.currSlide?.data?.file);
+      if (rotationStatus) {
+        rotationStatus.textContent = `${rotation}°`;
+        rotationStatus.hidden = rotation === 0;
+      }
+      if (rotationReset) rotationReset.hidden = rotation === 0;
+    };
   });
-  instance.on("change", syncRotateButtons);
+  instance.on("change", () => {
+    syncRotateButtons();
+    syncRotationUi();
+  });
   instance.on("afterInit", () => {
     syncRotateButtons();
+    syncRotationUi();
     instance.scrollWrap?.addEventListener("pointerdown", () => closeViewerPanels());
-    instance.element?.querySelector(".pswp__button--zoom")?.addEventListener("click", () => closeViewerPanels());
+    instance.element?.querySelector(".pswp__button--zoom")?.addEventListener("click", () => {
+      closeViewerPanels();
+      const file = instance.currSlide?.data?.file;
+      if (file && /^image\//.test(file.mime)) void viewerAssets?.ensureFull(file, { reason: "explicit-zoom" });
+    });
   });
-  instance.on("destroy", closeViewerPanels);
+  instance.on("destroy", () => {
+    viewerMotionButton = null;
+    fileInfoToolbarButton = null;
+    closeViewerPanels({ forceInfo: true });
+  });
 }
 
 // Caption updates are deliberately immediate: the image and its identity are
@@ -1794,6 +2213,7 @@ function mountBottomBar(instance) {
 
 let fileInfoPanel = null;
 let fileInfoPinned = false;
+let fileInfoToolbarButton = null;
 let fileInfoRequest = 0;
 let fileInfoCloseTimer = 0;
 
@@ -1821,8 +2241,9 @@ function toggleFileInfo(pinPanel = false, forceOpen = false) {
     fileInfoPanel = document.createElement("aside");
     fileInfoPanel.className = "pswp-file-info";
     fileInfoPanel.setAttribute("aria-label", "File info and EXIF");
-    fileInfoPanel.innerHTML = `<header><div><span>File info</span><b>EXIF & attributes</b></div><button type="button" aria-label="Close file info">×</button></header><div class="pswp-file-info-body"></div>`;
-    fileInfoPanel.querySelector("button").addEventListener("click", () => {
+    fileInfoPanel.innerHTML = `<header><div><span>File info</span><b>EXIF & attributes</b></div><div class="pswp-info-actions"><button type="button" class="pswp-info-pin" aria-label="Pin file info" aria-pressed="false">${uiIcon("pin")}</button><button type="button" class="pswp-info-close" aria-label="Close file info">×</button></div></header><div class="pswp-file-info-body"></div>`;
+    fileInfoPanel.querySelector(".pswp-info-pin").addEventListener("click", toggleFileInfoPin);
+    fileInfoPanel.querySelector(".pswp-info-close").addEventListener("click", () => {
       fileInfoPinned = false;
       setFileInfoOpen(false);
     });
@@ -1833,8 +2254,10 @@ function toggleFileInfo(pinPanel = false, forceOpen = false) {
     fileInfoPanel.addEventListener("mouseleave", scheduleFileInfoClose);
     pswp.element.appendChild(fileInfoPanel);
   }
-  if (pinPanel) fileInfoPinned = !fileInfoPanel.classList.contains("open") || !fileInfoPinned;
-  const shouldOpen = forceOpen || pinPanel ? !fileInfoPanel.classList.contains("open") || fileInfoPinned : true;
+  if (pinPanel) fileInfoPinned = !fileInfoPinned;
+  const currentlyOpen = fileInfoPanel.classList.contains("open");
+  if (currentlyOpen && !forceOpen && !pinPanel) fileInfoPinned = false;
+  const shouldOpen = forceOpen || pinPanel ? true : !currentlyOpen;
   setFileInfoOpen(shouldOpen);
   if (shouldOpen) {
     refreshFileInfo(pswp.currSlide?.data?.file);
@@ -1842,8 +2265,25 @@ function toggleFileInfo(pinPanel = false, forceOpen = false) {
   }
 }
 
+function toggleFileInfoPin() {
+  if (!fileInfoPanel?.classList.contains("open")) toggleFileInfo(false, true);
+  fileInfoPinned = !fileInfoPinned;
+  clearFileInfoClose();
+  setFileInfoOpen(true);
+  trackEvent("file_info_pin", fileInfoPinned ? "pinned" : "unpinned");
+}
+
 function setFileInfoOpen(open) {
   fileInfoPanel?.classList.toggle("open", open);
+  fileInfoPanel?.classList.toggle("pinned", Boolean(open && fileInfoPinned));
+  const pinButton = fileInfoPanel?.querySelector(".pswp-info-pin");
+  if (pinButton) {
+    pinButton.setAttribute("aria-pressed", String(fileInfoPinned));
+    pinButton.setAttribute("aria-label", fileInfoPinned ? "Unpin file info" : "Pin file info");
+    pinButton.innerHTML = uiIcon(fileInfoPinned ? "pin-off" : "pin");
+  }
+  fileInfoToolbarButton?.setAttribute("aria-pressed", String(Boolean(open)));
+  fileInfoToolbarButton?.classList.toggle("is-active", Boolean(open));
   pswp?.element?.classList.toggle("pswp-info-open", open);
   syncViewerPanelState();
 }
@@ -1899,8 +2339,9 @@ function renderFileInfo(body, data, fallback) {
     ["Type", file.mime],
     ["Size", fmtBytes(file.size)],
     ["Dimensions", file.width && file.height ? `${file.width} × ${file.height} (${file.megapixels || megapixels(fallback)} MP)` : ""],
-    ["Date taken", exif.time ? formatLongDate(exif.time) : ""],
-    ["Modified", file.modifiedAt ? formatLongDate(file.modifiedAt) : ""],
+    ["Taken (camera metadata)", exif.time ? formatLongDate(exif.time) : ""],
+    ["Created in Drive", file.createdAt ? formatLongDate(file.createdAt) : ""],
+    ["Modified in Drive", file.modifiedAt ? formatLongDate(file.modifiedAt) : ""],
   ];
   const camera = [
     ["Make", exif.cameraMake],
@@ -1929,12 +2370,12 @@ function renderFileInfo(body, data, fallback) {
 function exposureSummary(exif) {
   const shutter = formatShutterSpeed(exif.exposureTime).split(" (")[0];
   const values = [
-    ["Shutter", shutter],
-    ["Aperture", exif.aperture ? `f/${exif.aperture}` : ""],
-    ["Sensitivity", exif.isoSpeed ? `ISO ${exif.isoSpeed}` : ""],
-  ].filter(([, value]) => value);
+    [uiIcon("timer"), "Shutter", shutter],
+    [uiIcon("aperture"), "Aperture", exif.aperture ? `f/${exif.aperture}` : ""],
+    [uiIcon("gauge"), "Sensitivity", exif.isoSpeed ? `ISO ${exif.isoSpeed}` : ""],
+  ].filter(([, , value]) => value);
   if (!values.length) return "";
-  return `<section class="pswp-exposure-summary" aria-label="Exposure triangle">${values.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join("")}</section>`;
+  return `<section class="pswp-exposure-summary" aria-label="Exposure triangle">${values.map(([iconHtml, label, value]) => `<div>${iconHtml}<span>${esc(label)}</span><b>${esc(value)}</b></div>`).join("")}</section>`;
 }
 
 function formatShutterSpeed(value) {
