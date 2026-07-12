@@ -51,6 +51,7 @@ import {
   listShares,
   logShareOpened,
   patchShare,
+  revokeSharePermissions,
   refreshShareDownload,
   shareFileInfo,
   shareDownload,
@@ -61,7 +62,7 @@ import {
   shareZipDownload,
   verifySharePin,
 } from "./share.js";
-import { adminAuthCallback, adminAuthLogin, authCallback, authLogin, authLogout, mintAdminSession, verifyAdminSession } from "./auth.js";
+import { adminAuthCallback, adminAuthLogin, authCallback, authLogin, authLogout, getViewer, mintAdminSession, verifyAdminSession } from "./auth.js";
 
 export { LiveTracker } from "./live.js";
 
@@ -138,7 +139,7 @@ async function api(request, env, url, ctx) {
   if (m === "GET" && p === "/api/admin/live") return openAdminLiveSocket(request, env);
 
   if (m === "GET" && p.startsWith("/api/link/")) {
-    return getPublicLink(env, p.slice("/api/link/".length));
+    return getPublicLink(request, env, p.slice("/api/link/".length));
   }
   if (m === "POST" && p === "/api/verify") return verifyPin(request, env);
   if (m === "POST" && p === "/api/opened") return logOpened(request, env);
@@ -187,6 +188,7 @@ async function api(request, env, url, ctx) {
     if (!(await isAdmin(request, env))) return json({ error: "unauthorized" }, 401);
     if (!sameOriginOk(request, url)) return json({ error: "bad origin" }, 403);
     if (m === "GET" && p === "/api/admin/overview") return adminOverview(env);
+    if (m === "POST" && p === "/api/admin/maintenance/cleanup") return cleanupInactiveRecords(request, env);
     if (m === "GET" && p === "/api/admin/timeseries") return adminTimeseries(env, url);
     if (m === "GET" && p === "/api/admin/links") return listLinks(env);
     if (m === "POST" && p === "/api/admin/links") return createLink(request, env, ctx);
@@ -373,6 +375,7 @@ function publicLink(link, quota, env) {
     label: link.label,
     ownerName: cleanText(env.OWNER_DISPLAY_NAME || "", 60),
     requiresPin: !!link.pinHash,
+    requiresAuth: !!link.requireAuth && !!env.GOOGLE_CLIENT_ID,
     expiresAt: link.expiresAt || null,
     expired: state === "expired",
     paused: state === "paused",
@@ -394,6 +397,7 @@ function adminLink(link, stats = {}) {
     folderName: link.folderName || null,
     folderPending: !!link.folderPending,
     hasPin: !!link.pinHash,
+    requireAuth: !!link.requireAuth,
     createdAt: link.createdAt,
     expiresAt: link.expiresAt || null,
     disabled: !!link.disabled,
@@ -406,11 +410,19 @@ function adminLink(link, stats = {}) {
   };
 }
 
-async function getPublicLink(env, slug) {
+async function getPublicLink(request, env, slug) {
   const link = await env.KV.get(`link:${slug}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
   const quota = env.GOOGLE_CLIENT_ID ? await driveQuota(env) : null;
-  return json(publicLink(link, quota, env));
+  const out = publicLink(link, quota, env);
+  out.viewer = out.requiresAuth ? await getViewer(request, env) : null;
+  return json(out);
+}
+
+async function requireDropViewer(request, env, link) {
+  if (!link.requireAuth || !env.GOOGLE_CLIENT_ID) return null;
+  if (await getViewer(request, env)) return null;
+  return json({ error: "sign-in required", authRequired: true }, 401);
 }
 
 async function verifyPin(request, env) {
@@ -420,6 +432,8 @@ async function verifyPin(request, env) {
   const state = linkState(link);
   if (state === "expired") return json({ error: "this link has expired" }, 410);
   if (state === "paused") return json({ error: "this link is paused" }, 403);
+  const authFailure = await requireDropViewer(request, env, link);
+  if (authFailure) return authFailure;
   const failure = await gatePin(request, env, link, b.pin);
   if (failure) return failure;
   return json({ ok: true });
@@ -451,6 +465,8 @@ async function logProgress(request, env) {
   const link = await env.KV.get(`link:${b.linkId}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
   if (linkState(link) === "expired") return json({ error: "this link has expired" }, 410);
+  const authFailure = await requireDropViewer(request, env, link);
+  if (authFailure) return authFailure;
   const failure = await gatePin(request, env, link, b.pin);
   if (failure) return failure;
   const sessionId = cleanText(b.sessionId || "", 100) || `${Date.now()}-${randomSlug(5)}`;
@@ -481,6 +497,8 @@ async function createSession(request, env) {
   const state = linkState(link);
   if (state === "expired") return json({ error: "this link has expired" }, 410);
   if (state === "paused") return json({ error: "this link is paused" }, 403);
+  const authFailure = await requireDropViewer(request, env, link);
+  if (authFailure) return authFailure;
   const failure = await gatePin(request, env, link, pin);
   if (failure) return failure;
 
@@ -604,6 +622,8 @@ async function logComplete(request, env) {
   if (!linkId || !filename || !fileId) return json({ error: "linkId, filename and fileId required" }, 400);
   const link = await env.KV.get(`link:${linkId}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
+  const authFailure = await requireDropViewer(request, env, link);
+  if (authFailure) return authFailure;
   if (env.GOOGLE_CLIENT_ID) {
     const driveFile = await driveFileMeta(env, fileId);
     if (!driveFile?.id) return json({ error: "Drive file could not be verified" }, 502);
@@ -749,6 +769,7 @@ async function createLink(request, env, ctx) {
     folderPending: false,
     disabled: false,
     disabledReason: "",
+    requireAuth: b.requireAuth === true,
     ...(pin ? await makePinFields(pin) : { pinSalt: null, pinHash: null, pinAlgo: null }),
     createdAt: Date.now(),
     expiresAt: days > 0 ? Date.now() + days * 86400_000 : null,
@@ -798,6 +819,12 @@ async function patchLink(request, env, slug) {
   if ("expiresDays" in b) {
     const days = clamp(Number(b.expiresDays) || 0, 0, MAX_EXPIRY_DAYS);
     link.expiresAt = days > 0 ? Date.now() + days * 86400_000 : null;
+  }
+  if ("requireAuth" in b) link.requireAuth = !!b.requireAuth;
+  if ("folderId" in b) {
+    link.folderId = cleanText(b.folderId || "", 160) || null;
+    link.folderName = cleanText(b.folderName || "", 80) || null;
+    link.folderPending = !link.folderId && !!env.GOOGLE_CLIENT_ID;
   }
   if ("settings" in b) link.settings = normalizeSettings({ ...link.settings, ...b.settings });
   if ("theme" in b) link.theme = normalizeTheme({ ...link.theme, ...b.theme });
@@ -956,4 +983,38 @@ async function addLinkToIndex(env, slug) {
 async function removeLinkFromIndex(env, slug) {
   const slugs = (await getLinkIndex(env)).filter((s) => s !== slug);
   await env.KV.put("links:index", JSON.stringify(slugs));
+}
+
+async function cleanupInactiveRecords(request, env) {
+  const report = { dropLinksRemoved: 0, shareLinksRemoved: 0, staleIndexEntries: 0, keysDeleted: 0 };
+  const storedLinks = (await env.KV.get("links:index", "json")) || [];
+  const keptLinks = [];
+  for (const slug of storedLinks.map(slugify).filter(Boolean)) {
+    const link = await env.KV.get(`link:${slug}`, "json");
+    if (link && linkState(link) !== "expired") { keptLinks.push(slug); continue; }
+    if (!link) report.staleIndexEntries += 1;
+    else report.dropLinksRemoved += 1;
+    for (const key of [`link:${slug}`, `stats:${slug}`, `recent:${slug}`]) {
+      await env.KV.delete(key); report.keysDeleted += 1;
+    }
+  }
+  if (JSON.stringify(keptLinks) !== JSON.stringify(storedLinks)) await env.KV.put("links:index", JSON.stringify(keptLinks));
+
+  const storedShares = (await env.KV.get("shares:index", "json")) || [];
+  const keptShares = [];
+  for (const slug of storedShares.map(slugify).filter(Boolean)) {
+    const share = await env.KV.get(`share:${slug}`, "json");
+    const expired = !!share?.expiresAt && Number(share.expiresAt) <= Date.now();
+    if (share && !expired) { keptShares.push(slug); continue; }
+    if (!share) report.staleIndexEntries += 1;
+    else {
+      report.shareLinksRemoved += 1;
+      if (share.mode === "redirect") await revokeSharePermissions(env, share);
+    }
+    for (const key of [`share:${slug}`, `sstats:${slug}`]) {
+      await env.KV.delete(key); report.keysDeleted += 1;
+    }
+  }
+  if (JSON.stringify(keptShares) !== JSON.stringify(storedShares)) await env.KV.put("shares:index", JSON.stringify(keptShares));
+  return json({ ok: true, ...report });
 }

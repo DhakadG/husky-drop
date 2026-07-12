@@ -78,6 +78,17 @@ async function init() {
   logOpenOnce();
   loadResumeRecords().catch(() => {});
 
+  if (link.requiresAuth && !link.viewer) {
+    $("auth-label").textContent = link.label;
+    const signinError = new URLSearchParams(location.search).get("signinError");
+    if (signinError) $("auth-err").textContent = signinError;
+    $("auth-go").addEventListener("click", () => {
+      location.href = `/api/auth/login?kind=drop&slug=${encodeURIComponent(slug)}`;
+    });
+    $("auth-gate").classList.remove("hidden");
+    return;
+  }
+
   if (link.requiresPin) {
     if (pin && (await verifyPinValue(pin))) return showMain();
     $("pin-label").textContent = link.label;
@@ -162,6 +173,7 @@ function showMain() {
   const meta = $("meta");
   meta.innerHTML = "";
   meta.append(chip(link.requiresPin ? "password protected" : "open link", "", link.requiresPin ? "lock-small" : "gallery"));
+  if (link.requiresAuth && link.viewer) meta.append(chip(`signed in as ${link.viewer.name || link.viewer.email}`, "", "user"));
   meta.append(chip(`up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`, "", "image"));
   if (link.settings?.adaptiveConcurrency) meta.append(chip("smart 2–8× parallel", "", "sliders"));
   if (link.settings?.perUploaderFolders) meta.append(chip("your own subfolder", "", "folder-add"));

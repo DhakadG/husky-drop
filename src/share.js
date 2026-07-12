@@ -120,6 +120,7 @@ export function adminShare(share, stats = {}) {
     hasPin: !!share.pinHash,
     allowZip: share.allowZip !== false,
     requireAuth: share.requireAuth !== false,
+    theme: normalizeTheme(share.theme),
     createdAt: share.createdAt,
     expiresAt: share.expiresAt || null,
     disabled: !!share.disabled,
@@ -228,6 +229,26 @@ export async function patchShare(request, env, slug) {
   const share = await env.KV.get(`share:${slug}`, "json");
   if (!share) return json({ error: "share not found" }, 404);
   const b = await request.json().catch(() => ({}));
+  const nextMode = "mode" in b ? (b.mode === "redirect" ? "redirect" : "gallery") : share.mode;
+  let nextFolderIds = share.folderIds || [];
+  let nextFolderNames = share.folderNames || [];
+  if ("folders" in b) {
+    const rawFolders = Array.isArray(b.folders) ? b.folders : String(b.folders || "").split(/[,\n]/);
+    nextFolderIds = [...new Set(rawFolders.map(parseDriveFolderInput).filter(Boolean))].slice(0, 10);
+    if (!nextFolderIds.length) return json({ error: "at least one Drive folder is required" }, 400);
+    nextFolderNames = [];
+    for (const id of nextFolderIds) {
+      if (!env.GOOGLE_CLIENT_ID) { nextFolderNames.push(id); continue; }
+      const meta = await driveFileMeta(env, id);
+      if (!meta || meta.mimeType !== "application/vnd.google-apps.folder") return json({ error: `folder ${id} was not found in Drive` }, 400);
+      nextFolderNames.push(meta.name || id);
+    }
+  }
+  const destinationChanged = nextMode !== share.mode || nextFolderIds.join(",") !== (share.folderIds || []).join(",");
+  if (destinationChanged && share.mode === "redirect") await revokeSharePermissions(env, share);
+  share.mode = nextMode;
+  share.folderIds = nextFolderIds;
+  share.folderNames = nextFolderNames;
   if ("label" in b) share.label = cleanText(b.label, 80) || share.label;
   if ("pin" in b) {
     if (b.pin) Object.assign(share, await makePinFields(b.pin));
@@ -239,6 +260,7 @@ export async function patchShare(request, env, slug) {
   }
   if ("allowZip" in b) share.allowZip = !!b.allowZip;
   if ("requireAuth" in b) share.requireAuth = !!b.requireAuth;
+  if ("theme" in b) share.theme = normalizeTheme({ ...share.theme, ...b.theme });
   if ("expiresDays" in b) {
     const days = clamp(Number(b.expiresDays) || 0, 0, MAX_EXPIRY_DAYS);
     share.expiresAt = days > 0 ? Date.now() + days * 86400_000 : null;
@@ -257,6 +279,10 @@ export async function patchShare(request, env, slug) {
         }
       }
     }
+  }
+  if (destinationChanged && share.mode === "redirect" && !share.disabled && env.GOOGLE_CLIENT_ID) {
+    share.permissionIds = {};
+    for (const id of share.folderIds) share.permissionIds[id] = await driveGrantAnyoneReader(env, id);
   }
   await env.KV.put(`share:${slug}`, JSON.stringify(share));
   await logEvent(env, { type: "shareedit", slug, label: share.label }, request);

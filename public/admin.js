@@ -19,6 +19,7 @@ let activityOlder = [];
 let activityOldestDay = new Date().toISOString().slice(0, 10);
 let activityLoading = false;
 const openActivitySessions = new Set();
+let currentQrUrl = "";
 
 init();
 
@@ -46,6 +47,15 @@ async function init() {
   $("create-back")?.addEventListener("click", () => showCreateStep(1));
   $("folder-browse")?.addEventListener("click", () => openFolderPicker(folderParentId || "root", "drop"));
   $("share-folder-browse")?.addEventListener("click", () => openFolderPicker("root", "share"));
+  $("share-edit-browse")?.addEventListener("click", () => openFolderPicker("root", "share-edit"));
+  $("share-edit-close")?.addEventListener("click", () => $("share-edit-dialog").close());
+  $("share-edit-cancel")?.addEventListener("click", () => $("share-edit-dialog").close());
+  $("share-edit-form")?.addEventListener("submit", saveShareEditor);
+  $("se-mode")?.addEventListener("change", syncShareEditMode);
+  $("se-clear-pin")?.addEventListener("change", () => {
+    $("se-pin").disabled = $("se-clear-pin").checked || $("se-mode").value === "redirect";
+    if ($("se-clear-pin").checked) $("se-pin").value = "";
+  });
   $("folder-up")?.addEventListener("click", openParentFolder);
   $("folder-select-current")?.addEventListener("click", () => selectDriveFolder(folderParentId, folderParentLabel));
   $("folder-close")?.addEventListener("click", () => $("drive-picker-dialog").close());
@@ -61,6 +71,21 @@ async function init() {
   document.querySelectorAll('[name="transfer-preset"]').forEach((radio) => radio.addEventListener("change", applyTransferPreset));
   $("create-copy")?.addEventListener("click", () => copyCreatedLink());
   $("create-qr")?.addEventListener("click", () => showQr($("create-success-url").textContent, "New drop link"));
+  $("qr-close")?.addEventListener("click", () => $("qr-modal").close());
+  $("qr-copy")?.addEventListener("click", async (event) => {
+    await navigator.clipboard?.writeText(currentQrUrl);
+    flash(event.currentTarget, "Copied");
+  });
+  $("qr-open")?.addEventListener("click", () => currentQrUrl && window.open(currentQrUrl, "_blank", "noopener"));
+  $("qr-share")?.addEventListener("click", async (event) => {
+    if (!currentQrUrl) return;
+    if (navigator.share) await navigator.share({ title: $("qr-title").textContent, url: currentQrUrl }).catch(() => {});
+    else {
+      await navigator.clipboard?.writeText(currentQrUrl);
+      flash(event.currentTarget, "Copied");
+    }
+  });
+  $("qr-download")?.addEventListener("click", downloadCurrentQr);
   $("create-another")?.addEventListener("click", resetCreateFlow);
   $("share-create")?.addEventListener("click", createShare);
   document.querySelectorAll('[name="share-mode-choice"]').forEach((radio) => {
@@ -492,6 +517,8 @@ function handleAdminAction(e) {
   if (spause) return toggleSharePause(spause.dataset.pauseShare, spause.dataset.paused === "1");
   const sauth = e.target.closest("[data-toggle-share-auth]");
   if (sauth) return toggleShareAuth(sauth.dataset.toggleShareAuth, sauth.dataset.auth === "1");
+  const sedit = e.target.closest("[data-edit-share]");
+  if (sedit) return openShareEditor(sedit.dataset.editShare);
   const sdel = e.target.closest("[data-del-share]");
   if (sdel) return deleteShare(sdel.dataset.delShare, sdel.dataset.delLabel);
   const refresh = e.target.closest("[data-refresh-detail]");
@@ -514,28 +541,50 @@ function handleAdminAction(e) {
     shareSelectedFolders.delete(removeShareFolder.dataset.removeShareFolder);
     return renderShareFolderSelection();
   }
+  const removeShareEditFolder = e.target.closest("[data-remove-share-edit-folder]");
+  if (removeShareEditFolder) {
+    shareEditSelectedFolders.delete(removeShareEditFolder.dataset.removeShareEditFolder);
+    return renderShareEditFolders();
+  }
   const prev = e.target.closest("[data-preview]");
   if (prev) return previewFile(prev.dataset.preview, prev);
-  const qrClose = e.target.closest("#qr-modal");
-  if (qrClose && e.target.id === "qr-modal") $("qr-modal").classList.add("hidden");
+  if (e.target.id === "qr-modal") $("qr-modal").close();
 }
 
 function showQr(url, label) {
   const modal = $("qr-modal");
+  const absoluteUrl = new URL(url, location.origin).href;
   if (!modal || typeof qrcode === "undefined") {
-    navigator.clipboard?.writeText(url).catch(() => {});
+    navigator.clipboard?.writeText(absoluteUrl).catch(() => {});
     return;
   }
   try {
     const q = qrcode(0, "M");
-    q.addData(url);
+    q.addData(absoluteUrl);
     q.make();
     $("qr-box").innerHTML = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
-    $("qr-caption").textContent = label ? `${label} - ${url}` : url;
-    modal.classList.remove("hidden");
+    currentQrUrl = absoluteUrl;
+    const isShare = new URL(absoluteUrl).pathname.startsWith("/s/");
+    $("qr-kind").textContent = isShare ? "SHARE LINK" : "DROP LINK";
+    $("qr-title").textContent = label || (isShare ? "Share gallery" : "Upload collection");
+    $("qr-share").classList.toggle("hidden", !isShare);
+    $("qr-caption").textContent = absoluteUrl;
+    modal.showModal();
   } catch {
-    navigator.clipboard?.writeText(url).catch(() => {});
+    navigator.clipboard?.writeText(absoluteUrl).catch(() => {});
   }
+}
+
+function downloadCurrentQr() {
+  const svg = $("qr-box")?.querySelector("svg");
+  if (!svg || !currentQrUrl) return;
+  const data = new XMLSerializer().serializeToString(svg);
+  const blobUrl = URL.createObjectURL(new Blob([data], { type: "image/svg+xml;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = `${new URL(currentQrUrl).pathname.split("/").filter(Boolean).join("-") || "link"}-qr.svg`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
 function flash(button, text) {
@@ -833,6 +882,8 @@ let folderBreadcrumbs = [{ id: "root", name: "My Drive" }];
 let selectedFolderName = "";
 let folderPickerMode = "drop";
 const shareSelectedFolders = new Map();
+const shareEditSelectedFolders = new Map();
+let dropEditFolder = null;
 
 function showCreateStep(step) {
   if (step === 2 && !value("f-label")) {
@@ -884,10 +935,11 @@ function toggleExpiredLinks() {
 }
 
 async function openFolderPicker(parentId, mode = folderPickerMode) {
-  folderPickerMode = mode === "share" ? "share" : "drop";
+  folderPickerMode = ["share", "share-edit", "drop-edit"].includes(mode) ? mode : "drop";
+  const shareMode = folderPickerMode.startsWith("share");
   folderParentId = parentId || "root";
-  $("folder-picker-title").textContent = folderPickerMode === "share" ? "Add Drive folders" : "Choose a destination";
-  $("folder-select-current").textContent = folderPickerMode === "share" ? "Add this folder" : "Select this folder";
+  $("folder-picker-title").textContent = shareMode ? "Add Drive folders" : "Choose a destination";
+  $("folder-select-current").textContent = shareMode ? "Add this folder" : "Select this folder";
   const dialog = $("drive-picker-dialog");
   if (!dialog.open) dialog.showModal();
   $("folder-list").innerHTML = '<div class="empty">Loading Drive folders…</div>';
@@ -902,11 +954,12 @@ async function openFolderPicker(parentId, mode = folderPickerMode) {
     folderParentLabel = current?.name || "My Drive";
     renderFolderBreadcrumbs();
     $("folder-up").disabled = folderBreadcrumbs.length <= 1;
-    $("folder-select-current").disabled = folderPickerMode === "share" && folderParentId === "root";
+    $("folder-select-current").disabled = shareMode && folderParentId === "root";
     $("folder-list").innerHTML = (data.folders || []).length
       ? data.folders.map((folder) => {
-        const added = folderPickerMode === "share" && shareSelectedFolders.has(folder.id);
-        return `<div class="folder-option"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg><span>${esc(folder.name)}</span><span class="folder-open-cue">Open →</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}" ${added ? "disabled" : ""}>${added ? "Added" : folderPickerMode === "share" ? "Add" : "Select"}</button></div>`;
+        const selectedMap = folderPickerMode === "share-edit" ? shareEditSelectedFolders : shareSelectedFolders;
+        const added = shareMode && selectedMap.has(folder.id);
+        return `<div class="folder-option"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg><span>${esc(folder.name)}</span><span class="folder-open-cue">Open →</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}" ${added ? "disabled" : ""}>${added ? "Added" : shareMode ? "Add" : "Select"}</button></div>`;
       }).join("")
       : '<div class="empty">No child folders here.</div>';
     $("folder-list").querySelectorAll("[data-pick-folder]").forEach((button) => button.addEventListener("click", () => {
@@ -933,12 +986,21 @@ function openParentFolder() {
 }
 
 function selectDriveFolder(id, name) {
-  if (folderPickerMode === "share") {
+  if (folderPickerMode.startsWith("share")) {
     const pathParts = folderBreadcrumbs.map((crumb) => crumb.name);
     if (folderBreadcrumbs.at(-1)?.id !== id) pathParts.push(name || "Folder");
-    shareSelectedFolders.set(id || "root", { id: id || "root", name: name || "My Drive", path: pathParts.join(" / ") });
-    renderShareFolderSelection();
-    openFolderPicker(folderParentId, "share");
+    const selectedMap = folderPickerMode === "share-edit" ? shareEditSelectedFolders : shareSelectedFolders;
+    selectedMap.set(id || "root", { id: id || "root", name: name || "My Drive", path: pathParts.join(" / ") });
+    if (folderPickerMode === "share-edit") renderShareEditFolders();
+    else renderShareFolderSelection();
+    openFolderPicker(folderParentId, folderPickerMode);
+    return;
+  }
+  if (folderPickerMode === "drop-edit") {
+    dropEditFolder = { id: id || "root", name: name || "My Drive" };
+    if ($("d-folder")) $("d-folder").value = dropEditFolder.id;
+    if ($("d-folder-name")) $("d-folder-name").textContent = dropEditFolder.name;
+    $("drive-picker-dialog").close();
     return;
   }
   $("f-folder").value = id || "root";
@@ -1062,6 +1124,7 @@ async function createLink() {
     label: value("f-label"),
     slug: value("f-slug"),
     pin: value("f-pin"),
+    requireAuth: $("f-auth")?.checked === true,
     expiresDays: Number(value("f-days")) || 0,
     folderId: value("f-folder"),
     settings: {
@@ -1121,6 +1184,7 @@ function updateShareCard(article, share) {
       ${shareActionButton("copy-compact", "Copy", `data-copy-link="/s/${escAttr(share.slug)}"`)}
       ${shareActionButton("qr", "QR", `data-qr-link="/s/${escAttr(share.slug)}" data-qr-label="${escAttr(share.label)}"`)}
       ${shareActionButton("share", "Share", `data-share-link="/s/${escAttr(share.slug)}"`)}
+      ${shareActionButton("sliders", "Edit", `data-edit-share="${escAttr(share.slug)}"`)}
       ${shareActionButton("user", share.requireAuth ? "Sign-in on" : "Sign-in off", `data-toggle-share-auth="${escAttr(share.slug)}" data-auth="${share.requireAuth ? "1" : "0"}"`)}
       ${shareActionButton(share.disabled ? "play" : "pause", share.disabled ? "Resume" : "Pause", `data-pause-share="${escAttr(share.slug)}" data-paused="${share.disabled ? "1" : "0"}"`)}
       ${shareActionButton("trash", "Delete", `data-del-share="${escAttr(share.slug)}" data-del-label="${escAttr(share.label)}"`, true)}
@@ -1196,6 +1260,71 @@ async function createShare() {
   refreshAll();
   showTab("shares");
   showQr(`${location.origin}/s/${d.slug}`, "Share link created - URL copied to clipboard");
+}
+
+function openShareEditor(slug) {
+  const share = overview?.shares?.find((item) => item.slug === slug);
+  if (!share) return;
+  shareEditSelectedFolders.clear();
+  (share.folderIds || []).forEach((id, index) => shareEditSelectedFolders.set(id, {
+    id,
+    name: share.folderNames?.[index] || id,
+    path: share.folderNames?.[index] || id,
+  }));
+  $("se-slug").value = share.slug;
+  $("se-title").textContent = share.label;
+  $("se-label").value = share.label;
+  $("se-days").value = share.expiresAt ? Math.max(0, Math.ceil((share.expiresAt - Date.now()) / 86400_000)) : 0;
+  $("se-mode").value = share.mode;
+  $("se-pin").value = "";
+  $("se-clear-pin").checked = false;
+  $("se-zip").checked = share.allowZip !== false;
+  $("se-auth").checked = share.requireAuth !== false;
+  $("se-logo").value = share.theme?.logoUrl || "";
+  $("se-bg").value = share.theme?.backgroundUrl || "";
+  $("se-accent").value = share.theme?.accentColor || "#2f6bff";
+  $("se-bgcolor").value = share.theme?.backgroundColor || "#eaf0f9";
+  $("se-welcome").value = share.theme?.welcome || "";
+  $("share-edit-err").textContent = "";
+  syncShareEditMode();
+  renderShareEditFolders();
+  $("share-edit-dialog").showModal();
+}
+
+function syncShareEditMode() {
+  const redirect = $("se-mode").value === "redirect";
+  $("se-pin").disabled = redirect || $("se-clear-pin").checked;
+  $("se-clear-pin").disabled = redirect;
+  $("se-zip").disabled = redirect;
+  $("se-auth").disabled = redirect;
+  $("se-mode-help").textContent = redirect
+    ? "Visitors are sent to Google Drive; gallery PIN, sign-in and ZIP controls do not apply."
+    : "Gallery links can use sign-in, a PIN and ZIP downloads.";
+}
+
+function renderShareEditFolders() {
+  const box = $("share-edit-folders");
+  if (!box) return;
+  const folders = [...shareEditSelectedFolders.values()];
+  box.innerHTML = folders.length ? folders.map((folder) => `<span class="selected-folder-chip"><span><b>${esc(folder.name)}</b><small>${esc(folder.path)}</small></span><button type="button" data-remove-share-edit-folder="${escAttr(folder.id)}" aria-label="Remove ${escAttr(folder.name)}">×</button></span>`).join("") : '<span class="muted">Choose at least one Drive folder.</span>';
+}
+
+async function saveShareEditor(event) {
+  event.preventDefault();
+  const slug = value("se-slug");
+  if (!slug || !shareEditSelectedFolders.size) return ($("share-edit-err").textContent = "Choose at least one Drive folder.");
+  const pin = value("se-pin");
+  const body = {
+    label: value("se-label"), folders: [...shareEditSelectedFolders.keys()], mode: value("se-mode"),
+    expiresDays: Number(value("se-days")) || 0, allowZip: $("se-zip").checked, requireAuth: $("se-auth").checked,
+    ...($("se-clear-pin").checked ? { pin: "" } : pin ? { pin } : {}),
+    theme: { logoUrl: value("se-logo"), backgroundUrl: value("se-bg"), accentColor: value("se-accent"), backgroundColor: value("se-bgcolor"), welcome: value("se-welcome") },
+  };
+  const response = await fetch(`/api/admin/shares/${encodeURIComponent(slug)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return ($("share-edit-err").textContent = data.error || "Could not save settings.");
+  $("share-edit-dialog").close();
+  await refreshAll();
 }
 
 // ---- Link detail ----
@@ -1280,7 +1409,7 @@ function renderDetail(d) {
     <section class="panel settings-fold">
       <div class="section-title"><div><p class="eyebrow">configuration</p><h2>${icon("sliders")} Settings</h2></div><span class="muted">Changes apply to this link only.</span></div>
       <div class="settings-accordion">
-        <details open><summary><span class="settings-summary-copy">${icon("lock", "settings-role-icon")}<span><b>Access</b><small>${l.hasPin ? "PIN protected" : "Open"} · ${l.expiresAt ? `expires ${fmtDateDMY(l.expiresAt)}` : "never expires"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Label</label><input id="d-label" type="text" value="${escAttr(l.label)}" /></div><div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" autocomplete="new-password" /></div><div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="${expiryDays}" /></div></div></details>
+        <details open><summary><span class="settings-summary-copy">${icon("lock", "settings-role-icon")}<span><b>Access & destination</b><small>${l.requireAuth ? "Google sign-in" : l.hasPin ? "PIN protected" : "Open"} · ${l.expiresAt ? `expires ${fmtDateDMY(l.expiresAt)}` : "never expires"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Label</label><input id="d-label" type="text" value="${escAttr(l.label)}" /></div><div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" autocomplete="new-password" /></div><div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="${expiryDays}" /></div></div><div class="folder-picker"><div class="field"><label>Destination Drive folder</label><input id="d-folder" type="text" value="${escAttr(l.folderId || "")}" /><small id="d-folder-name">${esc(l.folderName || "Automatic folder")}</small></div><button class="mini folder-browse-button" id="d-folder-browse" type="button">Browse Drive</button></div><label class="check"><input id="d-auth" type="checkbox" ${l.requireAuth ? "checked" : ""} /> Require Google sign-in before upload</label></div></details>
         <details><summary><span class="settings-summary-copy">${icon("sliders", "settings-role-icon")}<span><b>Transfer</b><small>${l.settings.adaptiveConcurrency ? "auto 2–8× parallel" : `${l.settings.concurrency}× parallel`} · ${l.settings.chunkMB} MB chunks · ${l.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Starting parallel files</label><select id="d-conc">${opts([1, 2, 3, 4, 6, 8], l.settings.concurrency)}</select></div><div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8, 16, 32, 64], l.settings.chunkMB, " MB")}</select></div><div class="field"><label>Max single file GB</label><input id="d-maxgb" type="number" min="0" value="${escAttr(maxTransferGb)}" /></div></div><div class="check-row"><label class="check"><input id="d-adaptive" type="checkbox" ${l.settings.adaptiveConcurrency ? "checked" : ""} /> Adapt parallelism to live network performance</label><label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Create subfolders per uploader</label></div></div></details>
         <details><summary><span class="settings-summary-copy">${icon("budget", "settings-role-icon")}<span><b>Budgets</b><small>${l.settings.maxTotalBytes ? `${fmtBytes(l.stats.bytes)} of ${fmtBytes(l.settings.maxTotalBytes)}` : "Unlimited"} · auto-pause at limit</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Max total GB</label><input id="d-budget-gb" type="number" min="0" value="${escAttr(budgetGb)}" /></div><div class="field"><label>Max files</label><input id="d-budget-files" type="number" min="0" value="${l.settings.maxTotalFiles || ""}" /></div><div class="field"><label>Max sessions</label><input id="d-budget-sessions" type="number" min="0" value="${l.settings.maxSessions || ""}" /></div></div></details>
         <details><summary><span class="settings-summary-copy">${icon("bell", "settings-role-icon")}<span><b>Notifications</b><small>${l.notify.enabled ? "Email enabled" : "Email disabled"} · ${l.notify.start ? "start alerts" : "no start alerts"} · ${l.notify.complete ? "completion digest" : "no completion digest"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body check-row"><label class="check"><input id="d-notify" type="checkbox" ${l.notify.enabled ? "checked" : ""} /> Email enabled</label><label class="check"><input id="d-notify-start" type="checkbox" ${l.notify.start ? "checked" : ""} /> On upload start</label><label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Session digest when done</label></div></details>
@@ -1292,6 +1421,8 @@ function renderDetail(d) {
   $("save-detail").addEventListener("click", () => saveDetail(l.slug, false));
   $("clear-pin").addEventListener("click", () => saveDetail(l.slug, true));
   $("detail-delete").addEventListener("click", () => deleteLink(l.slug, l.label));
+  dropEditFolder = l.folderId ? { id: l.folderId, name: l.folderName || l.folderId } : null;
+  $("d-folder-browse")?.addEventListener("click", () => openFolderPicker("root", "drop-edit"));
   $("up-search").addEventListener("input", (e) => {
     detailSearch = e.target.value;
     renderUploadRows();
@@ -1379,6 +1510,9 @@ async function saveDetail(slug, clearPin) {
   const body = {
     ...(clearPin ? { pin: "" } : value("d-pin") ? { pin: value("d-pin") } : {}),
     label: value("d-label"),
+    requireAuth: $("d-auth")?.checked === true,
+    folderId: value("d-folder"),
+    folderName: dropEditFolder?.name || $("d-folder-name")?.textContent || "",
     expiresDays: Number(value("d-days")) || 0,
     settings: {
       concurrency: Number(value("d-conc")) || 4,

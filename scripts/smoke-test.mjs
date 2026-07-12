@@ -907,6 +907,32 @@ async function main() {
     const viewerCookie = (res.headers.get("set-cookie") || "").split(";")[0];
     assert.match(viewerCookie, /^hd_viewer=/, "callback sets the viewer cookie");
 
+    res = await worker.fetch(jsonRequest("/api/admin/links", {
+      label: "Authenticated Drop", slug: "authenticated-drop", folderId: "drive-folder", requireAuth: true,
+    }), driveEnv);
+    assert.equal(res.status, 200, "admin can require Google sign-in on a drop link");
+    res = await worker.fetch(request("/api/link/authenticated-drop"), driveEnv);
+    const dropMeta = await res.json();
+    assert.equal(dropMeta.requiresAuth, true);
+    assert.equal(dropMeta.viewer, null);
+    res = await worker.fetch(publicJsonRequest("/api/session", { linkId: "authenticated-drop", filename: "photo.jpg", size: 10 }), driveEnv);
+    assert.equal(res.status, 401, "drop upload session cannot bypass required sign-in");
+    res = await worker.fetch(request("/api/link/authenticated-drop", { headers: { cookie: viewerCookie } }), driveEnv);
+    assert.equal((await res.json()).viewer?.email, "viewer@example.com", "drop meta resolves the signed-in viewer");
+    res = await worker.fetch(request("/api/auth/login?kind=drop&slug=authenticated-drop"), driveEnv);
+    const dropState = new URL(res.headers.get("location")).searchParams.get("state");
+    res = await worker.fetch(request(`/api/auth/callback?code=fake-code&state=${encodeURIComponent(dropState)}`), driveEnv);
+    assert.equal(res.headers.get("location"), "/d/authenticated-drop", "drop OAuth returns to the drop link");
+
+    res = await worker.fetch(jsonRequest("/api/admin/shares/gated-share", {
+      label: "Updated Gallery", folders: ["nested-folder"], mode: "gallery", allowZip: false,
+      theme: { welcome: "Updated welcome", accentColor: "#15c0c9" },
+    }, "test-admin", "PATCH"), driveEnv);
+    assert.equal(res.status, 200, "all editable share settings can be updated together");
+    const updatedShare = await res.json();
+    assert.deepEqual(updatedShare.folderIds, ["nested-folder"]);
+    assert.equal(updatedShare.theme.welcome, "Updated welcome");
+
     res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "gated-share" }), driveEnv);
     assert.equal(res.status, 401, "listing without the cookie attached is still blocked");
 
@@ -947,6 +973,21 @@ async function main() {
   res = await worker.fetch(jsonRequest("/api/admin/shares/kareri-album", {}, "test-admin", "DELETE"), env);
   assert.equal(res.status, 200, "share deleted");
   assert.equal(await env.KV.get("share:kareri-album"), null);
+
+  const cleanupEnv = makeEnv();
+  await cleanupEnv.KV.put("links:index", JSON.stringify(["expired-drop", "paused-drop", "missing-drop"]));
+  await cleanupEnv.KV.put("link:expired-drop", JSON.stringify({ slug: "expired-drop", expiresAt: Date.now() - 1000 }));
+  await cleanupEnv.KV.put("stats:expired-drop", "{}");
+  await cleanupEnv.KV.put("link:paused-drop", JSON.stringify({ slug: "paused-drop", disabled: true, expiresAt: null }));
+  await cleanupEnv.KV.put("shares:index", JSON.stringify(["expired-share", "missing-share"]));
+  await cleanupEnv.KV.put("share:expired-share", JSON.stringify({ slug: "expired-share", mode: "gallery", expiresAt: Date.now() - 1000 }));
+  res = await worker.fetch(jsonRequest("/api/admin/maintenance/cleanup", {}), cleanupEnv);
+  assert.equal(res.status, 200, "admin can clean stale KV records");
+  const cleanupReport = await res.json();
+  assert.equal(cleanupReport.dropLinksRemoved, 1);
+  assert.equal(cleanupReport.shareLinksRemoved, 1);
+  assert.ok(await cleanupEnv.KV.get("link:paused-drop"), "paused links are retained by conservative cleanup");
+  assert.equal(await cleanupEnv.KV.get("link:expired-drop"), null);
 
   // Security headers + beacon injection.
   res = await worker.fetch(request("/"), env);

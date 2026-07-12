@@ -76,7 +76,8 @@ async function exchangeGoogleCode(env, code, redirectUri) {
 export function authLogin(request, env, url) {
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Google sign-in is not configured" }, 503);
   const slug = cleanText(url.searchParams.get("slug") || "", 60);
-  return signPayload(env, { slug, exp: Math.floor(Date.now() / 1000) + STATE_TTL }).then((state) => {
+  const kind = url.searchParams.get("kind") === "drop" ? "drop" : "share";
+  return signPayload(env, { slug, kind, exp: Math.floor(Date.now() / 1000) + STATE_TTL }).then((state) => {
     const p = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
       redirect_uri: `${url.origin}/api/auth/callback`,
@@ -98,11 +99,12 @@ export async function authCallback(request, env, url) {
     return redirectWithError(url, "", "sign-in expired, please try again");
   }
   const slug = cleanText(stateData.slug || "", 60);
-  if (!code) return redirectWithError(url, slug, "sign-in was cancelled");
+  const kind = stateData.kind === "drop" ? "drop" : "share";
+  if (!code) return redirectWithError(url, slug, "sign-in was cancelled", kind);
 
   try {
     const info = await exchangeGoogleCode(env, code, `${url.origin}/api/auth/callback`);
-    if (!info) return redirectWithError(url, slug, "Google sign-in failed");
+    if (!info) return redirectWithError(url, slug, "Google sign-in failed", kind);
 
     const viewer = {
       e: cleanText(info.email, 160),
@@ -114,18 +116,18 @@ export async function authCallback(request, env, url) {
     return new Response(null, {
       status: 302,
       headers: {
-        location: slug ? `/s/${encodeURIComponent(slug)}` : "/",
+        location: slug ? `/${kind === "drop" ? "d" : "s"}/${encodeURIComponent(slug)}` : "/",
         "set-cookie": `${VIEWER_COOKIE}=${cookie}; Path=/; Max-Age=${VIEWER_TTL}; HttpOnly; Secure; SameSite=Lax`,
       },
     });
   } catch (err) {
     console.error("auth callback failed", err.message);
-    return redirectWithError(url, slug, "sign-in failed, please try again");
+    return redirectWithError(url, slug, "sign-in failed, please try again", kind);
   }
 }
 
-function redirectWithError(url, slug, message) {
-  const dest = slug ? `/s/${encodeURIComponent(slug)}` : "/";
+function redirectWithError(url, slug, message, kind = "share") {
+  const dest = slug ? `/${kind === "drop" ? "d" : "s"}/${encodeURIComponent(slug)}` : "/";
   const q = new URLSearchParams({ signinError: message });
   return Response.redirect(`${url.origin}${dest}?${q.toString()}`, 302);
 }

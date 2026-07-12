@@ -17,6 +17,17 @@ assert.match(adminHtml, /id="folder-select-current"/, "Drive browser has an expl
 assert.match(adminJs, /function selectDriveFolder\(/, "folder selection is separate from opening a folder");
 assert.match(adminJs, /function updateCreateButtonLabel\(/, "create CTA reflects the selected destination");
 assert.match(css, /\.folder-breadcrumbs\s*\{/, "Drive breadcrumbs are styled");
+assert.match(adminHtml, /id="qr-copy"/, "QR handoff has an explicit copy action");
+assert.match(adminHtml, /id="qr-download"/, "QR handoff can download a reusable QR asset");
+assert.match(adminHtml, /id="qr-open"/, "QR handoff can open the destination for verification");
+assert.match(adminHtml, /id="qr-share"/, "share QR handoff supports the device share sheet");
+assert.match(adminHtml, /id="share-edit-dialog"/, "share links expose a complete edit dialog");
+assert.match(adminHtml, /id="se-clear-pin"/, "share settings can explicitly remove an existing PIN");
+assert.match(adminHtml, /id="f-auth"[^>]*checked/, "drop links can require Google sign-in before upload");
+assert.match(adminJs, /openShareEditor\(/, "share cards can open the settings editor");
+assert.match(adminJs, /function syncShareEditMode\(/, "share settings explain and constrain redirect-only differences");
+assert.match(adminJs, /folderPickerMode\s*===\s*"share-edit"/, "the shared Drive picker also edits existing share links");
+assert.match(css, /\.folder-browse-button\s*\{[\s\S]*?align-self:\s*end/, "Browse Drive aligns with its destination field");
 
 assert.match(adminHtml, /value="auto"[^>]*checked/, "smart automatic parallelism is the recommended default");
 assert.match(adminHtml, /value="balanced"/, "balanced preset is available");

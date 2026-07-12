@@ -290,6 +290,7 @@
               <details class="optional-advanced">
                 <summary>More options</summary>
                 <div class="grid-3">
+                  <label class="check"><input id="f-auth" type="checkbox" checked /> Require Google sign-in before upload</label>
                   <label class="check"><input id="f-folders" type="checkbox" /> Create subfolders per uploader</label>
                   <div class="field"><label for="f-budget-files">Max files</label><input id="f-budget-files" type="number" min="0" value="0" /></div>
                   <div class="field"><label for="f-budget-sessions">Max sessions</label><input id="f-budget-sessions" type="number" min="0" value="0" /></div>
@@ -335,13 +336,27 @@
     </div>
   </div>
 </main>
-<div id="qr-modal" class="qr-modal hidden">
-  <div class="qr-card">
-    <div id="qr-box"></div>
-    <p id="qr-caption" class="muted"></p>
-    <p class="muted">tap anywhere to close</p>
-  </div>
-</div>
+<dialog id="qr-modal" class="qr-modal">
+  <section class="qr-card" aria-labelledby="qr-title">
+    <header class="qr-head"><div><p class="eyebrow" id="qr-kind">SHARE LINK</p><h2 id="qr-title">Ready to scan</h2></div><button id="qr-close" class="dialog-close" type="button" aria-label="Close QR code">×</button></header>
+    <div class="qr-stage"><div id="qr-box" aria-label="QR code"></div><span class="qr-brand-mark" aria-hidden="true"></span></div>
+    <div class="qr-copy"><div><span>Destination</span><strong id="qr-caption"></strong></div><button id="qr-copy" class="mini" type="button">Copy</button></div>
+    <p class="qr-help">Scan with any camera app. The same access rules—sign-in, PIN and expiry—still apply.</p>
+    <footer class="qr-actions"><button id="qr-open" class="btn ghost" type="button">Open link</button><button id="qr-share" class="btn ghost hidden" type="button">Share link</button><button id="qr-download" class="btn" type="button">Download QR</button></footer>
+  </section>
+</dialog>
+<dialog id="share-edit-dialog" class="share-edit-dialog">
+  <form id="share-edit-form" class="share-edit-card">
+    <header class="folder-dialog-title"><div><p class="eyebrow">Share link settings</p><h2>Edit <span id="se-title"></span></h2></div><button class="dialog-close" id="share-edit-close" type="button" aria-label="Close editor">×</button></header>
+    <input id="se-slug" type="hidden" />
+    <div class="grid-2"><div class="field"><label for="se-label">Label</label><input id="se-label" maxlength="80" required /></div><div class="field"><label for="se-days">Expires in days from now</label><input id="se-days" type="number" min="0" max="30" /></div></div>
+    <div class="field"><label>Shared Drive folders</label><div id="share-edit-folders" class="selected-folder-list"></div><button id="share-edit-browse" class="mini" type="button">Browse Drive and add folders</button></div>
+    <div class="grid-2"><div class="field"><label for="se-mode">Visitor experience</label><select id="se-mode"><option value="gallery">Private gallery</option><option value="redirect">Drive redirect</option></select><small id="se-mode-help">Gallery links can use sign-in, a PIN and ZIP downloads.</small></div><div class="field"><label for="se-pin">New PIN (blank keeps current)</label><input id="se-pin" type="password" autocomplete="new-password" /><label class="check compact-check"><input id="se-clear-pin" type="checkbox" /> Remove the current PIN</label></div></div>
+    <div class="share-toggle-row"><label class="toggle-chip"><input id="se-zip" type="checkbox" /><span>Download all as ZIP</span></label><label class="toggle-chip"><input id="se-auth" type="checkbox" /><span>Require Google sign-in</span></label></div>
+    <details class="optional-advanced"><summary>Branding</summary><div class="grid-2"><div class="field"><label for="se-logo">Logo URL</label><input id="se-logo" type="url" /></div><div class="field"><label for="se-bg">Background image URL</label><input id="se-bg" type="url" /></div><div class="field"><label for="se-accent">Accent</label><input id="se-accent" type="color" /></div><div class="field"><label for="se-bgcolor">Background</label><input id="se-bgcolor" type="color" /></div><div class="field wide"><label for="se-welcome">Welcome message</label><input id="se-welcome" /></div></div></details>
+    <div class="msg-err" id="share-edit-err"></div><footer class="share-edit-actions"><button id="share-edit-cancel" class="btn ghost" type="button">Cancel</button><button class="btn" type="submit">Save all settings</button></footer>
+  </form>
+</dialog>
 <dialog id="drive-picker-dialog" class="drive-picker-dialog">
   <section id="folder-picker-panel" class="folder-picker-panel">
     <div class="folder-dialog-title"><div><p class="eyebrow">Google Drive</p><h2 id="folder-picker-title">Choose a destination</h2></div><button class="dialog-close" id="folder-close" type="button" aria-label="Close Drive browser">×</button></div>
