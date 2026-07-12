@@ -787,6 +787,10 @@ async function main() {
     assert.equal(res.status, 451, "risky executable public download is blocked");
 
     const firstDl = listed.folders[0].files[0].dl;
+    res = await worker.fetch(request(`${firstDl}?inline=1`), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.status, 200, "inline full-resolution image succeeds");
+    assert.equal(res.headers.get("x-husky-asset-tier"), "full", "inline media is explicitly identified as the original file");
+    assert.equal(Number(res.headers.get("x-husky-original-bytes")), Number(firstImage.size), "inline media reports the original Drive byte size");
     const originalNow = Date.now;
     Date.now = () => originalNow() + 16 * 60 * 1000;
     try {

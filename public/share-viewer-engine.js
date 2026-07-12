@@ -2,12 +2,21 @@
 // DOM or PhotoSwipe dependency so timing, cancellation and bandwidth policy can
 // be exercised in Node before the browser integration changes.
 
-export const ASSET_TIERS = Object.freeze(["empty", "base", "mid", "max", "full"]);
+export const ASSET_TIERS = Object.freeze(["base", "max", "full"]);
 export const INTENT_STEPS = 6;
 export const INTENT_STEP_MS = 1000;
 export const RAPID_WINDOW_MS = 500;
 export const RAPID_EVENT_COUNT = 4;
 export const RAPID_SETTLE_MS = 260;
+
+export function verifyFullAsset(details = {}) {
+  const declaredBytes = Math.max(0, Number(details.declaredBytes) || 0);
+  const blobBytes = Math.max(0, Number(details.blobBytes) || 0);
+  const expectedPixels = Math.max(0, Number(details.expectedWidth) || 0) * Math.max(0, Number(details.expectedHeight) || 0);
+  const actualPixels = Math.max(0, Number(details.actualWidth) || 0) * Math.max(0, Number(details.actualHeight) || 0);
+  if (!declaredBytes || blobBytes !== declaredBytes) return false;
+  return !expectedPixels || actualPixels >= expectedPixels * 0.92;
+}
 
 export const VIEWER_MOTION_MODES = Object.freeze([
   "fade",
@@ -101,42 +110,66 @@ export function createRapidSurfController(options = {}) {
 export function createAssetState(fileId) {
   return {
     fileId,
-    tier: "empty",
+    tier: "base",
+    presentedTier: "base",
     loading: "",
     intentStep: 0,
     intentSteps: INTENT_STEPS,
     rapid: false,
     error: "",
     failedTier: "",
-    progress: 0,
+    progress: 1,
+    assetBytes: 0,
+    assetWidth: 0,
+    assetHeight: 0,
+    verifiedFull: false,
+    fullSupported: true,
   };
+}
+
+export function assetProgress(state) {
+  if (!state) return 0;
+  if (state.loading) return Math.max(0, Math.min(1, Number(state.progress) || 0));
+  if (state.error) return Math.max(0.08, Math.min(1, Number(state.progress) || 0));
+  if (state.presentedTier === "full" && state.verifiedFull) return 1;
+  if (state.presentedTier === "max" && state.fullSupported === false) return 1;
+  if (state.tier === "full" && state.presentedTier !== "full") return 1;
+  if (state.intentStep > 0 || (state.tier === "max" && state.presentedTier === "max")) {
+    return Math.max(0, Math.min(1, Number(state.intentStep) / (Number(state.intentSteps) || INTENT_STEPS)));
+  }
+  return 1;
+}
+
+function formatAssetBytes(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (!value) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  const unit = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
+  const amount = value / 1024 ** unit;
+  return `${amount >= 10 || unit === 0 ? Math.round(amount) : amount.toFixed(1)} ${units[unit]}`;
 }
 
 export function assetLampState(state) {
   if (state?.error) {
-    const failedTier = state.failedTier || "preview";
-    if (state.tier === "empty") {
-      const label = failedTier === "base" ? "Base preview failed. Retry to load this image." : "Preview failed. Retry to load this image.";
-      return { key: "failed", label };
-    }
-    const available = state.tier === "max" ? "Maximum preview" : state.tier === "mid" ? "Medium preview" : "Thumbnail";
-    const failed = failedTier === "full" ? "Full resolution" : `${failedTier[0]?.toUpperCase() || "P"}${failedTier.slice(1)} preview`;
-    return { key: "failed", label: `${failed} failed. ${available} remains available.` };
+    if (state.failedTier === "full") return { key: "failed", label: "Full resolution failed. High-resolution preview remains available." };
+    return { key: "failed", label: "High-resolution preview failed. Tile thumbnail remains available." };
   }
   if (state?.loading === "full") return { key: "full-fetching", label: "Full resolution is loading" };
-  if (state?.tier === "full") return { key: "full-ready", label: "Full resolution is ready" };
+  if (state?.tier === "full" && state.presentedTier !== "full") return { key: "full-presenting", label: "Displaying verified full resolution" };
+  if (state?.presentedTier === "full" && state.verifiedFull) {
+    const dimensions = state.assetWidth && state.assetHeight ? ` · ${state.assetWidth}×${state.assetHeight}` : "";
+    const bytes = formatAssetBytes(state.assetBytes);
+    return { key: "full-ready", label: `Full resolution displayed${dimensions}${bytes ? ` · ${bytes}` : ""}` };
+  }
   if (state?.intentStep > 0) {
     return { key: "intent", label: `Full-resolution intent ${state.intentStep} of ${state.intentSteps || INTENT_STEPS}` };
   }
-  if (state?.loading === "max") return { key: "max-fetching", label: "Maximum thumbnail is loading" };
-  if (state?.tier === "max") return { key: "max-ready", label: "Maximum thumbnail is ready" };
-  if (state?.loading === "mid") return { key: "mid-fetching", label: "Medium preview is loading" };
-  if (state?.tier === "mid") return { key: "mid-ready", label: "Medium preview is ready" };
-  if (state?.loading === "base") return { key: "base-fetching", label: "Thumbnail is loading" };
-  if (state?.tier === "base") {
-    return { key: "base-ready", label: state.rapid ? "Thumbnail-only rapid browsing" : "Thumbnail is ready" };
+  if (state?.loading === "max") return { key: "max-fetching", label: "High-resolution preview is loading" };
+  if (state?.tier === "max" && state.presentedTier !== "max") return { key: "max-presenting", label: "Displaying high-resolution preview" };
+  if (state?.presentedTier === "max") {
+    return { key: "max-ready", label: state.fullSupported === false ? "High-resolution RAW preview displayed" : "High-resolution preview displayed" };
   }
-  return { key: "empty", label: "Thumbnail is not ready" };
+  return { key: "base-ready", label: state?.rapid ? "Tile thumbnail · rapid browsing" : "Tile thumbnail displayed" };
 }
 
 export function createViewerAssetEngine(options = {}) {
@@ -155,12 +188,21 @@ export function createViewerAssetEngine(options = {}) {
   const recordFor = (file) => {
     if (!file?.id) throw new TypeError("file.id is required");
     if (!records.has(file.id)) records.set(file.id, createAssetState(file.id));
-    return records.get(file.id);
+    const record = records.get(file.id);
+    record.fullSupported = options.canLoadFull?.(file) !== false;
+    return record;
   };
 
   const snapshot = (record) => ({ ...record });
   const emit = (record) => {
     if (!destroyed) onChange(snapshot(record));
+  };
+
+  const applyAssetMeta = (record, asset = {}) => {
+    record.assetBytes = Math.max(0, Number(asset.bytes) || 0);
+    record.assetWidth = Math.max(0, Number(asset.width) || 0);
+    record.assetHeight = Math.max(0, Number(asset.height) || 0);
+    if (asset.verifiedFull === true) record.verifiedFull = true;
   };
 
   const stopIntent = () => {
@@ -189,8 +231,9 @@ export function createViewerAssetEngine(options = {}) {
           emit(record);
         }),
       )
-      .then(() => {
+      .then((asset) => {
         if (destroyed) return false;
+        applyAssetMeta(record, asset);
         record.tier = tier;
         record.loading = "";
         record.failedTier = "";
@@ -222,7 +265,7 @@ export function createViewerAssetEngine(options = {}) {
     emit(record);
     if (record.intentStep >= INTENT_STEPS) {
       stopIntent();
-      void ensure(file, "full");
+      if (options.canLoadFull?.(file) !== false) void ensure(file, "full");
       return;
     }
     intentTimer = schedule(() => tickIntent(file), INTENT_STEP_MS);
@@ -231,7 +274,7 @@ export function createViewerAssetEngine(options = {}) {
   const startIntent = (file) => {
     stopIntent();
     const record = recordFor(file);
-    if (record.tier === "full") return;
+    if (record.tier === "full" || options.canLoadFull?.(file) === false) return;
     record.intentStep = 0;
     intentOwner = file.id;
     intentTimer = schedule(() => tickIntent(file), INTENT_STEP_MS);
@@ -247,13 +290,10 @@ export function createViewerAssetEngine(options = {}) {
       record.rapid = rapid;
       record.intentStep = 0;
       emit(record);
-      if (!(await ensure(file, "base"))) return snapshot(record);
-      if (destroyed || activeId !== file.id || rapid) return snapshot(record);
-      if (!(await ensure(file, "mid"))) return snapshot(record);
-      if (destroyed || activeId !== file.id || rapid) return snapshot(record);
+      if (rapid) return snapshot(record);
       if (!(await ensure(file, "max"))) return snapshot(record);
       if (destroyed || activeId !== file.id || rapid) return snapshot(record);
-      startIntent(file);
+      if (record.presentedTier === "max") startIntent(file);
       return snapshot(record);
     },
     setRapid(value) {
@@ -274,7 +314,22 @@ export function createViewerAssetEngine(options = {}) {
     },
     ensureFull(file) {
       stopIntent();
+      if (options.canLoadFull?.(file) === false) return Promise.resolve(false);
       return ensure(file, "full");
+    },
+    warm(file) {
+      return ensure(file, "max");
+    },
+    confirmPresented(file, tier, asset = {}) {
+      const record = recordFor(file);
+      if (ASSET_TIERS.indexOf(tier) > ASSET_TIERS.indexOf(record.tier)) return snapshot(record);
+      if (tier === "full" && asset.verifiedFull !== true && record.verifiedFull !== true) return snapshot(record);
+      const upgraded = ASSET_TIERS.indexOf(tier) > ASSET_TIERS.indexOf(record.presentedTier);
+      applyAssetMeta(record, asset);
+      if (upgraded) record.presentedTier = tier;
+      emit(record);
+      if (upgraded && tier === "max" && activeId === file.id && !rapid) startIntent(file);
+      return snapshot(record);
     },
     seed(file, tier) {
       const record = recordFor(file);

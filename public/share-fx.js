@@ -191,19 +191,6 @@
     }
   }
 
-  function animateViewerRotation(element, delta, complete) {
-    if (!element || reduced || !hasGsap) {
-      complete?.();
-      return;
-    }
-    gsap.killTweensOf(element);
-    gsap.fromTo(
-      element,
-      { rotate: 0 },
-      { rotate: delta, duration: 0.14, ease: "power2.inOut", onComplete: complete },
-    );
-  }
-
   function animateViewerTransition(element, mode, speed) {
     if (!element || reduced || !hasGsap || mode === "immediate") return;
     const duration = Math.max(0.08, Math.min(0.7, Number(speed) / 1000));
@@ -263,7 +250,6 @@
     setScrubbing,
     tileDepth,
     animateViewerLed,
-    animateViewerRotation,
     animateViewerTransition,
     hasMotion: hasGsap && !reduced,
     canHoverPreview: canHover,

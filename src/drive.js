@@ -154,6 +154,40 @@ export async function driveFileMeta(env, fileId) {
   return r.json();
 }
 
+export async function driveFileChunk(env, fileId, maxBytes = 8 * 1024 * 1024) {
+  const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  const limit = Math.max(64 * 1024, Math.min(Number(maxBytes) || 0, 12 * 1024 * 1024));
+  if (!id) return null;
+  const tok = await accessToken(env);
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, {
+    headers: { authorization: `Bearer ${tok}`, range: `bytes=0-${limit - 1}` },
+  });
+  if (!(response.status === 200 || response.status === 206)) return null;
+  const reported = Number(response.headers.get("content-length")) || 0;
+  if (response.status === 200 && reported > limit) return null;
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
+  while (received < limit) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const remaining = limit - received;
+    const chunk = value.byteLength > remaining ? value.slice(0, remaining) : value;
+    chunks.push(chunk);
+    received += chunk.byteLength;
+    if (value.byteLength > remaining) break;
+  }
+  if (received >= limit) await reader.cancel().catch(() => {});
+  const joined = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return joined.buffer;
+}
+
 // Google documents thumbnailLink as short-lived and unsuitable for direct
 // browser use. These bounded tiers are fetched with OAuth on the Worker and
 // served through Husky Drop's own signed route. The =sNNN suffix is a guarded,

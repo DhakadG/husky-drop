@@ -14,12 +14,14 @@ const {
   RAPID_SETTLE_MS,
   RAPID_WINDOW_MS,
   VIEWER_MOTION_MODES,
+  assetProgress,
   assetLampState,
   createAssetState,
   createRapidSurfController,
   createViewerAssetEngine,
   normalizeRotation,
   normalizeViewerMotion,
+  verifyFullAsset,
 } = viewerEngine;
 
 function fakeClock() {
@@ -55,7 +57,7 @@ const flush = async () => {
   for (let index = 0; index < 12; index++) await Promise.resolve();
 };
 
-assert.deepEqual(ASSET_TIERS, ["empty", "base", "mid", "max", "full"]);
+assert.deepEqual(ASSET_TIERS, ["base", "max", "full"]);
 assert.equal(INTENT_STEPS, 6);
 assert.equal(RAPID_EVENT_COUNT, 4);
 assert.equal(RAPID_WINDOW_MS, 500);
@@ -104,14 +106,20 @@ assert.equal(new Set(VIEWER_MOTION_MODES).size, VIEWER_MOTION_MODES.length, "mot
   const state = createAssetState("photo-1");
   assert.deepEqual(state, {
     fileId: "photo-1",
-    tier: "empty",
+    tier: "base",
+    presentedTier: "base",
     loading: "",
     intentStep: 0,
     intentSteps: 6,
     rapid: false,
     error: "",
     failedTier: "",
-    progress: 0,
+    progress: 1,
+    assetBytes: 0,
+    assetWidth: 0,
+    assetHeight: 0,
+    verifiedFull: false,
+    fullSupported: true,
   });
 }
 
@@ -126,14 +134,14 @@ assert.equal(new Set(VIEWER_MOTION_MODES).size, VIEWER_MOTION_MODES.length, "mot
       if (fail) throw new Error(`${tier} failed`);
     },
   });
-  const file = { id: "broken-base" };
+  const file = { id: "broken-max" };
   await engine.activate(file);
-  assert.deepEqual(calls, ["broken-base:base"], "a Base failure must stop promotion instead of trying every tier");
-  assert.equal(engine.stateFor(file).failedTier, "base");
-  assert.equal(engine.stateFor(file).tier, "empty");
+  assert.deepEqual(calls, ["broken-max:max"], "a high-resolution preview failure must stop promotion");
+  assert.equal(engine.stateFor(file).failedTier, "max");
+  assert.equal(engine.stateFor(file).tier, "base");
   fail = false;
   await engine.activate(file);
-  assert.deepEqual(calls, ["broken-base:base", "broken-base:base", "broken-base:mid", "broken-base:max"], "retry must clear the failure and resume promotion");
+  assert.deepEqual(calls, ["broken-max:max", "broken-max:max"], "retry must clear the failure and load only the high-resolution preview");
   assert.equal(engine.stateFor(file).failedTier, "");
   assert.equal(engine.stateFor(file).tier, "max");
 }
@@ -149,8 +157,11 @@ assert.equal(new Set(VIEWER_MOTION_MODES).size, VIEWER_MOTION_MODES.length, "mot
   });
   const file = { id: "photo-1" };
   await engine.activate(file);
-  assert.deepEqual(calls, ["photo-1:base", "photo-1:mid", "photo-1:max"]);
+  assert.deepEqual(calls, ["photo-1:max"]);
   assert.equal(engine.stateFor(file).tier, "max");
+  assert.equal(engine.stateFor(file).presentedTier, "base", "decoded high resolution is not ready until the DOM confirms presentation");
+  assert.equal(clock.pending(), 0, "full-resolution intent must wait until high resolution is visibly presented");
+  engine.confirmPresented(file, "max", { width: 1600, height: 1067, bytes: 350000 });
   clock.tick(5999);
   await flush();
   assert.equal(calls.includes("photo-1:full"), false, "full resolution must not start before the six-second gate");
@@ -158,6 +169,10 @@ assert.equal(new Set(VIEWER_MOTION_MODES).size, VIEWER_MOTION_MODES.length, "mot
   await flush();
   assert.equal(calls.at(-1), "photo-1:full");
   assert.equal(engine.stateFor(file).tier, "full");
+  assert.equal(engine.stateFor(file).presentedTier, "max");
+  assert.equal(assetLampState(engine.stateFor(file)).key, "full-presenting", "decoded Full must not be called ready before it is mounted");
+  engine.confirmPresented(file, "full", { width: 6165, height: 4110, bytes: 26500000, verifiedFull: true });
+  assert.equal(assetLampState(engine.stateFor(file)).key, "full-ready");
   assert.equal(states.some((state) => state.intentStep === 6), true);
   engine.destroy();
   assert.equal(clock.pending(), 0);
@@ -175,10 +190,11 @@ assert.equal(new Set(VIEWER_MOTION_MODES).size, VIEWER_MOTION_MODES.length, "mot
   const file = { id: "photo-2" };
   engine.setRapid(true);
   await engine.activate(file);
-  assert.deepEqual(calls, ["photo-2:base"], "rapid mode must fetch Base only");
+  assert.deepEqual(calls, [], "rapid mode must keep the already-cached tile thumbnail without fetching");
   engine.setRapid(false);
   await engine.activate(file);
-  assert.deepEqual(calls, ["photo-2:base", "photo-2:mid", "photo-2:max"]);
+  assert.deepEqual(calls, ["photo-2:max"]);
+  engine.confirmPresented(file, "max");
   clock.tick(2500);
   engine.deactivate(file.id);
   clock.tick(5000);
@@ -217,15 +233,20 @@ assert.equal(new Set(VIEWER_MOTION_MODES).size, VIEWER_MOTION_MODES.length, "mot
   await flush();
   const secondActivation = engine.activate(second);
   await flush();
-  resolvers.get("first:base")();
-  await flush();
-  assert.equal(calls.includes("first:mid"), false, "stale activation must not promote an inactive slide");
-  resolvers.get("second:base")();
-  await flush();
-  resolvers.get("second:mid")();
+  resolvers.get("first:max")();
   await flush();
   resolvers.get("second:max")();
   await Promise.all([firstActivation, secondActivation]);
+}
+
+{
+  const clock = fakeClock();
+  const calls = [];
+  const engine = createViewerAssetEngine({ ...clock, loadTier: async (file, tier) => calls.push(`${file.id}:${tier}`) });
+  const file = { id: "neighbor" };
+  await engine.warm(file);
+  assert.deepEqual(calls, ["neighbor:max"], "neighbor warming must cache only the high-resolution preview");
+  assert.equal(clock.pending(), 0, "warming must never arm full-resolution intent");
 }
 
 assert.equal(normalizeRotation(-90), 270);
@@ -236,21 +257,31 @@ assert.deepEqual(normalizeViewerMotion(null), { enabled: false, mode: "fade", sp
 assert.deepEqual(normalizeViewerMotion({ enabled: true, mode: "skew", speed: 20 }), { enabled: true, mode: "skew", speed: 80 });
 assert.deepEqual(normalizeViewerMotion({ enabled: true, mode: "unknown", speed: 900 }), { enabled: true, mode: "fade", speed: 700 });
 
-assert.deepEqual(assetLampState(createAssetState("x")), { key: "empty", label: "Thumbnail is not ready" });
-assert.equal(assetLampState({ ...createAssetState("x"), loading: "base" }).key, "base-fetching");
 assert.equal(assetLampState({ ...createAssetState("x"), tier: "base" }).key, "base-ready");
-assert.equal(assetLampState({ ...createAssetState("x"), tier: "mid" }).key, "mid-ready");
-assert.equal(assetLampState({ ...createAssetState("x"), tier: "max" }).key, "max-ready");
-assert.equal(assetLampState({ ...createAssetState("x"), tier: "max", intentStep: 3 }).key, "intent");
+assert.equal(assetLampState({ ...createAssetState("x"), loading: "max", progress: 0.45 }).key, "max-fetching");
+assert.equal(assetLampState({ ...createAssetState("x"), tier: "max", presentedTier: "base" }).key, "max-presenting");
+assert.equal(assetLampState({ ...createAssetState("x"), tier: "max", presentedTier: "max" }).key, "max-ready");
+assert.equal(assetLampState({ ...createAssetState("x"), tier: "max", presentedTier: "max", intentStep: 3 }).key, "intent");
 assert.equal(assetLampState({ ...createAssetState("x"), tier: "max", loading: "full" }).key, "full-fetching");
-assert.equal(assetLampState({ ...createAssetState("x"), tier: "full" }).key, "full-ready");
-assert.deepEqual(assetLampState({ ...createAssetState("x"), error: "failed", failedTier: "base" }), {
+assert.equal(assetLampState({ ...createAssetState("x"), tier: "full", presentedTier: "max" }).key, "full-presenting");
+assert.equal(assetLampState({ ...createAssetState("x"), tier: "full", presentedTier: "full", verifiedFull: true }).key, "full-ready");
+assert.deepEqual(assetLampState({ ...createAssetState("x"), error: "failed", failedTier: "max" }), {
   key: "failed",
-  label: "Base preview failed. Retry to load this image.",
+  label: "High-resolution preview failed. Tile thumbnail remains available.",
 });
-assert.deepEqual(assetLampState({ ...createAssetState("x"), tier: "max", error: "failed", failedTier: "full" }), {
+assert.deepEqual(assetLampState({ ...createAssetState("x"), tier: "max", presentedTier: "max", error: "failed", failedTier: "full" }), {
   key: "failed",
-  label: "Full resolution failed. Maximum preview remains available.",
+  label: "Full resolution failed. High-resolution preview remains available.",
 });
+assert.equal(assetProgress(createAssetState("x")), 1);
+assert.equal(assetProgress({ ...createAssetState("x"), loading: "max", progress: 0.42 }), 0.42);
+assert.equal(assetProgress({ ...createAssetState("x"), tier: "max", presentedTier: "max", intentStep: 3 }), 0.5);
+assert.equal(assetProgress({ ...createAssetState("x"), tier: "max", presentedTier: "max", fullSupported: false }), 1);
+assert.equal(assetProgress({ ...createAssetState("x"), tier: "full", presentedTier: "full", verifiedFull: true }), 1);
+
+assert.equal(verifyFullAsset({ declaredBytes: 26500000, blobBytes: 26500000, expectedWidth: 6165, expectedHeight: 4110, actualWidth: 6165, actualHeight: 4110 }), true);
+assert.equal(verifyFullAsset({ declaredBytes: 26500000, blobBytes: 4500000, expectedWidth: 6165, expectedHeight: 4110, actualWidth: 6165, actualHeight: 4110 }), false, "a resized payload with full dimensions metadata must not pass the byte proof");
+assert.equal(verifyFullAsset({ declaredBytes: 26500000, blobBytes: 26500000, expectedWidth: 6165, expectedHeight: 4110, actualWidth: 1600, actualHeight: 1067 }), false, "a thumbnail payload with original byte metadata must not pass the pixel proof");
+assert.equal(verifyFullAsset({ declaredBytes: 0, blobBytes: 26500000, expectedWidth: 6165, expectedHeight: 4110, actualWidth: 6165, actualHeight: 4110 }), false, "the original byte proof is required");
 
 console.log("share viewer engine tests passed");

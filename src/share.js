@@ -26,7 +26,8 @@ import {
   slugify,
   timingSafeEqual,
 } from "./util.js";
-import { driveFileMeta, driveGrantAnyoneReader, driveListFolder, driveRevokePermission, driveThumbnail, driveThumbnailSize, accessToken } from "./drive.js";
+import { driveFileChunk, driveFileMeta, driveGrantAnyoneReader, driveListFolder, driveRevokePermission, driveThumbnail, driveThumbnailSize, accessToken } from "./drive.js";
+import { mergeExifMetadata, parseRawExif, shouldParseRawExif } from "./exif.js";
 import { bumpShareStats, gatePin, liveStub, logEvent, mergeEventsKV, rateLimitRemote } from "./store.js";
 import { getViewer } from "./auth.js";
 
@@ -825,7 +826,17 @@ export async function shareFileInfo(request, env) {
 
   const meta = await driveFileMeta(env, parsed.fileId);
   if (!meta?.id) return json({ error: "file not found" }, 404);
-  const image = meta.imageMediaMetadata || {};
+  const driveImage = meta.imageMediaMetadata || {};
+  let parsedExif = {};
+  if (shouldParseRawExif(meta)) {
+    try {
+      const chunk = await driveFileChunk(env, parsed.fileId);
+      if (chunk) parsedExif = await parseRawExif(chunk);
+    } catch (parseError) {
+      console.warn("RAW EXIF fallback failed", parsed.fileId, String(parseError?.message || parseError));
+    }
+  }
+  const image = mergeExifMetadata(driveImage, parsedExif);
   const video = meta.videoMediaMetadata || {};
   let width = Number(image.width || video.width) || 0;
   let height = Number(image.height || video.height) || 0;
@@ -862,6 +873,18 @@ export async function shareFileInfo(request, env) {
       maxApertureValue: image.maxApertureValue ?? null,
       subjectDistance: image.subjectDistance ?? null,
       rotation: image.rotation ?? null,
+      exposureProgram: cleanText(image.exposureProgram || "", 100),
+      focalLength35mm: image.focalLength35mm ?? null,
+      software: cleanText(image.software || "", 200),
+      artist: cleanText(image.artist || "", 200),
+      copyright: cleanText(image.copyright || "", 240),
+      description: cleanText(image.description || "", 300),
+      lightSource: cleanText(image.lightSource || "", 100),
+      contrast: cleanText(image.contrast || "", 80),
+      saturation: cleanText(image.saturation || "", 80),
+      sharpness: cleanText(image.sharpness || "", 80),
+      customRendered: cleanText(image.customRendered || "", 100),
+      source: image.source || "drive",
       location: image.location && typeof image.location === "object"
         ? {
             latitude: Number(image.location.latitude) || null,
@@ -1213,7 +1236,7 @@ export async function shareDownload(request, env, token, ctx) {
   const inline = new URL(request.url).searchParams.has("inline");
   const range = request.headers.get("range") || "";
   const cache = inline ? caches.default : null;
-  const cacheKey = inline ? new Request(`https://media.internal.share/f/${parsed.fileId}`, { headers: range ? { range } : {} }) : null;
+  const cacheKey = inline ? new Request(`https://media.internal.share/f-v2/${parsed.fileId}`, { headers: range ? { range } : {} }) : null;
 
   if (cache) {
     const hit = await cache.match(cacheKey);
@@ -1244,7 +1267,7 @@ export async function shareDownload(request, env, token, ctx) {
     headers.set("content-length", String(bytes));
     const [clientBody, cacheBody] = full.body.tee();
     const putPromise = cache
-      .put(new Request(`https://media.internal.share/f/${parsed.fileId}`), new Response(cacheBody, { status: 200, headers }))
+      .put(new Request(`https://media.internal.share/f-v2/${parsed.fileId}`), new Response(cacheBody, { status: 200, headers }))
       .catch((err) => console.error("edge cache put failed", err.message));
     if (range) {
       await putPromise;
@@ -1292,6 +1315,8 @@ function shareMediaHeaders(meta, inline) {
     "x-content-type-options": "nosniff",
     "x-robots-tag": "noindex, nofollow, noarchive",
     "accept-ranges": "bytes",
+    "x-husky-asset-tier": inline ? "full" : "download",
+    "x-husky-original-bytes": String(Math.max(0, Number(meta.size) || 0)),
   });
 }
 

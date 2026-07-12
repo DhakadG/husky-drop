@@ -1,10 +1,12 @@
 import {
   VIEWER_MOTION_MODES,
   assetLampState,
+  assetProgress,
   createRapidSurfController,
   createViewerAssetEngine,
   normalizeRotation,
   normalizeViewerMotion,
+  verifyFullAsset,
 } from "./share-viewer-engine.js";
 
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
@@ -1274,8 +1276,11 @@ let rapidController = null;
 let rapidSurf = false;
 let activeAssetState = null;
 let assetLadderElement = null;
+let neighborWarmGeneration = 0;
+let neighborWarmIds = new Set();
 let viewerMotionButton = null;
 let viewerMotionPanel = null;
+let suppressNextViewerTransition = false;
 let syncRotationUi = () => {};
 
 function loadViewerMotion() {
@@ -1306,7 +1311,7 @@ function assetKey(file, tier) {
 }
 
 function highestCachedTier(file) {
-  return ["full", "max", "mid", "base"].find((tier) => decodedImages.has(assetKey(file, tier))) || "";
+  return ["full", "max"].find((tier) => decodedImages.has(assetKey(file, tier))) || "base";
 }
 
 function canDecodeOriginal(file) {
@@ -1410,9 +1415,19 @@ async function loadTierAsset(file, tier, onProgress) {
       response = await fetch(url, { signal: controller.signal });
     }
     if (!response.ok) throw new Error(`${tier} preview returned HTTP ${response.status}`);
+    const declaredOriginalBytes = tier === "full" ? Number(response.headers.get("x-husky-original-bytes")) || 0 : 0;
+    if (tier === "full" && response.headers.get("x-husky-asset-tier") !== "full") throw new Error("full preview response was not verified as the original file");
     const blob = await responseBlobWithProgress(response, controller.signal, onProgress);
     objectUrl = URL.createObjectURL(blob);
     const asset = await decodeAssetUrl(objectUrl, file, tier, objectUrl);
+    asset.bytes = blob.size;
+    asset.width = asset.image.naturalWidth;
+    asset.height = asset.image.naturalHeight;
+    if (tier === "full") {
+      if (!verifyFullAsset({ declaredBytes: declaredOriginalBytes, blobBytes: blob.size, expectedWidth: file.w, expectedHeight: file.h, actualWidth: asset.width, actualHeight: asset.height }))
+        throw new Error(`full preview failed original verification (${blob.size} bytes, ${asset.width}×${asset.height})`);
+      asset.verifiedFull = true;
+    }
     decodedImages.set(key, asset);
     if (tier === "full") enforceFullCacheLimit();
     return asset;
@@ -1426,9 +1441,9 @@ async function loadTierAsset(file, tier, onProgress) {
 
 function readyTierFor(file, state, forceBase = false) {
   if (forceBase) return "base";
-  const order = ["full", "max", "mid", "base"];
-  const ceiling = Math.max(1, ["empty", "base", "mid", "max", "full"].indexOf(state?.tier || "base"));
-  return order.find((tier) => ["empty", "base", "mid", "max", "full"].indexOf(tier) <= ceiling && decodedImages.has(assetKey(file, tier))) || "base";
+  const tiers = ["base", "max", "full"];
+  const ceiling = Math.max(0, tiers.indexOf(state?.tier || "base"));
+  return ["full", "max"].find((tier) => tiers.indexOf(tier) <= ceiling && decodedImages.has(assetKey(file, tier))) || "base";
 }
 
 function imageForTier(file, tier, className) {
@@ -1456,6 +1471,17 @@ function renderTierIntoWrap(wrap, file, state) {
     wrap.dataset.displayTier = tier;
     wrap.dataset.assetTier = tier;
     wrap.classList.add("ready");
+    const asset = decodedImages.get(assetKey(file, tier));
+    viewerAssets?.confirmPresented(file, tier, asset ? {
+      bytes: asset.bytes,
+      width: asset.width,
+      height: asset.height,
+      verifiedFull: asset.verifiedFull,
+    } : {});
+    if (tier === "full" && !wrap.dataset.fullPresentationTracked) {
+      wrap.dataset.fullPresentationTracked = "1";
+      trackEvent("viewer_full_presented", file.name, { bytes: asset?.bytes || 0, width: asset?.width || 0, height: asset?.height || 0 });
+    }
   };
   wrap.appendChild(image);
   if (image.complete && image.naturalWidth) finish();
@@ -1476,8 +1502,11 @@ function updateAssetLadder(state = activeAssetState) {
   assetLadderElement.dataset.state = mapped.key;
   assetLadderElement.dataset.tier = state.tier;
   assetLadderElement.querySelector(".pswp-asset-label").textContent = mapped.label;
-  const filled = state.tier === "full" ? 10 : Math.round((state.intentStep / state.intentSteps) * 10);
-  assetLadderElement.querySelectorAll("[data-intent-step]").forEach((cell, index) => cell.classList.toggle("active", index < filled));
+  const progress = assetProgress(state);
+  assetLadderElement.style.setProperty("--asset-progress", `${Math.round(progress * 100)}%`);
+  const bar = assetLadderElement.querySelector(".pswp-asset-progress");
+  bar?.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+  bar?.classList.toggle("indeterminate", Boolean(state.loading && !state.progress));
   fx.animateViewerLed(assetLadderElement.querySelector(".pswp-asset-lamp"), mapped.key);
 }
 
@@ -1524,7 +1553,25 @@ function endRapidNavigation(reason) {
 function promoteActiveSlide(reason = "settled") {
   const file = pswp?.currSlide?.data?.file;
   if (!file || !/^image\//.test(file.mime) || rapidSurf) return;
-  void viewerAssets?.activate(file, { reason });
+  void viewerAssets?.activate(file, { reason }).then(() => warmViewerNeighbors(pswp?.currIndex || 0));
+}
+
+async function warmViewerNeighbors(index) {
+  if (!viewerAssets || rapidSurf) return;
+  const generation = ++neighborWarmGeneration;
+  const candidates = [index - 1, index + 1, index - 2, index + 2]
+    .map((position) => lightboxItems[position])
+    .filter((file) => file && /^image\//.test(file.mime || ""));
+  const nextIds = new Set(candidates.map((file) => file.id));
+  const activeId = lightboxItems[index]?.id;
+  for (const fileId of neighborWarmIds) {
+    if (!nextIds.has(fileId) && fileId !== activeId) abortAssetLoad(fileId);
+  }
+  neighborWarmIds = nextIds;
+  for (let offset = 0; offset < candidates.length; offset += 2) {
+    if (generation !== neighborWarmGeneration || rapidSurf) return;
+    await Promise.allSettled(candidates.slice(offset, offset + 2).map((file) => viewerAssets?.warm(file)));
+  }
 }
 
 function bindRapidPointer(button, direction) {
@@ -1553,7 +1600,7 @@ function pswpItem(file) {
     width,
     height,
     msrc: file.thumb ? thumbUrl(file, "base") : "",
-    src: isVideo ? undefined : thumbUrl(file, "mid"),
+    src: isVideo ? undefined : thumbUrl(file, "max"),
   };
 }
 
@@ -1564,6 +1611,7 @@ async function openViewer(index, sourceEl) {
   viewerAssets = createViewerAssetEngine({
     loadTier: loadTierAsset,
     abort: abortAssetLoad,
+    canLoadFull: canDecodeOriginal,
     onChange: handleAssetState,
   });
   for (const item of lightboxItems) {
@@ -1609,7 +1657,9 @@ async function openViewer(index, sourceEl) {
     updateCaption(current);
     syncStrip(pswp.currIndex);
     refreshFileInfo(current);
-    if (/^image\//.test(current?.mime || "")) void viewerAssets.activate(current);
+    if (/^image\//.test(current?.mime || "")) {
+      void viewerAssets.activate(current).then(() => warmViewerNeighbors(pswp.currIndex));
+    }
     applyViewerTransition();
     syncRotationUi();
     trackEvent("view", current?.name || "");
@@ -1675,6 +1725,9 @@ async function openViewer(index, sourceEl) {
     rapidSurf = false;
     activeAssetState = null;
     assetLadderElement = null;
+    neighborWarmGeneration++;
+    for (const fileId of neighborWarmIds) abortAssetLoad(fileId);
+    neighborWarmIds.clear();
     syncRotationUi = () => {};
     destroyStrip();
     closeViewerPanels({ forceInfo: true });
@@ -1686,7 +1739,7 @@ async function openViewer(index, sourceEl) {
   updateCaption(file);
   bindRapidPointer(pswp.element?.querySelector(".pswp__button--arrow--prev"), "previous");
   bindRapidPointer(pswp.element?.querySelector(".pswp__button--arrow--next"), "next");
-  if (/^image\//.test(file.mime)) void viewerAssets.activate(file);
+  if (/^image\//.test(file.mime)) void viewerAssets.activate(file).then(() => warmViewerNeighbors(index));
 }
 
 function registerProgressiveImageContent(instance) {
@@ -1715,10 +1768,13 @@ function registerProgressiveImageContent(instance) {
       const thumb = imageForTier(file, "base", "pswp-progressive-thumb");
       wrap.appendChild(thumb);
     }
-    const state = viewerAssets?.stateFor(file) || { fileId: file.id, tier: "base", loading: "", intentStep: 0, intentSteps: 6 };
+    const state = viewerAssets?.stateFor(file) || { fileId: file.id, tier: "base", presentedTier: "base", loading: "", intentStep: 0, intentSteps: 6, progress: 1 };
     renderTierIntoWrap(wrap, file, state);
     setProgressiveLoading(content, false);
-    if (instance.currSlide?.data?.file?.id === file.id) applyViewerTransition(wrap);
+    if (instance.currSlide?.data?.file?.id === file.id) {
+      if (suppressNextViewerTransition) suppressNextViewerTransition = false;
+      else applyViewerTransition(wrap);
+    }
   });
 }
 
@@ -1744,13 +1800,10 @@ function rotateCurrentMedia(delta) {
   if (!file || !/^(image|video)\//.test(file.mime)) return;
   closeViewerPanels();
   const rotation = setRotation(file, rotationFor(file) + delta);
-  const finish = () => {
-    if (!pswp) return;
-    pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
-    pswp.refreshSlideContent(pswp.currIndex);
-    syncRotationUi();
-  };
-  fx.animateViewerRotation(pswp.currSlide?.content?.element, delta, finish);
+  suppressNextViewerTransition = true;
+  pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
+  pswp.refreshSlideContent(pswp.currIndex);
+  syncRotationUi();
   trackEvent("media_rotate", `${rotation}°`, { file: file.name, direction: delta < 0 ? "left" : "right", mime: file.mime });
 }
 
@@ -1758,15 +1811,11 @@ function resetCurrentRotation() {
   const file = pswp?.currSlide?.data?.file;
   const currentRotation = rotationFor(file);
   if (!file || !currentRotation) return;
-  const delta = currentRotation > 180 ? 360 - currentRotation : -currentRotation;
   setRotation(file, 0);
-  const finish = () => {
-    if (!pswp) return;
-    pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
-    pswp.refreshSlideContent(pswp.currIndex);
-    syncRotationUi();
-  };
-  fx.animateViewerRotation(pswp.currSlide?.content?.element, delta, finish);
+  suppressNextViewerTransition = true;
+  pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
+  pswp.refreshSlideContent(pswp.currIndex);
+  syncRotationUi();
   trackEvent("media_rotation_reset", file.name, { mime: file.mime });
 }
 
@@ -1872,6 +1921,7 @@ const GUIDE_SECTIONS = [
 ];
 
 let viewerGuidePanel = null;
+let viewerGuideButton = null;
 let stripSettingsPanel = null;
 
 function hasOpenViewerPanel() {
@@ -1888,6 +1938,8 @@ function closeViewerPanels(options = {}) {
   if (except !== "guide") {
     viewerGuidePanel?.remove();
     viewerGuidePanel = null;
+    viewerGuideButton?.classList.remove("is-active");
+    viewerGuideButton?.setAttribute("aria-pressed", "false");
   }
   if (except !== "filmstrip") {
     stripSettingsPanel?.remove();
@@ -1978,6 +2030,8 @@ function toggleViewerGuide(instance) {
   panel.addEventListener("pointerdown", (event) => event.stopPropagation());
   instance.element.appendChild(panel);
   viewerGuidePanel = panel;
+  viewerGuideButton?.classList.add("is-active");
+  viewerGuideButton?.setAttribute("aria-pressed", "true");
   syncViewerPanelState();
 }
 
@@ -2001,7 +2055,7 @@ function registerUi(instance) {
       order: 7,
       isButton: false,
       tagName: "div",
-      html: '<span class="pswp-asset-lamp" aria-hidden="true"></span><span class="pswp-asset-label">Preview</span><span class="pswp-asset-cells" aria-hidden="true">' + Array.from({ length: 10 }, (_, index) => `<i data-intent-step="${index + 1}"></i>`).join("") + "</span>",
+      html: '<span class="pswp-asset-lamp" aria-hidden="true"></span><span class="pswp-asset-label">Preview</span><span class="pswp-asset-progress" role="progressbar" aria-label="Image loading and full-resolution intent" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>',
       onInit: (element) => {
         element.className += " pswp-asset-ladder";
         element.setAttribute("role", "status");
@@ -2047,8 +2101,16 @@ function registerUi(instance) {
       isButton: true,
       tagName: "button",
       html: icon("circle-help", "pswp__icn-info"),
-      onClick: () => toggleViewerGuide(instance),
-      onInit: shortcut("?"),
+      onClick: (event) => {
+        event?.stopPropagation?.();
+        toggleViewerGuide(instance);
+      },
+      onInit: (element) => {
+        viewerGuideButton = element;
+        element.setAttribute("aria-pressed", "false");
+        element.addEventListener("pointerdown", (event) => event.stopPropagation());
+        shortcut("?")(element);
+      },
       title: "Viewer guide and keyboard shortcuts",
     });
     instance.ui.registerElement({
@@ -2110,22 +2172,10 @@ function registerUi(instance) {
       onInit: (element) => (rotateButtons.push(element), shortcut("]")(element)),
       title: "Rotate right",
     });
-    let rotationStatus = null;
     let rotationReset = null;
     instance.ui.registerElement({
-      name: "rotation-status",
-      order: 18,
-      isButton: false,
-      tagName: "span",
-      html: "0°",
-      onInit: (element) => {
-        rotationStatus = element;
-        element.className += " pswp-rotation-status";
-      },
-    });
-    instance.ui.registerElement({
       name: "rotation-reset-button",
-      order: 19,
+      order: 18,
       isButton: true,
       tagName: "button",
       html: icon("rotate-ccw-square", "pswp__icn-rotation-reset"),
@@ -2148,11 +2198,12 @@ function registerUi(instance) {
     });
     syncRotationUi = () => {
       const rotation = rotationFor(instance.currSlide?.data?.file);
-      if (rotationStatus) {
-        rotationStatus.textContent = `${rotation}°`;
-        rotationStatus.hidden = rotation === 0;
-      }
-      if (rotationReset) rotationReset.hidden = rotation === 0;
+      if (!rotationReset) return;
+      rotationReset.disabled = rotation === 0;
+      rotationReset.setAttribute("aria-disabled", String(rotation === 0));
+      rotationReset.setAttribute("aria-label", rotation ? `Reset ${rotation} degree rotation` : "Image orientation is unchanged");
+      if (rotation) rotationReset.dataset.rotation = `${rotation}°`;
+      else delete rotationReset.dataset.rotation;
     };
   });
   instance.on("change", () => {
@@ -2171,6 +2222,7 @@ function registerUi(instance) {
   });
   instance.on("destroy", () => {
     viewerMotionButton = null;
+    viewerGuideButton = null;
     fileInfoToolbarButton = null;
     closeViewerPanels({ forceInfo: true });
   });
@@ -2361,19 +2413,31 @@ function renderFileInfo(body, data, fallback) {
     ["Maximum aperture", exif.maxApertureValue ? `f/${exif.maxApertureValue}` : ""],
     ["ISO", exif.isoSpeed ? `ISO ${exif.isoSpeed}` : ""],
     ["Focal length", exif.focalLength ? `${exif.focalLength} mm` : ""],
+    ["35 mm equivalent", exif.focalLength35mm ? `${exif.focalLength35mm} mm` : ""],
     ["Exposure bias", exif.exposureBias != null ? `${exif.exposureBias} EV` : ""],
     ["Exposure mode", exif.exposureMode],
+    ["Exposure program", exif.exposureProgram],
     ["Metering", exif.meteringMode],
     ["White balance", exif.whiteBalance],
-    ["Flash", exif.flashUsed == null ? "" : exif.flashUsed ? "Fired" : "Did not fire"],
+    ["Flash", exif.flashUsed == null ? "" : typeof exif.flashUsed === "boolean" ? (exif.flashUsed ? "Fired" : "Did not fire") : exif.flashUsed],
     ["Color space", exif.colorSpace],
     ["Sensor", exif.sensor],
     ["Subject distance", exif.subjectDistance ? `${exif.subjectDistance} m` : ""],
     ["Orientation", formatOrientation(exif.rotation)],
     ["GPS", exif.location?.latitude != null && exif.location?.longitude != null ? `${exif.location.latitude}, ${exif.location.longitude}` : ""],
     ["GPS altitude", exif.location?.altitude != null ? `${exif.location.altitude} m` : ""],
+    ["Software / firmware", exif.software],
+    ["Artist", exif.artist],
+    ["Copyright", exif.copyright],
+    ["Description", exif.description],
+    ["Light source", exif.lightSource],
+    ["Contrast", exif.contrast],
+    ["Saturation", exif.saturation],
+    ["Sharpness", exif.sharpness],
+    ["Rendering", exif.customRendered],
   ];
-  body.innerHTML = exposureSummary(exif) + infoSection("File and attributes", general) + infoSection("EXIF", camera);
+  const sourceNote = exif.source === "embedded-raw" ? '<p class="pswp-info-source">Additional fields read from the embedded RAW metadata.</p>' : "";
+  body.innerHTML = exposureSummary(exif) + sourceNote + infoSection("File and attributes", general) + infoSection("EXIF", camera);
 }
 
 function exposureSummary(exif) {
@@ -2407,6 +2471,7 @@ function formatShutterSpeed(value) {
 
 function formatOrientation(rotation) {
   if (rotation == null || rotation === "") return "";
+  if (!Number.isFinite(Number(rotation))) return String(rotation);
   const quarterTurns = ((Number(rotation) % 4) + 4) % 4;
   return ["Landscape / 0°", "Portrait / 90°", "Landscape / 180°", "Portrait / 270°"][quarterTurns] || "";
 }
