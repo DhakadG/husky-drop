@@ -60,6 +60,41 @@ export async function liveProgress(env, session) {
   });
 }
 
+export async function liveShareStats(env) {
+  const rows = new Map();
+  if (!env.LIVE_TRACKER) return rows;
+  try {
+    const response = await liveStub(env).fetch("https://live.internal/share-stats");
+    if (!response.ok) return rows;
+    const data = await response.json();
+    for (const row of data.rows || []) if (row?.slug) rows.set(row.slug, row);
+  } catch (error) {
+    console.error("share stats SQLite read failed", String(error?.message || error));
+  }
+  return rows;
+}
+
+// Raw click/performance telemetry is high-volume and must never consume the
+// global KV write allowance. The Durable Object persists it in its own SQLite
+// storage; if analytics storage is unavailable, the user-facing request still
+// succeeds and the batch is intentionally dropped.
+export async function storeTelemetry(env, batch) {
+  if (!env.LIVE_TRACKER) return false;
+  try {
+    const body = JSON.stringify(batch);
+    if (body.length > 64 * 1024) return false;
+    const response = await liveStub(env).fetch("https://live.internal/telemetry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("telemetry storage unavailable", String(error?.message || error));
+    return false;
+  }
+}
+
 export async function bumpStats(env, slug, delta) {
   const key = `stats:${slug}`;
   const stats = normalizeStats(await env.KV.get(key, "json"));
@@ -132,6 +167,17 @@ export async function mergeEventsKV(env, records) {
 }
 
 export async function recentEvents(env, limit = 60) {
+  if (env.LIVE_TRACKER) {
+    try {
+      const response = await liveStub(env).fetch(`https://live.internal/events?limit=${Math.max(1, Math.min(EVENT_CAP, Number(limit) || 60))}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data.events)) return data.events.slice(0, limit);
+      }
+    } catch (error) {
+      console.error("activity SQLite read failed", String(error?.message || error));
+    }
+  }
   const rows = await env.KV.get("events:recent", "json");
   if (rows) return rows.slice(0, limit);
   // One-time lazy migration from the legacy ev:* key-per-event layout.
@@ -268,7 +314,13 @@ export async function gatePin(request, env, link, pin, keyPrefix = "link:", brut
   const lock = await currentLock(env, slug, request);
   if (lock.retryAfter) return retryJson("too many wrong attempts", lock.retryAfter);
   if (await pinMatches(link, pin)) {
-    await clearPinFailures(env, slug, request);
+    // KV deletes count against the same write budget as puts. Most successful
+    // checks have nothing to clear, so avoid a write on every folder change.
+    if (lock.state.attempts || lock.state.level || lock.state.lockedUntil) {
+      await clearPinFailures(env, slug, request).catch((error) =>
+        console.error("PIN failure cleanup deferred", String(error?.message || error)),
+      );
+    }
     await upgradePinHash(env, keyPrefix, link, pin);
     return null;
   }

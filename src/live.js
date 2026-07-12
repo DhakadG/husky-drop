@@ -40,6 +40,8 @@ export class LiveTracker {
     this.pendingDays = new Map(); // `${slug}|${day}` -> delta object
     this.rateBuckets = new Map(); // key -> { count, reset }
     this.recentDone = []; // finished-session summaries for the Live tab
+    this.lastTelemetryPrune = 0;
+    this.lastActivityPrune = 0;
     this.sqlReady = false;
     try {
       this.sql = state.storage.sql;
@@ -61,6 +63,35 @@ export class LiveTracker {
         bytes INTEGER NOT NULL DEFAULT 0,
         downloads INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (slug, day)
+      )`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS telemetry_batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        started_at INTEGER NOT NULL DEFAULT 0,
+        viewer TEXT NOT NULL DEFAULT '',
+        events_json TEXT NOT NULL
+      )`);
+      this.sql.exec("CREATE INDEX IF NOT EXISTS telemetry_at_idx ON telemetry_batches(at)");
+      this.sql.exec("CREATE INDEX IF NOT EXISTS telemetry_slug_idx ON telemetry_batches(slug, at)");
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS activity_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        slug TEXT NOT NULL DEFAULT '',
+        record_json TEXT NOT NULL
+      )`);
+      this.sql.exec("CREATE INDEX IF NOT EXISTS activity_at_idx ON activity_events(at DESC)");
+      this.sql.exec("CREATE INDEX IF NOT EXISTS activity_day_idx ON activity_events(day, at DESC)");
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS share_stats (
+        slug TEXT PRIMARY KEY,
+        opens INTEGER NOT NULL DEFAULT 0,
+        downloads INTEGER NOT NULL DEFAULT 0,
+        bytes INTEGER NOT NULL DEFAULT 0,
+        views INTEGER NOT NULL DEFAULT 0,
+        viewers_json TEXT NOT NULL DEFAULT '{}'
       )`);
       this.sqlReady = true;
     } catch (err) {
@@ -95,10 +126,74 @@ export class LiveTracker {
       });
     }
 
+    if (url.pathname === "/events") {
+      const limit = clamp(Number(url.searchParams.get("limit")) || 60, 1, EVENT_CAP);
+      if (!this.sqlReady) return new Response(JSON.stringify({ events: [] }), { headers: JSON_HEADERS });
+      const rows = this.sql.exec("SELECT record_json FROM activity_events ORDER BY at DESC LIMIT ?", limit).toArray();
+      const events = rows.map((row) => JSON.parse(row.record_json)).filter(Boolean);
+      return new Response(JSON.stringify({ events }), { headers: JSON_HEADERS });
+    }
+
+    if (url.pathname === "/events-days") {
+      const beforeRaw = cleanText(url.searchParams.get("before") || "", 10);
+      const before = /^\d{4}-\d{2}-\d{2}$/.test(beforeRaw) ? beforeRaw : dayKey(Date.now());
+      const days = clamp(Number(url.searchParams.get("days")) || 3, 1, 14);
+      const start = new Date(`${before}T00:00:00Z`).getTime();
+      if (!Number.isFinite(start)) return new Response(JSON.stringify({ error: "bad before date" }), { status: 400, headers: JSON_HEADERS });
+      const out = [];
+      for (let index = 1; index <= days; index++) {
+        const day = dayKey(start - index * 86400_000);
+        const rows = this.sqlReady
+          ? this.sql.exec("SELECT record_json FROM activity_events WHERE day = ? ORDER BY at DESC LIMIT ?", day, EVENT_CAP).toArray()
+          : [];
+        out.push({ day, events: rows.map((row) => JSON.parse(row.record_json)).filter(Boolean) });
+      }
+      return new Response(JSON.stringify({ days: out, oldest: out.length ? out.at(-1).day : before }), { headers: JSON_HEADERS });
+    }
+
+    if (url.pathname === "/share-stats") {
+      const rows = this.sqlReady
+        ? this.sql.exec("SELECT slug, opens, downloads, bytes, views, viewers_json FROM share_stats").toArray()
+        : [];
+      return new Response(JSON.stringify({ rows: rows.map((row) => ({
+        slug: row.slug,
+        opens: Number(row.opens) || 0,
+        downloads: Number(row.downloads) || 0,
+        bytes: Number(row.bytes) || 0,
+        views: Number(row.views) || 0,
+        viewers: JSON.parse(row.viewers_json || "{}"),
+      })) }), { headers: JSON_HEADERS });
+    }
+
+    if (request.method === "POST" && url.pathname === "/telemetry") {
+      const body = await request.json().catch(() => ({}));
+      const events = Array.isArray(body.events) ? body.events.slice(0, 40) : [];
+      if (!this.sqlReady || !events.length) {
+        return new Response(JSON.stringify({ ok: true, stored: false }), { headers: JSON_HEADERS });
+      }
+      const at = Number(body.at) || Date.now();
+      this.sql.exec(
+        `INSERT INTO telemetry_batches (kind, slug, session_id, at, started_at, viewer, events_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        cleanText(body.kind || "event", 20),
+        cleanText(body.slug || "", 60),
+        cleanText(body.sessionId || "", 80),
+        at,
+        Number(body.startedAt) || 0,
+        cleanText(body.viewer || "", 100),
+        JSON.stringify(events),
+      );
+      if (at - this.lastTelemetryPrune > 6 * 3600_000) {
+        this.sql.exec("DELETE FROM telemetry_batches WHERE at < ?", at - 30 * 86400_000);
+        this.lastTelemetryPrune = at;
+      }
+      return new Response(JSON.stringify({ ok: true, stored: true }), { headers: JSON_HEADERS });
+    }
+
     if (request.method === "POST" && url.pathname === "/event") {
       const body = await request.json().catch(() => ({}));
       if (body && body.record) this.accumulateEvent(body.record);
-      await this.armAlarm();
+      if (!this.sqlReady) await this.armAlarm();
       return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
     }
 
@@ -118,7 +213,12 @@ export class LiveTracker {
       const body = await request.json().catch(() => ({}));
       const slug = cleanText(body.slug || "", 60);
       if (slug) {
-        const cur = this.pendingShareStats.get(slug) || { opens: 0, downloads: 0, bytes: 0, views: 0, viewers: {} };
+        const stored = this.sqlReady
+          ? this.sql.exec("SELECT opens, downloads, bytes, views, viewers_json FROM share_stats WHERE slug = ?", slug).toArray()[0]
+          : null;
+        const cur = stored
+          ? { opens: Number(stored.opens) || 0, downloads: Number(stored.downloads) || 0, bytes: Number(stored.bytes) || 0, views: Number(stored.views) || 0, viewers: JSON.parse(stored.viewers_json || "{}") }
+          : this.pendingShareStats.get(slug) || { opens: 0, downloads: 0, bytes: 0, views: 0, viewers: {} };
         cur.opens += Number(body.opens) || 0;
         cur.downloads += Number(body.downloads) || 0;
         cur.bytes += Number(body.bytes) || 0;
@@ -129,7 +229,18 @@ export class LiveTracker {
             at: Date.now(),
           };
         }
-        this.pendingShareStats.set(slug, cur);
+        if (this.sqlReady) {
+          const viewerEntries = Object.entries(cur.viewers).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0)).slice(0, 50);
+          this.sql.exec(
+            `INSERT INTO share_stats (slug, opens, downloads, bytes, views, viewers_json)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(slug) DO UPDATE SET opens = excluded.opens, downloads = excluded.downloads,
+               bytes = excluded.bytes, views = excluded.views, viewers_json = excluded.viewers_json`,
+            slug, cur.opens, cur.downloads, cur.bytes, cur.views, JSON.stringify(Object.fromEntries(viewerEntries)),
+          );
+        } else {
+          this.pendingShareStats.set(slug, cur);
+        }
         this.bumpDay(`share:${slug}`, {
           opens: Number(body.opens) || 0,
           downloads: Number(body.downloads) || 0,
@@ -412,6 +523,25 @@ export class LiveTracker {
 
   accumulateEvent(record) {
     if (!record || !record.t) return;
+    if (this.sqlReady) {
+      const at = Number(record.at) || Date.now();
+      try {
+        this.sql.exec(
+          "INSERT INTO activity_events (at, day, slug, record_json) VALUES (?, ?, ?, ?)",
+          at,
+          dayKey(at),
+          cleanText(record.s || record.slug || "", 60),
+          JSON.stringify(record),
+        );
+        if (at - this.lastActivityPrune > 6 * 3600_000) {
+          this.sql.exec("DELETE FROM activity_events WHERE at < ?", at - 90 * 86400_000);
+          this.lastActivityPrune = at;
+        }
+        return;
+      } catch (error) {
+        console.error("activity SQLite write failed", String(error?.message || error));
+      }
+    }
     this.pendingEvents.push(record);
     if (this.pendingEvents.length > EVENT_CAP + 50) this.pendingEvents.shift();
   }
@@ -470,6 +600,7 @@ export class LiveTracker {
       );
       this.armAlarm().catch(() => {});
     }
+
     this.sessions.set(session.id, session);
     return session;
   }

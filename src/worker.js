@@ -39,7 +39,7 @@ import {
   timingSafeEqual,
 } from "./util.js";
 import { accessToken, driveBrowseFolders, driveCreateFolder, driveFileMeta, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
-import { bumpStats, gatePin, getUploads, liveProgress, liveSnapshot, liveStub, logEvent, mergeEventsKV, rateLimitRemote, recentEvents, recordCompletion, sendNotify } from "./store.js";
+import { bumpStats, gatePin, getUploads, liveProgress, liveShareStats, liveSnapshot, liveStub, logEvent, mergeEventsKV, rateLimitRemote, recentEvents, recordCompletion, sendNotify, storeTelemetry } from "./store.js";
 import {
   adminShare,
   createShareZipTicket,
@@ -666,11 +666,14 @@ async function dropTrack(request, env) {
       }))
     : [];
   if (!events.length) return json({ ok: true });
-  await env.KV.put(
-    `telemetry:drop:${slug}:${sessionId || "anonymous"}:${Date.now()}:${randomSlug(4)}`,
-    JSON.stringify({ at: Date.now(), startedAt: Number(b.startedAt) || 0, events }).slice(0, 64 * 1024),
-    { expirationTtl: 30 * 24 * 3600 },
-  );
+  await storeTelemetry(env, {
+    kind: "drop",
+    slug,
+    sessionId,
+    at: Date.now(),
+    startedAt: Number(b.startedAt) || 0,
+    events,
+  });
 
   const clicks = events.filter((event) => event.t === "click");
   if (clicks.length) {
@@ -848,9 +851,18 @@ async function adminOverview(env) {
   }
   rows.sort((a, b) => b.createdAt - a.createdAt);
   const shares = await getAllShares(env);
+  const shareStatDeltas = await liveShareStats(env);
   const shareRows = [];
   for (const share of shares) {
-    shareRows.push(adminShare(share, await env.KV.get(`sstats:${share.slug}`, "json")));
+    const base = (await env.KV.get(`sstats:${share.slug}`, "json")) || {};
+    const delta = shareStatDeltas.get(share.slug) || {};
+    shareRows.push(adminShare(share, {
+      opens: (Number(base.opens) || 0) + (Number(delta.opens) || 0),
+      downloads: (Number(base.downloads) || 0) + (Number(delta.downloads) || 0),
+      bytes: (Number(base.bytes) || 0) + (Number(delta.bytes) || 0),
+      views: (Number(base.views) || 0) + (Number(delta.views) || 0),
+      viewers: { ...(base.viewers || {}), ...(delta.viewers || {}) },
+    }));
   }
   shareRows.sort((a, b) => b.createdAt - a.createdAt);
   const quota = env.GOOGLE_CLIENT_ID ? await driveQuota(env) : null;
@@ -881,6 +893,10 @@ async function adminEvents(env, url) {
   const beforeRaw = cleanText(url.searchParams.get("before") || "", 10);
   const before = /^\d{4}-\d{2}-\d{2}$/.test(beforeRaw) ? beforeRaw : dayKey(Date.now());
   const days = clamp(Number(url.searchParams.get("days")) || 3, 1, 14);
+  if (env.LIVE_TRACKER) {
+    const response = await liveStub(env).fetch(`https://live.internal/events-days?before=${encodeURIComponent(before)}&days=${days}`);
+    if (response.ok) return json(await response.json());
+  }
   const start = new Date(`${before}T00:00:00Z`).getTime();
   if (!Number.isFinite(start)) return json({ error: "bad before date" }, 400);
   const out = [];

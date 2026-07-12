@@ -28,7 +28,7 @@ import {
 } from "./util.js";
 import { driveFileChunk, driveFileMeta, driveGrantAnyoneReader, driveListFolder, driveRevokePermission, driveThumbnail, driveThumbnailSize, accessToken } from "./drive.js";
 import { mergeExifMetadata, parseRawExif, shouldParseRawExif } from "./exif.js";
-import { bumpShareStats, gatePin, liveStub, logEvent, mergeEventsKV, rateLimitRemote } from "./store.js";
+import { bumpShareStats, gatePin, liveShareStats, liveStub, logEvent, mergeEventsKV, rateLimitRemote, storeTelemetry } from "./store.js";
 import { getViewer } from "./auth.js";
 
 const BLOCKED_PUBLIC_DOWNLOAD_EXTS = new Set([
@@ -147,9 +147,18 @@ export async function getAllShares(env) {
 
 export async function listShares(env) {
   const shares = await getAllShares(env);
+  const deltas = await liveShareStats(env);
   const out = [];
   for (const share of shares) {
-    out.push(adminShare(share, await env.KV.get(`sstats:${share.slug}`, "json")));
+    const base = (await env.KV.get(`sstats:${share.slug}`, "json")) || {};
+    const delta = deltas.get(share.slug) || {};
+    out.push(adminShare(share, {
+      opens: (Number(base.opens) || 0) + (Number(delta.opens) || 0),
+      downloads: (Number(base.downloads) || 0) + (Number(delta.downloads) || 0),
+      bytes: (Number(base.bytes) || 0) + (Number(delta.bytes) || 0),
+      views: (Number(base.views) || 0) + (Number(delta.views) || 0),
+      viewers: { ...(base.viewers || {}), ...(delta.viewers || {}) },
+    }));
   }
   out.sort((a, b) => b.createdAt - a.createdAt);
   return json({ shares: out });
@@ -385,11 +394,15 @@ export async function shareTrack(request, env) {
   const events = Array.isArray(b.events) ? b.events.slice(0, 40).map(normalizeTelemetryEvent) : [];
   const sessionId = cleanText(b.sessionId || "", 40);
   if (!events.length) return json({ ok: true });
-  await env.KV.put(
-    `telemetry:share:${slug}:${sessionId || "anonymous"}:${Date.now()}:${randomSlug(4)}`,
-    JSON.stringify({ at: Date.now(), startedAt: Number(b.startedAt) || 0, viewer: viewer?.email || "anonymous", events }),
-    { expirationTtl: 30 * 24 * 3600 },
-  );
+  await storeTelemetry(env, {
+    kind: "share",
+    slug,
+    sessionId,
+    at: Date.now(),
+    startedAt: Number(b.startedAt) || 0,
+    viewer: viewer?.email || "anonymous",
+    events,
+  });
   const navEvents = events.filter((e) => e.t === "nav");
   const viewEvents = events.filter((e) => e.t === "view" || e.t === "media_view_start");
   const clickEvents = events.filter((e) => e.t === "click");

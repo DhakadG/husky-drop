@@ -3,10 +3,41 @@
 
 import { cleanText, driveQueryEscape, sanitizeFolderName, sha256 } from "./util.js";
 
-export async function accessToken(env) {
-  const cached = await env.KV.get("gtoken", "json");
-  if (cached && cached.exp > Date.now() / 1000 + 120) return cached.tok;
+// Application-level OAuth cache (not request-scoped state). It keeps Drive
+// usable when KV cache writes are temporarily unavailable and also collapses
+// concurrent refreshes inside one Worker isolate.
+const tokenMemory = new Map();
+const tokenRefreshes = new Map();
 
+async function cachePut(env, key, value, options) {
+  try {
+    await env.KV.put(key, value, options);
+    return true;
+  } catch (error) {
+    // Cache persistence is optional. A depleted KV write budget must never
+    // invalidate a Google response that already succeeded.
+    console.warn("KV cache write skipped", key, String(error?.message || error));
+    return false;
+  }
+}
+
+export async function accessToken(env) {
+  const clientKey = String(env.GOOGLE_CLIENT_ID || "default");
+  const memory = tokenMemory.get(clientKey);
+  if (memory && memory.exp > Date.now() / 1000 + 120) return memory.tok;
+  const cached = await env.KV.get("gtoken", "json");
+  if (cached && cached.exp > Date.now() / 1000 + 120) {
+    tokenMemory.set(clientKey, cached);
+    return cached.tok;
+  }
+
+  if (tokenRefreshes.has(clientKey)) return tokenRefreshes.get(clientKey);
+  const refresh = refreshAccessToken(env, clientKey).finally(() => tokenRefreshes.delete(clientKey));
+  tokenRefreshes.set(clientKey, refresh);
+  return refresh;
+}
+
+async function refreshAccessToken(env, clientKey) {
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -19,9 +50,11 @@ export async function accessToken(env) {
   });
   if (!r.ok) throw new Error("Google token refresh failed: " + (await r.text()).slice(0, 300));
   const d = await r.json();
-  await env.KV.put(
+  const value = { tok: d.access_token, exp: Date.now() / 1000 + d.expires_in };
+  tokenMemory.set(clientKey, value);
+  await cachePut(env,
     "gtoken",
-    JSON.stringify({ tok: d.access_token, exp: Date.now() / 1000 + d.expires_in }),
+    JSON.stringify(value),
     { expirationTtl: Math.max(60, d.expires_in - 60) }
   );
   return d.access_token;
@@ -45,7 +78,7 @@ export async function driveQuota(env) {
       usage: Number(d.storageQuota?.usage) || 0,
       at: Date.now(),
     };
-    await env.KV.put("gquota", JSON.stringify(quota), { expirationTtl: 7200 });
+    await cachePut(env, "gquota", JSON.stringify(quota), { expirationTtl: 7200 });
     return quota;
   } catch {
     return cached || null;
@@ -303,7 +336,7 @@ export async function resolveUploaderFolderDirect(env, link, uploader) {
   if (cached?.id) return cached.id;
   const found = await driveFindFolder(env, safeName, link.folderId);
   const folder = found || (await driveCreateFolder(env, safeName, link.folderId));
-  await env.KV.put(cacheKey, JSON.stringify(folder), { expirationTtl: 180 * 86400 });
+  await cachePut(env, cacheKey, JSON.stringify(folder), { expirationTtl: 180 * 86400 });
   return folder.id;
 }
 
@@ -325,7 +358,7 @@ export async function resolvePathFolderDirect(env, link, uploader, segments) {
     }
     const found = await driveFindFolder(env, name, parentId);
     const folder = found || (await driveCreateFolder(env, name, parentId));
-    await env.KV.put(cacheKey, JSON.stringify({ id: folder.id }), { expirationTtl: 180 * 86400 });
+    await cachePut(env, cacheKey, JSON.stringify({ id: folder.id }), { expirationTtl: 180 * 86400 });
     parentId = folder.id;
   }
   return parentId;
@@ -344,6 +377,6 @@ export async function ensureLinkFolderDirect(env, slug) {
   link.folderId = folder.id;
   link.folderName = folder.name;
   link.folderPending = false;
-  await env.KV.put(`link:${slug}`, JSON.stringify(link));
+  await cachePut(env, `link:${slug}`, JSON.stringify(link));
   return folder.id;
 }
