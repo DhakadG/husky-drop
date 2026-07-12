@@ -13,6 +13,7 @@ const {
   RAPID_EVENT_COUNT,
   RAPID_SETTLE_MS,
   RAPID_WINDOW_MS,
+  VIEWER_MOTION_MODES,
   assetLampState,
   createAssetState,
   createRapidSurfController,
@@ -59,6 +60,8 @@ assert.equal(INTENT_STEPS, 6);
 assert.equal(RAPID_EVENT_COUNT, 4);
 assert.equal(RAPID_WINDOW_MS, 500);
 assert.equal(RAPID_SETTLE_MS, 260);
+assert.ok(VIEWER_MOTION_MODES.length >= 20, "the motion picker must expose at least 20 distinct effects");
+assert.equal(new Set(VIEWER_MOTION_MODES).size, VIEWER_MOTION_MODES.length, "motion effects must be unique");
 
 {
   const clock = fakeClock();
@@ -107,8 +110,32 @@ assert.equal(RAPID_SETTLE_MS, 260);
     intentSteps: 6,
     rapid: false,
     error: "",
+    failedTier: "",
     progress: 0,
   });
+}
+
+{
+  const clock = fakeClock();
+  const calls = [];
+  let fail = true;
+  const engine = createViewerAssetEngine({
+    ...clock,
+    loadTier: async (file, tier) => {
+      calls.push(`${file.id}:${tier}`);
+      if (fail) throw new Error(`${tier} failed`);
+    },
+  });
+  const file = { id: "broken-base" };
+  await engine.activate(file);
+  assert.deepEqual(calls, ["broken-base:base"], "a Base failure must stop promotion instead of trying every tier");
+  assert.equal(engine.stateFor(file).failedTier, "base");
+  assert.equal(engine.stateFor(file).tier, "empty");
+  fail = false;
+  await engine.activate(file);
+  assert.deepEqual(calls, ["broken-base:base", "broken-base:base", "broken-base:mid", "broken-base:max"], "retry must clear the failure and resume promotion");
+  assert.equal(engine.stateFor(file).failedTier, "");
+  assert.equal(engine.stateFor(file).tier, "max");
 }
 
 {
@@ -217,6 +244,13 @@ assert.equal(assetLampState({ ...createAssetState("x"), tier: "max" }).key, "max
 assert.equal(assetLampState({ ...createAssetState("x"), tier: "max", intentStep: 3 }).key, "intent");
 assert.equal(assetLampState({ ...createAssetState("x"), tier: "max", loading: "full" }).key, "full-fetching");
 assert.equal(assetLampState({ ...createAssetState("x"), tier: "full" }).key, "full-ready");
-assert.equal(assetLampState({ ...createAssetState("x"), tier: "max", error: "failed" }).key, "failed");
+assert.deepEqual(assetLampState({ ...createAssetState("x"), error: "failed", failedTier: "base" }), {
+  key: "failed",
+  label: "Base preview failed. Retry to load this image.",
+});
+assert.deepEqual(assetLampState({ ...createAssetState("x"), tier: "max", error: "failed", failedTier: "full" }), {
+  key: "failed",
+  label: "Full resolution failed. Maximum preview remains available.",
+});
 
 console.log("share viewer engine tests passed");

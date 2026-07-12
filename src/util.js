@@ -22,7 +22,7 @@ export const SECURITY_HEADERS = {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com",
     "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://api.resend.com https://cloudflareinsights.com https://*.clarity.ms",
-    "img-src 'self' data: https:",
+    "img-src 'self' data: blob: https:",
     "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
     "base-uri 'none'",
     "form-action 'none'",

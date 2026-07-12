@@ -1395,14 +1395,20 @@ async function loadTierAsset(file, tier, onProgress) {
     if (tier === "full") await ensureFreshDownload(file, false, controller.signal);
     else if (thumbnailsExpiring) await ensureFreshDownload(file, true, controller.signal);
     if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
-    const url = tierUrl(file, tier);
+    let url = tierUrl(file, tier);
     if (!url) throw new Error(`${tier} preview is unavailable`);
     if (/^data:/i.test(url)) {
       const asset = await decodeAssetUrl(url, file, tier);
       decodedImages.set(key, asset);
       return asset;
     }
-    const response = await fetch(url, { signal: controller.signal });
+    let response = await fetch(url, { signal: controller.signal });
+    if ([401, 403].includes(response.status)) {
+      await ensureFreshDownload(file, true, controller.signal);
+      if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
+      url = tierUrl(file, tier);
+      response = await fetch(url, { signal: controller.signal });
+    }
     if (!response.ok) throw new Error(`${tier} preview returned HTTP ${response.status}`);
     const blob = await responseBlobWithProgress(response, controller.signal, onProgress);
     objectUrl = URL.createObjectURL(blob);
@@ -1494,11 +1500,12 @@ function syncAssetError(state, file) {
     if (notice) return;
     notice = document.createElement("div");
     notice.className = "pswp-progressive-error";
-    notice.innerHTML = `<b>This preview could not be upgraded.</b><span>The current preview remains available. Retry now, or refresh the page if this keeps happening.</span><button type="button">Retry</button>`;
+    const hasPreview = state.tier !== "empty";
+    notice.innerHTML = `<b>${hasPreview ? "This preview could not be upgraded." : "This preview could not be loaded."}</b><span>${hasPreview ? "The current preview remains available." : "The thumbnail remains visible when available."} Retry now, or refresh the page if this keeps happening.</span><button type="button">Retry</button>`;
     notice.querySelector("button").addEventListener("click", (event) => {
       event.stopPropagation();
       notice.remove();
-      if (/^full\b/i.test(state.error)) void viewerAssets?.ensureFull(file);
+      if (state.failedTier === "full") void viewerAssets?.ensureFull(file);
       else void viewerAssets?.activate(file);
       trackEvent("viewer_asset_retry", file.name, { tier: state.tier, error: state.error });
     });
@@ -2218,15 +2225,17 @@ let fileInfoRequest = 0;
 let fileInfoCloseTimer = 0;
 
 function mountFileInfo(instance) {
-  const hoverZone = document.createElement("div");
-  hoverZone.className = "pswp-info-hover-zone";
-  hoverZone.setAttribute("aria-hidden", "true");
-  hoverZone.addEventListener("mouseenter", () => {
-    clearFileInfoClose();
-    toggleFileInfo(false, true);
-  });
-  hoverZone.addEventListener("mouseleave", scheduleFileInfoClose);
-  instance.element.appendChild(hoverZone);
+  for (const position of ["top", "bottom"]) {
+    const hoverZone = document.createElement("div");
+    hoverZone.className = `pswp-info-hover-zone pswp-info-hover-zone--${position}`;
+    hoverZone.setAttribute("aria-hidden", "true");
+    hoverZone.addEventListener("mouseenter", () => {
+      clearFileInfoClose();
+      toggleFileInfo(false, true);
+    });
+    hoverZone.addEventListener("mouseleave", scheduleFileInfoClose);
+    instance.element.appendChild(hoverZone);
+  }
   instance.on("destroy", () => {
     clearFileInfoClose();
     fileInfoPanel = null;

@@ -948,6 +948,7 @@ async function main() {
   res = await worker.fetch(request("/"), env);
   assert.equal(res.headers.get("x-content-type-options"), "nosniff");
   assert.match(res.headers.get("content-security-policy") || "", /connect-src[^;]*googleapis\.com/);
+  assert.match(res.headers.get("content-security-policy") || "", /img-src[^;]*blob:/, "progressive image object URLs must be allowed by CSP");
   assert.match(res.headers.get("content-security-policy") || "", /cloudflareinsights\.com/);
   assert.match(res.headers.get("content-security-policy") || "", /clarity\.ms/);
   assert.match(res.headers.get("permissions-policy") || "", /camera=\(\)/);

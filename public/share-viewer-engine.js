@@ -107,12 +107,22 @@ export function createAssetState(fileId) {
     intentSteps: INTENT_STEPS,
     rapid: false,
     error: "",
+    failedTier: "",
     progress: 0,
   };
 }
 
 export function assetLampState(state) {
-  if (state?.error) return { key: "failed", label: `Full preview failed. ${state.tier} remains available.` };
+  if (state?.error) {
+    const failedTier = state.failedTier || "preview";
+    if (state.tier === "empty") {
+      const label = failedTier === "base" ? "Base preview failed. Retry to load this image." : "Preview failed. Retry to load this image.";
+      return { key: "failed", label };
+    }
+    const available = state.tier === "max" ? "Maximum preview" : state.tier === "mid" ? "Medium preview" : "Thumbnail";
+    const failed = failedTier === "full" ? "Full resolution" : `${failedTier[0]?.toUpperCase() || "P"}${failedTier.slice(1)} preview`;
+    return { key: "failed", label: `${failed} failed. ${available} remains available.` };
+  }
   if (state?.loading === "full") return { key: "full-fetching", label: "Full resolution is loading" };
   if (state?.tier === "full") return { key: "full-ready", label: "Full resolution is ready" };
   if (state?.intentStep > 0) {
@@ -169,6 +179,7 @@ export function createViewerAssetEngine(options = {}) {
     if (pending.has(key)) return pending.get(key);
     record.loading = tier;
     record.error = "";
+    record.failedTier = "";
     record.progress = 0;
     emit(record);
     const promise = Promise.resolve()
@@ -182,6 +193,7 @@ export function createViewerAssetEngine(options = {}) {
         if (destroyed) return false;
         record.tier = tier;
         record.loading = "";
+        record.failedTier = "";
         record.progress = 1;
         if (tier === "full") record.intentStep = INTENT_STEPS;
         emit(record);
@@ -191,7 +203,10 @@ export function createViewerAssetEngine(options = {}) {
         if (destroyed) return false;
         record.loading = "";
         record.progress = 0;
-        if (error?.name !== "AbortError") record.error = String(error?.message || error || "asset failed");
+        if (error?.name !== "AbortError") {
+          record.error = String(error?.message || error || "asset failed");
+          record.failedTier = tier;
+        }
         emit(record);
         return false;
       })
@@ -232,11 +247,11 @@ export function createViewerAssetEngine(options = {}) {
       record.rapid = rapid;
       record.intentStep = 0;
       emit(record);
-      await ensure(file, "base");
+      if (!(await ensure(file, "base"))) return snapshot(record);
       if (destroyed || activeId !== file.id || rapid) return snapshot(record);
-      await ensure(file, "mid");
+      if (!(await ensure(file, "mid"))) return snapshot(record);
       if (destroyed || activeId !== file.id || rapid) return snapshot(record);
-      await ensure(file, "max");
+      if (!(await ensure(file, "max"))) return snapshot(record);
       if (destroyed || activeId !== file.id || rapid) return snapshot(record);
       startIntent(file);
       return snapshot(record);

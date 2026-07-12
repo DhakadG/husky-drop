@@ -2677,18 +2677,22 @@ body.selecting .g-check {
   cursor: pointer;
 }
 
-.pswp__icn-download,
-.pswp__icn-info,
-.pswp__icn-file-info,
-.pswp__icn-filmstrip-settings,
-.pswp__icn-rotate-left,
-.pswp__icn-rotate-right,
-.pswp__icn-motion,
-.pswp__icn-rotation-reset,
-.pswp__icn-fullscreen,
-.pswp__icn-skip-back-button,
-.pswp__icn-skip-forward-button {
+.pswp .pswp__button--file-info-button .pswp__icn,
+.pswp .pswp__button--shortcuts-button .pswp__icn,
+.pswp .pswp__button--download-button .pswp__icn,
+.pswp .pswp__button--filmstrip-settings-button .pswp__icn,
+.pswp .pswp__button--motion-settings-button .pswp__icn,
+.pswp .pswp__button--rotate-left-button .pswp__icn,
+.pswp .pswp__button--rotate-right-button .pswp__icn,
+.pswp .pswp__button--rotation-reset-button .pswp__icn,
+.pswp .pswp__button--fullscreen-button .pswp__icn,
+.pswp .pswp__button--skip-back-button .pswp__icn,
+.pswp .pswp__button--skip-forward-button .pswp__icn {
   fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .pswp .pswp__top-bar {
   align-items: center;
@@ -2978,16 +2982,22 @@ body.selecting .g-check {
 .pswp .pswp-info-hover-zone {
   position: absolute;
   z-index: 108;
-  top: 64px;
   right: 0;
-  bottom: 92px;
   width: 112px;
+}
+.pswp .pswp-info-hover-zone--top {
+  top: 64px;
+  bottom: calc(50% + 76px);
+}
+.pswp .pswp-info-hover-zone--bottom {
+  top: calc(50% + 76px);
+  bottom: 92px;
 }
 .pswp .pswp-file-info {
   position: absolute;
   z-index: 115;
   top: 58px;
-  right: 10px;
+  right: 72px;
   bottom: 92px;
   width: var(--info-drawer-width);
   display: flex;
@@ -3009,7 +3019,8 @@ body.selecting .g-check {
   pointer-events: auto;
 }
 .pswp-info-open .pswp__button--arrow--next {
-  right: calc(var(--info-drawer-width) + 18px);
+  right: 0;
+  z-index: 120;
 }
 .pswp .pswp-file-info > header {
   display: flex;
@@ -5680,6 +5691,13 @@ table.uploads .empty-cell {
   }
   .pswp .pswp-info-hover-zone {
     top: 94px;
+  }
+  .pswp .pswp-info-hover-zone--top {
+    bottom: calc(50% + 64px);
+  }
+  .pswp .pswp-info-hover-zone--bottom {
+    top: calc(50% + 64px);
+    bottom: 92px;
   }
 }
 .folder-breadcrumbs button[aria-current="page"] {
