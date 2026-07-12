@@ -994,8 +994,11 @@ async function cleanupInactiveRecords(request, env) {
     operationsDeferred: 0,
     indexUpdatesDeferred: 0,
   };
-  const deleteKey = async (key) => {
+  const deleteKey = async (key, knownToExist = false) => {
     try {
+      // A delete for a missing key still consumes a KV write. Reads are much
+      // cheaper, so cleanup retries probe optional companion records first.
+      if (!knownToExist && (await env.KV.get(key)) == null) return false;
       await env.KV.delete(key);
       report.keysDeleted += 1;
       return true;
@@ -1021,7 +1024,9 @@ async function cleanupInactiveRecords(request, env) {
     if (link && linkState(link) !== "expired") { keptLinks.push(slug); continue; }
     if (!link) report.staleIndexEntries += 1;
     else report.dropLinksRemoved += 1;
-    for (const key of [`link:${slug}`, `stats:${slug}`, `recent:${slug}`]) await deleteKey(key);
+    if (link) await deleteKey(`link:${slug}`, true);
+    await deleteKey(`stats:${slug}`);
+    await deleteKey(`recent:${slug}`);
   }
   await compactIndex("links:index", storedLinks, keptLinks);
 
@@ -1036,7 +1041,8 @@ async function cleanupInactiveRecords(request, env) {
       report.shareLinksRemoved += 1;
       if (share.mode === "redirect") await revokeSharePermissions(env, share);
     }
-    for (const key of [`share:${slug}`, `sstats:${slug}`]) await deleteKey(key);
+    if (share) await deleteKey(`share:${slug}`, true);
+    await deleteKey(`sstats:${slug}`);
   }
   await compactIndex("shares:index", storedShares, keptShares);
   return json({ ok: true, complete: report.operationsDeferred === 0 && report.indexUpdatesDeferred === 0, ...report });
