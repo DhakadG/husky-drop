@@ -989,6 +989,20 @@ async function main() {
   assert.ok(await cleanupEnv.KV.get("link:paused-drop"), "paused links are retained by conservative cleanup");
   assert.equal(await cleanupEnv.KV.get("link:expired-drop"), null);
 
+  const cappedCleanupEnv = makeEnv();
+  await cappedCleanupEnv.KV.put("links:index", JSON.stringify(["expired-capped"]));
+  await cappedCleanupEnv.KV.put("link:expired-capped", JSON.stringify({ slug: "expired-capped", expiresAt: Date.now() - 1000 }));
+  const cappedPut = cappedCleanupEnv.KV.put.bind(cappedCleanupEnv.KV);
+  cappedCleanupEnv.KV.put = async (key, ...args) => {
+    if (key === "links:index") throw new Error("KV put() limit exceeded for the day.");
+    return cappedPut(key, ...args);
+  };
+  res = await worker.fetch(jsonRequest("/api/admin/maintenance/cleanup", {}), cappedCleanupEnv);
+  assert.equal(res.status, 200, "cleanup reports a saturated KV quota instead of returning 500");
+  const cappedReport = await res.json();
+  assert.equal(cappedReport.indexUpdatesDeferred, 1);
+  assert.equal(await cappedCleanupEnv.KV.get("link:expired-capped"), null, "successful deletions are retained when index compaction is deferred");
+
   // Security headers + beacon injection.
   res = await worker.fetch(request("/"), env);
   assert.equal(res.headers.get("x-content-type-options"), "nosniff");

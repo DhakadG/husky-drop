@@ -986,7 +986,34 @@ async function removeLinkFromIndex(env, slug) {
 }
 
 async function cleanupInactiveRecords(request, env) {
-  const report = { dropLinksRemoved: 0, shareLinksRemoved: 0, staleIndexEntries: 0, keysDeleted: 0 };
+  const report = {
+    dropLinksRemoved: 0,
+    shareLinksRemoved: 0,
+    staleIndexEntries: 0,
+    keysDeleted: 0,
+    operationsDeferred: 0,
+    indexUpdatesDeferred: 0,
+  };
+  const deleteKey = async (key) => {
+    try {
+      await env.KV.delete(key);
+      report.keysDeleted += 1;
+      return true;
+    } catch (error) {
+      report.operationsDeferred += 1;
+      console.warn(JSON.stringify({ event: "maintenance_cleanup_deferred", operation: "delete", key, message: error?.message || "KV delete failed" }));
+      return false;
+    }
+  };
+  const compactIndex = async (key, before, after) => {
+    if (JSON.stringify(after) === JSON.stringify(before)) return;
+    try {
+      await env.KV.put(key, JSON.stringify(after));
+    } catch (error) {
+      report.indexUpdatesDeferred += 1;
+      console.warn(JSON.stringify({ event: "maintenance_cleanup_deferred", operation: "compact_index", key, message: error?.message || "KV put failed" }));
+    }
+  };
   const storedLinks = (await env.KV.get("links:index", "json")) || [];
   const keptLinks = [];
   for (const slug of storedLinks.map(slugify).filter(Boolean)) {
@@ -994,11 +1021,9 @@ async function cleanupInactiveRecords(request, env) {
     if (link && linkState(link) !== "expired") { keptLinks.push(slug); continue; }
     if (!link) report.staleIndexEntries += 1;
     else report.dropLinksRemoved += 1;
-    for (const key of [`link:${slug}`, `stats:${slug}`, `recent:${slug}`]) {
-      await env.KV.delete(key); report.keysDeleted += 1;
-    }
+    for (const key of [`link:${slug}`, `stats:${slug}`, `recent:${slug}`]) await deleteKey(key);
   }
-  if (JSON.stringify(keptLinks) !== JSON.stringify(storedLinks)) await env.KV.put("links:index", JSON.stringify(keptLinks));
+  await compactIndex("links:index", storedLinks, keptLinks);
 
   const storedShares = (await env.KV.get("shares:index", "json")) || [];
   const keptShares = [];
@@ -1011,10 +1036,8 @@ async function cleanupInactiveRecords(request, env) {
       report.shareLinksRemoved += 1;
       if (share.mode === "redirect") await revokeSharePermissions(env, share);
     }
-    for (const key of [`share:${slug}`, `sstats:${slug}`]) {
-      await env.KV.delete(key); report.keysDeleted += 1;
-    }
+    for (const key of [`share:${slug}`, `sstats:${slug}`]) await deleteKey(key);
   }
-  if (JSON.stringify(keptShares) !== JSON.stringify(storedShares)) await env.KV.put("shares:index", JSON.stringify(keptShares));
-  return json({ ok: true, ...report });
+  await compactIndex("shares:index", storedShares, keptShares);
+  return json({ ok: true, complete: report.operationsDeferred === 0 && report.indexUpdatesDeferred === 0, ...report });
 }
