@@ -3325,6 +3325,10 @@ table.uploads .empty-cell {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
+  .toolbar-tools .tile-size-control {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
   .sort-select {
     grid-column: 1 / -1;
     width: 100%;
@@ -5203,87 +5207,149 @@ table.uploads .empty-cell {
 }
 
 .size-control {
-  display: inline-flex;
-  align-items: center;
+  --control-accent: var(--accent);
+  --control-accent-2: #15bcc8;
+  display: grid;
   gap: 7px;
-  min-height: 36px;
-  padding: 5px 9px;
-  border: 1px solid var(--line-2);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.76);
+  width: 246px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px 9px;
+  border: 1px solid transparent;
+  border-radius: 15px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.88), rgba(248, 251, 255, 0.82)) padding-box,
+    linear-gradient(125deg, rgba(47, 107, 255, 0.34), rgba(21, 188, 200, 0.24), rgba(255, 255, 255, 0.8)) border-box;
+  box-shadow: 0 10px 28px -22px rgba(34, 91, 184, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 .tile-size-control {
   color: var(--ink-soft);
 }
-.size-control > span {
-  font: 600 10px var(--font-mono);
+.size-control-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.size-control-head > span {
+  color: var(--ink-soft);
+  font: 700 9.5px var(--font-mono);
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
-.size-control > svg {
-  width: 13px;
-  height: 13px;
-  flex: 0 0 auto;
-  fill: currentColor;
-  opacity: 0.66;
+.size-control-value {
+  min-width: 72px;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--control-accent) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--control-accent) 9%, white);
+  color: color-mix(in srgb, var(--control-accent) 82%, #10243d);
+  font: 700 9px var(--font-mono);
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
 }
-.size-control > svg.large {
-  width: 16px;
-  height: 16px;
-  opacity: 0.9;
+.size-control-rail {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 7px;
+}
+.size-control-end {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  color: var(--muted);
+}
+.size-control-end svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+.size-control-end svg.large {
+  width: 17px;
+  height: 17px;
+}
+.size-control-end small {
+  font: 600 7.5px var(--font-mono);
+  letter-spacing: 0.02em;
 }
 .size-control input[type="range"] {
-  width: 104px;
-  height: 18px;
+  width: 100%;
+  height: 22px;
   margin: 0;
   padding: 0;
   appearance: none;
   background: transparent;
-  cursor: ew-resize;
+  cursor: pointer;
 }
 .size-control input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
+  height: 7px;
+  border: 1px solid rgba(65, 91, 128, 0.1);
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent) 0 var(--size-progress, 50%), rgba(82, 105, 136, 0.2) var(--size-progress, 50%) 100%);
+  background:
+    linear-gradient(90deg, var(--control-accent) 0%, var(--control-accent-2) var(--size-progress, 50%), rgba(82, 105, 136, 0.13) var(--size-progress, 50%) 100%);
+  box-shadow: inset 0 1px 2px rgba(29, 59, 99, 0.12);
 }
 .size-control input[type="range"]::-webkit-slider-thumb {
-  width: 14px;
-  height: 14px;
-  margin-top: -5px;
+  width: 18px;
+  height: 18px;
+  margin-top: -6.5px;
   appearance: none;
-  border: 2px solid #fff;
+  border: 3px solid #fff;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 3px 10px -3px rgba(47, 107, 255, 0.85);
+  background: linear-gradient(135deg, var(--control-accent), var(--control-accent-2));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--control-accent) 28%, transparent), 0 5px 14px -4px rgba(47, 107, 255, 0.88);
 }
 .size-control input[type="range"]::-moz-range-track {
-  height: 4px;
+  height: 7px;
   border-radius: 999px;
-  background: rgba(82, 105, 136, 0.2);
+  background: rgba(82, 105, 136, 0.13);
 }
 .size-control input[type="range"]::-moz-range-progress {
-  height: 4px;
+  height: 7px;
   border-radius: 999px;
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--control-accent), var(--control-accent-2));
 }
 .size-control input[type="range"]::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border: 2px solid #fff;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #fff;
   border-radius: 50%;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--control-accent), var(--control-accent-2));
+  box-shadow: 0 5px 14px -4px rgba(47, 107, 255, 0.88);
+}
+.size-control input[type="range"]:focus-visible {
+  outline: none;
+}
+.size-control input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(47, 107, 255, 0.2), 0 5px 14px -4px rgba(47, 107, 255, 0.88);
 }
 .pswp .pswp-strip-size {
-  --accent: #55cbd4;
+  --control-accent: #5c8dff;
+  --control-accent-2: #20d1cf;
   --size-progress: 50%;
-  border-color: rgba(255, 255, 255, 0.13);
-  background: rgba(6, 15, 29, 0.68);
-  backdrop-filter: blur(12px);
+  width: 276px;
+  border-color: transparent;
+  background:
+    linear-gradient(rgba(7, 17, 33, 0.86), rgba(8, 21, 39, 0.78)) padding-box,
+    linear-gradient(125deg, rgba(92, 141, 255, 0.56), rgba(32, 209, 207, 0.35), rgba(255, 255, 255, 0.16)) border-box;
+  box-shadow: 0 18px 38px -20px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(1.15);
 }
-.pswp .pswp-strip-size input[type="range"] {
-  width: 92px;
+.pswp .pswp-strip-size .size-control-head > span,
+.pswp .pswp-strip-size .size-control-end {
+  color: rgba(224, 236, 255, 0.68);
+}
+.pswp .pswp-strip-size .size-control-value {
+  border-color: rgba(82, 199, 255, 0.2);
+  background: rgba(54, 123, 255, 0.14);
+  color: #9fe9f0;
 }
 .pswp .pswp-strip-size input[type="range"]::-webkit-slider-runnable-track {
-  background: linear-gradient(90deg, var(--accent) 0 var(--size-progress), rgba(255, 255, 255, 0.16) var(--size-progress) 100%);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(90deg, var(--control-accent) 0%, var(--control-accent-2) var(--size-progress), rgba(255, 255, 255, 0.14) var(--size-progress) 100%);
 }
 .folder-breadcrumbs button[aria-current="page"] {
   color: var(--ink);

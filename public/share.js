@@ -18,7 +18,9 @@ let listFetchedAt = 0;
 let current = null; // active listing: { folders: [...] }
 let sortMode = localStorage.getItem("lhdb_sort") || "name";
 let tileScale = readScale("lhdb_gallery_scale", localStorage.getItem("lhdb_tile_size") === "compact" ? 3 : localStorage.getItem("lhdb_tile_size") === "large" ? 7 : 5);
-let stripScale = readScale("lhdb_strip_scale", 5);
+const STRIP_WIDTHS = [34, 40, 46, 54, 64, 76, 90, 106, 124, 144, 168, 192, 216];
+const STRIP_HEIGHTS = [26, 30, 35, 42, 49, 58, 68, 80, 94, 108, 126, 144, 162];
+let stripScale = readScale("lhdb_strip_scale", 5, STRIP_WIDTHS.length);
 // crumbs: [{ fid, name, token }]. fid "" = root. Navigation is keyed on the
 // stable fid, never on `token` (a signed "ls" token that is re-minted with a
 // new signature on every listing call and therefore compares unequal across
@@ -576,7 +578,9 @@ function installTileSizeControl() {
   const apply = (next, report = false) => {
     tileScale = readScale("", next);
     range.value = String(tileScale);
-    range.setAttribute("aria-valuetext", sizeDescription(tileScale));
+    const label = sizeDescription(tileScale);
+    range.setAttribute("aria-valuetext", label);
+    control.querySelector(".size-control-value").textContent = label;
     control.style.setProperty("--size-progress", `${((tileScale - 1) / 8) * 100}%`);
     localStorage.setItem("lhdb_gallery_scale", String(tileScale));
     scheduleLayout();
@@ -586,13 +590,17 @@ function installTileSizeControl() {
   apply(tileScale);
 }
 
-function readScale(key, fallback) {
+function readScale(key, fallback, max = 9) {
   const value = key ? Number(localStorage.getItem(key)) : Number(fallback);
-  return Math.max(1, Math.min(9, Number.isFinite(value) ? Math.round(value) : 5));
+  return Math.max(1, Math.min(max, Number.isFinite(value) ? Math.round(value) : 5));
 }
 
 function sizeDescription(step) {
-  return ["Tiny", "Very small", "Small", "Compact", "Balanced", "Roomy", "Large", "Very large", "Cinematic"][step - 1];
+  return ["Maximum density", "High density", "Dense", "Compact", "Balanced", "Spacious", "Large tiles", "Detail view", "Maximum detail"][step - 1];
+}
+
+function stripSizeDescription(step) {
+  return `${STRIP_WIDTHS[step - 1]} px`;
 }
 
 function folderCard(sub) {
@@ -1377,6 +1385,12 @@ async function openViewer(index, sourceEl) {
 }
 
 function registerProgressiveImageContent(instance) {
+  instance.addFilter("isContentLoading", (isLoading, content) =>
+    content._progressiveManaged ? Boolean(content._progressiveLoading) : isLoading,
+  );
+  instance.on("contentLoadImage", (event) => {
+    if (event.content._progressiveManaged) event.preventDefault();
+  });
   instance.on("contentLoad", (event) => {
     const { content } = event;
     if (content.data.type !== "image") return;
@@ -1385,6 +1399,7 @@ function registerProgressiveImageContent(instance) {
     const wrap = document.createElement("div");
     wrap.className = "pswp-progressive-wrap";
     content.element = wrap;
+    content._progressiveManaged = true;
 
     const cached = decodedImages.get(file.id);
     if (cached?.complete && cached.naturalWidth) {
@@ -1393,6 +1408,7 @@ function registerProgressiveImageContent(instance) {
       wrap.classList.add("ready", "from-cache");
       wrap.appendChild(cached);
       content._fullImage = cached;
+      setProgressiveLoading(content, false);
       return;
     }
 
@@ -1419,6 +1435,7 @@ function attachProgressiveImage(wrap, file, content, force) {
   image.alt = file.name;
   wrap.appendChild(image);
   content._fullImage = image;
+  setProgressiveLoading(content, true);
   record.promise.then((ready) => {
     // PhotoSwipe preloads adjacent slides while their wrappers are detached.
     // Mark them ready even off-DOM so navigating to an already decoded image
@@ -1426,9 +1443,11 @@ function attachProgressiveImage(wrap, file, content, force) {
     if (content._fullImage !== image) return;
     if (ready && image.naturalWidth) {
       wrap.classList.add("ready");
+      setProgressiveLoading(content, false);
       return;
     }
     wrap.classList.add("failed");
+    setProgressiveLoading(content, false, true);
     const error = document.createElement("div");
     error.className = "pswp-progressive-error";
     error.innerHTML = `<b>Full-resolution image could not be loaded.</b><span>The preview is still available. Refresh the page if this keeps happening.</span><button type="button">Try again</button>`;
@@ -1439,6 +1458,15 @@ function attachProgressiveImage(wrap, file, content, force) {
     wrap.appendChild(error);
     trackEvent("preview_failed", file.name, { mime: file.mime, size: file.size });
   });
+}
+
+function setProgressiveLoading(content, loading, isError = false) {
+  const changed = content._progressiveLoading !== loading;
+  content._progressiveLoading = loading;
+  content.instance?.ui?.updatePreloaderVisibility?.();
+  if (changed && !loading && content.slide) {
+    content.instance.dispatch("loadComplete", { slide: content.slide, content, isError });
+  }
 }
 
 function registerVideoContent(instance) {
@@ -1744,8 +1772,9 @@ function renderFileInfo(body, data, fallback) {
     ["Make", exif.cameraMake],
     ["Model", exif.cameraModel],
     ["Lens", exif.lens],
-    ["Exposure", exif.exposureTime ? `${exif.exposureTime} sec` : ""],
+    ["Shutter speed", formatShutterSpeed(exif.exposureTime)],
     ["Aperture", exif.aperture ? `f/${exif.aperture}` : ""],
+    ["Maximum aperture", exif.maxApertureValue ? `f/${exif.maxApertureValue}` : ""],
     ["ISO", exif.isoSpeed ? `ISO ${exif.isoSpeed}` : ""],
     ["Focal length", exif.focalLength ? `${exif.focalLength} mm` : ""],
     ["Exposure bias", exif.exposureBias != null ? `${exif.exposureBias} EV` : ""],
@@ -1756,9 +1785,35 @@ function renderFileInfo(body, data, fallback) {
     ["Color space", exif.colorSpace],
     ["Sensor", exif.sensor],
     ["Subject distance", exif.subjectDistance ? `${exif.subjectDistance} m` : ""],
+    ["Orientation", formatOrientation(exif.rotation)],
     ["GPS", exif.location?.latitude != null && exif.location?.longitude != null ? `${exif.location.latitude}, ${exif.location.longitude}` : ""],
+    ["GPS altitude", exif.location?.altitude != null ? `${exif.location.altitude} m` : ""],
   ];
   body.innerHTML = infoSection("File and attributes", general) + infoSection("EXIF", camera);
+}
+
+function formatShutterSpeed(value) {
+  if (value == null || value === "") return "";
+  const raw = String(value).trim();
+  if (/^\d+\s*\/\s*\d+$/.test(raw)) return `${raw.replace(/\s+/g, "")} sec`;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return raw;
+  if (seconds < 1) {
+    const reciprocal = 1 / seconds;
+    const denominator = Math.round(reciprocal);
+    const exact = seconds.toFixed(seconds < 0.01 ? 5 : 4).replace(/0+$/, "").replace(/\.$/, "");
+    if (denominator >= 2 && Math.abs(reciprocal - denominator) / reciprocal < 0.025) {
+      return `1/${denominator} sec (${exact} s)`;
+    }
+    return `${exact} sec`;
+  }
+  return `${Number(seconds.toFixed(2))} sec`;
+}
+
+function formatOrientation(rotation) {
+  if (rotation == null || rotation === "") return "";
+  const quarterTurns = ((Number(rotation) % 4) + 4) % 4;
+  return ["Landscape / 0°", "Portrait / 90°", "Landscape / 180°", "Portrait / 270°"][quarterTurns] || "";
 }
 
 function infoSection(title, rows) {
@@ -1818,14 +1873,16 @@ function stopFilmstripPropagation(host) {
 function mountStripSizeControl(bar, instance) {
   const control = document.createElement("div");
   control.className = "pswp-strip-size size-control";
-  control.innerHTML = `<span>Filmstrip</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="5" height="12" rx="1"/><rect x="11" y="6" width="5" height="12" rx="1"/><rect x="18" y="6" width="2" height="12" rx="1"/></svg><input type="range" min="1" max="9" step="1" value="${stripScale}" aria-label="Filmstrip thumbnail size" aria-valuetext="${sizeDescription(stripScale)}"/><svg class="large" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/></svg>`;
+  control.innerHTML = `<div class="size-control-head"><span>Filmstrip scale</span><output class="size-control-value">${stripSizeDescription(stripScale)}</output></div><div class="size-control-rail"><span class="size-control-end"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="5" height="12" rx="1"/><rect x="11" y="6" width="5" height="12" rx="1"/><rect x="18" y="6" width="2" height="12" rx="1"/></svg><small>Browse</small></span><input type="range" min="1" max="13" step="1" value="${stripScale}" aria-label="Filmstrip thumbnail size" aria-valuetext="${stripSizeDescription(stripScale)}"/><span class="size-control-end"><svg class="large" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2"/></svg><small>Inspect</small></span></div>`;
   const range = control.querySelector("input");
   range.addEventListener("input", () => {
-    stripScale = readScale("", range.value);
+    stripScale = readScale("", range.value, STRIP_WIDTHS.length);
     localStorage.setItem("lhdb_strip_scale", String(stripScale));
-    range.setAttribute("aria-valuetext", sizeDescription(stripScale));
+    const label = stripSizeDescription(stripScale);
+    range.setAttribute("aria-valuetext", label);
+    control.querySelector(".size-control-value").textContent = label;
     applyStripScale(instance.element, true);
-    trackEvent("filmstrip_size", sizeDescription(stripScale), { step: stripScale });
+    trackEvent("filmstrip_size", label, { step: stripScale });
   });
   for (const type of ["pointerdown", "mousedown", "touchstart", "touchmove", "wheel", "click"]) {
     control.addEventListener(type, (event) => event.stopPropagation());
@@ -1834,13 +1891,11 @@ function mountStripSizeControl(bar, instance) {
 }
 
 function applyStripScale(root, update) {
-  const widths = [34, 40, 46, 50, 54, 62, 70, 82, 96];
-  const heights = [26, 31, 35, 39, 42, 48, 54, 63, 74];
-  const width = widths[stripScale - 1];
-  const height = heights[stripScale - 1];
+  const width = STRIP_WIDTHS[stripScale - 1];
+  const height = STRIP_HEIGHTS[stripScale - 1];
   root?.style.setProperty("--strip-w", `${width}px`);
   root?.style.setProperty("--strip-h", `${height}px`);
-  root?.querySelector(".pswp-strip-size")?.style.setProperty("--size-progress", `${((stripScale - 1) / 8) * 100}%`);
+  root?.querySelector(".pswp-strip-size")?.style.setProperty("--size-progress", `${((stripScale - 1) / (STRIP_WIDTHS.length - 1)) * 100}%`);
   root?.querySelectorAll(".lb-thumb").forEach((slide) => Object.assign(slide.style, { width: `${width}px`, height: `${height}px` }));
   if (update && strip && !strip.destroyed) {
     strip.update();
@@ -1850,7 +1905,7 @@ function applyStripScale(root, update) {
 }
 
 function stripHeightForScale() {
-  return [26, 31, 35, 39, 42, 48, 54, 63, 74][stripScale - 1];
+  return STRIP_HEIGHTS[stripScale - 1];
 }
 
 // Explicit inline size on every slide, in addition to the CSS - belt and
