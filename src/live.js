@@ -212,6 +212,7 @@ export class LiveTracker {
     if (request.method === "POST" && url.pathname === "/share-stat") {
       const body = await request.json().catch(() => ({}));
       const slug = cleanText(body.slug || "", 60);
+      let viewerPreviouslySeen = null;
       if (slug) {
         const stored = this.sqlReady
           ? this.sql.exec("SELECT opens, downloads, bytes, views, viewers_json FROM share_stats WHERE slug = ?", slug).toArray()[0]
@@ -223,8 +224,10 @@ export class LiveTracker {
         cur.downloads += Number(body.downloads) || 0;
         cur.bytes += Number(body.bytes) || 0;
         cur.views += Number(body.views) || 0;
-        if (body.viewer && body.viewer.email) {
-          cur.viewers[cleanText(body.viewer.email, 80)] = {
+        const viewerEmail = cleanText(body.viewer?.email || "", 80);
+        if (viewerEmail) {
+          viewerPreviouslySeen = Object.prototype.hasOwnProperty.call(cur.viewers, viewerEmail);
+          cur.viewers[viewerEmail] = {
             n: cleanText(body.viewer.name || "", 80),
             at: Date.now(),
           };
@@ -249,7 +252,7 @@ export class LiveTracker {
         if (body.record) this.accumulateEvent(body.record);
         await this.armAlarm();
       }
-      return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
+      return new Response(JSON.stringify({ ok: true, viewerPreviouslySeen }), { headers: JSON_HEADERS });
     }
 
     if (request.method === "POST" && url.pathname === "/close") {
@@ -404,7 +407,7 @@ export class LiveTracker {
     server.accept();
     if (role === "admin") {
       this.adminSockets.add(server);
-      this.safeSend(server, { type: "snapshot", active: this.snapshot() });
+      this.safeSend(server, { type: "snapshot", active: this.snapshot(), recent: this.recentDone });
       server.addEventListener("close", () => this.adminSockets.delete(server));
       server.addEventListener("error", () => this.adminSockets.delete(server));
     } else {

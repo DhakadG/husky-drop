@@ -933,9 +933,9 @@ function updateFinishedLiveRow(row, session) {
 
 ---
 
-### Change 12: Render the three-item sticky summary strip
+### Change 12: Render the two-item sticky summary strip
 **File:** `public/admin.js`
-**Why:** PLAN.md explicitly names active sessions, combined throughput, and Drive write rate.
+**Why:** The live snapshot measures active sessions and aggregate upload throughput; it has no independent Drive-side telemetry.
 **Locate:**
 ```js
 }
@@ -976,11 +976,11 @@ function renderMetrics(sessions) {
   const element = $("live-metrics");
   if (!element) return;
   const throughput = sessions.reduce((sum, session) => sum + (session.speed || 0), 0);
-  upsertCards(element, [["Active sessions", sessions.length], ["Combined throughput", throughput ? `${fmtBytes(throughput)}/s` : "—"], ["Drive write rate", throughput ? `${fmtBytes(throughput)}/s` : "—"]], "live-metric");
+  upsertCards(element, [["Active sessions", sessions.length], ["Combined throughput", throughput ? `${fmtBytes(throughput)}/s` : "—"]], "live-metric");
   for (const [, card] of element._rows) card.classList.toggle("hot", sessions.length > 0);
 }
 ```
-**Verify:** Drive write rate is explicitly the same aggregate live byte rate, as documented in INVENTORY B7; no independent fake metric is generated.
+**Verify:** The summary labels `sum(active[].speed)` only as combined throughput; it does not imply a Drive-side measurement.
 
 ---
 

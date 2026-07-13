@@ -73,7 +73,7 @@ Constraints honored: the unlock screen stays inside the single admin page (`/adm
           <div class="auth-input">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="#9aa8b8"><path d="M14 3a7 7 0 0 1 6.9 8.2c-.5 3-3 5.4-6 5.7-.6.1-1.2 0-1.8-.1L11 19h-2v2H7v2H3v-4l7.2-7.2c-.1-.6-.2-1.2-.1-1.8.3-3 2.7-5.5 5.7-6 .4-.1.8-.1 1.2 0zM16 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"></path></svg>
             <input id="tok" type="password" autocomplete="current-password" placeholder="••••••••••" />
-            <button type="button" id="tok-eye" title="show token" aria-label="show token">
+            <button type="button" id="tok-eye" title="show token" aria-label="show token" aria-pressed="false">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="#9aa8b8"><path d="M12 5c5 0 8.6 3.6 10 7-1.4 3.4-5 7-10 7S3.4 15.4 2 12c1.4-3.4 5-7 10-7z" opacity="0.25"></path><path d="M12 7c3.9 0 6.8 2.6 8 5-1.2 2.4-4.1 5-8 5s-6.8-2.6-8-5c1.2-2.4 4.1-5 8-5zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>
             </button>
           </div>
@@ -110,12 +110,18 @@ Constraints honored: the unlock screen stays inside the single admin page (`/adm
 **Action:** INSERT AFTER
 **New code:**
 ```js
-  $("tok-eye")?.addEventListener("click", () => {
+  const tokenEye = $("tok-eye");
+  tokenEye?.addEventListener("click", () => {
     const tok = $("tok");
-    tok.type = tok.type === "password" ? "text" : "password";
+    const visible = tok.type === "password";
+    tok.type = visible ? "text" : "password";
+    const action = visible ? "hide token" : "show token";
+    tokenEye.title = action;
+    tokenEye.setAttribute("aria-label", action);
+    tokenEye.setAttribute("aria-pressed", String(visible));
   });
 ```
-**Verify:** Clicking the eye toggles the token field between dots and plain text.
+**Verify:** Clicking the eye toggles the token field between dots and plain text; its title, accessible label, and pressed state describe the current visibility.
 
 ### Change 3: unlock screen styles
 **File:** `public/style.css`

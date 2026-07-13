@@ -940,6 +940,37 @@ async function main() {
     const signedInMeta = await res.json();
     assert.equal(signedInMeta.viewer?.email, "viewer@example.com", "meta reports the signed-in viewer once cookie is sent");
 
+    const openCalls = [];
+    let viewerSeen = false;
+    driveEnv.LIVE_TRACKER = {
+      idFromName: () => "global",
+      get: () => ({
+        fetch: async (input, init = {}) => {
+          const path = new URL(typeof input === "string" ? input : input.url).pathname;
+          const body = init.body ? JSON.parse(init.body) : null;
+          openCalls.push({ path, body });
+          if (path === "/share-stat") {
+            const viewerPreviouslySeen = viewerSeen;
+            if (body?.viewer?.email) viewerSeen = true;
+            return Response.json({ ok: true, viewerPreviouslySeen });
+          }
+          return Response.json({ ok: true });
+        },
+      }),
+    };
+    const openedRequest = () => new Request("https://drop.test/api/share/opened", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: viewerCookie },
+      body: JSON.stringify({ slug: "gated-share" }),
+    });
+    assert.equal((await worker.fetch(openedRequest(), driveEnv)).status, 200);
+    assert.equal((await worker.fetch(openedRequest(), driveEnv)).status, 200);
+    const openMessages = openCalls
+      .filter(({ body }) => body?.record?.t === "share-open")
+      .map(({ body }) => body.record.m);
+    assert.deepEqual(openMessages, ["first open", ""], "Durable Object viewer state marks only the first identified share open");
+    delete driveEnv.LIVE_TRACKER;
+
     res = await worker.fetch(
       new Request("https://drop.test/api/share/list", {
         method: "POST",

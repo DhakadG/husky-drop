@@ -6,7 +6,7 @@
 
 House rules obeyed throughout (match existing style): flat if-chain routing in `api()`, `json()` responses, `cleanText`/`clamp` input hygiene, hot-path writes relayed to the `LiveTracker` DO and batched by its alarm — never direct KV writes in request handlers when `env.LIVE_TRACKER` is bound.
 
-Feature sections: **B1** speed sparkline · **B2** finished-sessions list · **B3** share viewer analytics (+ **B6** first-open flag) · **B4** activity day pagination · **B5** Drive folder picker · **B8** paused live state. (B7 "Drive write rate" is a frontend derivation — sum of `speed` over the snapshot — no backend change.)
+Feature sections: **B1** speed sparkline · **B2** finished-sessions list · **B3** share viewer analytics (+ **B6** first-open flag) · **B4** activity day pagination · **B5** Drive folder picker · **B8** paused live state. B7 labels the sum of snapshot `speed` values only as combined throughput; a Drive-specific rate remains out of scope without a backend measurement and contract.
 
 ---
 
@@ -353,15 +353,19 @@ export async function bumpShareStats(env, slug, delta) {
         cur.downloads += Number(body.downloads) || 0;
         cur.bytes += Number(body.bytes) || 0;
         cur.views += Number(body.views) || 0;
-        if (body.viewer && body.viewer.email) {
-          cur.viewers[cleanText(body.viewer.email, 80)] = {
+        const viewerEmail = cleanText(body.viewer?.email || "", 80);
+        viewerPreviouslySeen = viewerEmail
+          ? Object.prototype.hasOwnProperty.call(cur.viewers, viewerEmail)
+          : null;
+        if (viewerEmail) {
+          cur.viewers[viewerEmail] = {
             n: cleanText(body.viewer.name || "", 80),
             at: Date.now(),
           };
         }
         this.pendingShareStats.set(slug, cur);
 ```
-**Verify:** Share opens/downloads still count; `sstats:` records gain `views`/`viewers` after the next alarm flush.
+Declare `let viewerPreviouslySeen = null` immediately after `slug`, then return it in the `/share-stat` JSON response after storing the updated counters. **Verify:** Share opens/downloads still count; the first identified update returns `false`, and later updates for the same viewer return `true`.
 
 ### Change 9: alarm retry path preserves the new fields
 **File:** `src/live.js`
@@ -521,23 +525,33 @@ export async function bumpShareStats(env, slug, delta) {
 **New code:**
 ```js
   const viewer = await getViewer(request, env);
-  const stats = normalizeShareStats(await env.KV.get(`sstats:${slug}`, "json"));
-  const first = !!viewer?.email && !stats.viewers[viewer.email];
+  const tracker = env.LIVE_TRACKER ? liveStub(env) : null;
+  let first = false;
+  if (tracker) {
+    const result = await tracker.fetch("https://live.internal/share-stat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slug,
+        opens: 1,
+        viewer: viewer ? { email: viewer.email, name: viewer.name || "" } : null,
+      }),
+    }).then((response) => response.json()).catch(() => null);
+    first = !!viewer?.email && result?.viewerPreviouslySeen === false;
+  } else {
+    const stats = normalizeShareStats(await env.KV.get(`sstats:${slug}`, "json"));
+    first = !!viewer?.email && !stats.viewers[viewer.email];
+  }
   const record = normalizeEvent(
     { type: "share-open", slug, label: share.label, uploader: viewer?.email || "", message: first ? "first open" : "" },
     request
   );
-  if (env.LIVE_TRACKER) {
-    await liveStub(env)
-      .fetch("https://live.internal/share-stat", {
+  if (tracker) {
+    await tracker
+      .fetch("https://live.internal/event", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          slug,
-          opens: 1,
-          viewer: viewer ? { email: viewer.email, name: viewer.name || "" } : null,
-          record,
-        }),
+        body: JSON.stringify({ record }),
       })
       .catch(() => {});
   } else {
@@ -550,7 +564,7 @@ export async function bumpShareStats(env, slug, delta) {
     await mergeEventsKV(env, [record]);
   }
 ```
-**Verify:** First signed-in open of a share yields an activity event with `m: "first open"`; later opens do not.
+**Verify:** With `LIVE_TRACKER`, first-open detection comes from the Durable Object response rather than stale KV. The first signed-in open yields an activity event with `m: "first open"`; later opens do not. Without `LIVE_TRACKER`, the existing KV detection remains unchanged.
 
 ### Change 12: download stat bumps carry viewer identity
 **File:** `src/share.js`

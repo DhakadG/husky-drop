@@ -374,14 +374,10 @@ export async function logShareOpened(request, env) {
   const share = await env.KV.get(`share:${slug}`, "json");
   if (!share) return json({ error: "share not found" }, 404);
   const viewer = await getViewer(request, env);
-  const stats = normalizeShareStats(await env.KV.get(`sstats:${slug}`, "json"));
-  const first = !!viewer?.email && !stats.viewers[viewer.email];
-  const record = normalizeEvent(
-    { type: "share-open", slug, label: share.label, uploader: viewer?.email || "", message: first ? "first open" : "" },
-    request
-  );
-  if (env.LIVE_TRACKER) {
-    await liveStub(env)
+  const tracker = env.LIVE_TRACKER ? liveStub(env) : null;
+  let first = false;
+  if (tracker) {
+    const result = await tracker
       .fetch("https://live.internal/share-stat", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -389,8 +385,25 @@ export async function logShareOpened(request, env) {
           slug,
           opens: 1,
           viewer: viewer ? { email: viewer.email, name: viewer.name || "" } : null,
-          record,
         }),
+      })
+      .then((response) => response.json())
+      .catch(() => null);
+    first = !!viewer?.email && result?.viewerPreviouslySeen === false;
+  } else {
+    const stats = normalizeShareStats(await env.KV.get(`sstats:${slug}`, "json"));
+    first = !!viewer?.email && !stats.viewers[viewer.email];
+  }
+  const record = normalizeEvent(
+    { type: "share-open", slug, label: share.label, uploader: viewer?.email || "", message: first ? "first open" : "" },
+    request
+  );
+  if (tracker) {
+    await tracker
+      .fetch("https://live.internal/event", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ record }),
       })
       .catch(() => {});
   } else {

@@ -109,9 +109,22 @@ assert.deepEqual(dropKv.writes, [], "drop telemetry must not create per-batch KV
 assert.equal(dropCalls.filter((call) => call.path === "/telemetry").length, 1, "raw drop telemetry must be handed to Durable Object storage once per batch");
 
 const sqlCalls = [];
+const shareRows = new Map();
 const sql = {
   exec(statement, ...params) {
     sqlCalls.push({ statement, params });
+    if (/SELECT opens, downloads, bytes, views, viewers_json FROM share_stats WHERE slug/i.test(statement)) {
+      const row = shareRows.get(params[0]);
+      return { toArray: () => row ? [row] : [] };
+    }
+    if (/INSERT INTO share_stats/i.test(statement)) {
+      const [slug, opens, downloads, bytes, views, viewers_json] = params;
+      shareRows.set(slug, { slug, opens, downloads, bytes, views, viewers_json });
+      return { toArray: () => [] };
+    }
+    if (/SELECT slug, opens, downloads, bytes, views, viewers_json FROM share_stats/i.test(statement)) {
+      return { toArray: () => [...shareRows.values()] };
+    }
     return { toArray: () => [] };
   },
 };
@@ -145,6 +158,13 @@ const shareStat = await tracker.fetch(new Request("https://live.internal/share-s
   body: JSON.stringify({ slug: "album", views: 2, viewer: { email: "viewer@example.com", name: "Viewer" } }),
 }));
 assert.equal(shareStat.status, 200);
+assert.equal((await shareStat.json()).viewerPreviouslySeen, false, "the first Durable Object viewer update reports a new viewer");
+const repeatedShareStat = await tracker.fetch(new Request("https://live.internal/share-stat", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ slug: "album", viewer: { email: "viewer@example.com", name: "Viewer" } }),
+}));
+assert.equal((await repeatedShareStat.json()).viewerPreviouslySeen, true, "a repeated Durable Object viewer update reports an existing viewer");
 assert.ok(sqlCalls.some(({ statement }) => /INSERT INTO share_stats/i.test(statement)), "share counters must persist in Durable Object SQLite instead of KV");
 const shareStats = await tracker.fetch(new Request("https://live.internal/share-stats"));
 assert.equal(shareStats.status, 200, "share counter deltas must be readable from Durable Object SQLite");

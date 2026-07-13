@@ -33,9 +33,15 @@ async function init() {
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => showTab(tab.dataset.tab));
   });
-  $("tok-eye")?.addEventListener("click", () => {
+  const tokenEye = $("tok-eye");
+  tokenEye?.addEventListener("click", () => {
     const tok = $("tok");
-    tok.type = tok.type === "password" ? "text" : "password";
+    const visible = tok.type === "password";
+    tok.type = visible ? "text" : "password";
+    const action = visible ? "hide token" : "show token";
+    tokenEye.title = action;
+    tokenEye.setAttribute("aria-label", action);
+    tokenEye.setAttribute("aria-pressed", String(visible));
   });
   $("refresh").addEventListener("click", refreshAll);
   $("live-refresh")?.addEventListener("click", refreshAll);
