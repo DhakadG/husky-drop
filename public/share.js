@@ -9,6 +9,7 @@ import {
   verifyFullAsset,
 } from "./share-viewer-engine.js";
 import { createDragSelectionController } from "./share-selection-engine.js";
+import { computeJustifiedRows } from "./share-gallery-layout.js";
 
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
 // stable folder id (never on the rotating signed "ls" token), a justified
@@ -1175,31 +1176,25 @@ function layoutGallery(grid) {
   const files = grid._files || [];
   const W = grid.clientWidth;
   if (!W || !files.length) return;
-  const GAP = 2;
   const base = [0.52, 0.62, 0.72, 0.84, 1, 1.18, 1.36, 1.58, 1.82][tileScale - 1];
   const target = Math.round((W < 640 ? 148 : W < 1280 ? 210 : 250) * base);
-  const rows = [];
-  let row = [];
-  let sum = 0;
-  for (const f of files) {
-    row.push(f);
-    sum += aspectOf(f);
-    if (sum * target + GAP * (row.length - 1) >= W) {
-      rows.push({ items: row, sum });
-      row = [];
-      sum = 0;
-    }
-  }
-  if (row.length) rows.push({ items: row, sum, last: true });
-  for (const r of rows) {
-    const gaps = GAP * (r.items.length - 1);
-    let h = r.last ? Math.min(target, (W - gaps) / r.sum) : (W - gaps) / r.sum;
-    h = Math.min(h, target * 1.35);
-    for (const f of r.items) {
-      const el = f._el;
+  const planned = computeJustifiedRows(
+    files.map((file) => ({ id: file.id, aspect: aspectOf(file) })),
+    {
+      containerWidth: W,
+      gap: W <= 640 ? 3 : 2,
+      targetHeight: target,
+      maxItems: W <= 640 ? 2 : Infinity,
+      wideThreshold: W <= 640 ? 2.2 : Infinity,
+    },
+  );
+  const byId = new Map(files.map((file) => [file.id, file]));
+  for (const row of planned) {
+    for (const item of row.items) {
+      const el = byId.get(item.id)?._el;
       if (!el) continue;
-      el.style.width = `${Math.floor(aspectOf(f) * h)}px`;
-      el.style.height = `${Math.round(h)}px`;
+      el.style.width = `${item.width}px`;
+      el.style.height = `${item.height}px`;
     }
   }
 }
