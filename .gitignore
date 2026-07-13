@@ -4,5 +4,7 @@ node_modules/
 .secrets/
 .playwright-mcp/
 .claude/
+.superpowers/
+.worktrees/
 .fuse_hidden*
 src/.fuse_hidden*
