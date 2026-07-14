@@ -149,6 +149,46 @@ function rawRequest(port, requestPath, headers = {}) {
   });
 }
 
+function exactJsonBody(byteLength) {
+  const prefix = Buffer.from('{"slug":"local-media","padding":"', "utf8");
+  const suffix = Buffer.from('"}', "utf8");
+  const paddingLength = byteLength - prefix.length - suffix.length;
+  assert.ok(paddingLength >= 0, `cannot build a ${byteLength}-byte fixture JSON body`);
+  const body = Buffer.concat([prefix, Buffer.alloc(paddingLength, "x"), suffix]);
+  assert.equal(body.byteLength, byteLength);
+  assert.doesNotThrow(() => JSON.parse(body.toString("utf8")));
+  return body;
+}
+
+function rawChunkedJsonRequest(port, requestPath, body) {
+  return new Promise((resolve, reject) => {
+    const req = request({
+      host: "127.0.0.1",
+      port,
+      path: requestPath,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+      },
+    }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => resolve({
+        status: response.statusCode,
+        headers: response.headers,
+        body: Buffer.concat(chunks),
+      }));
+    });
+    req.on("error", reject);
+    assert.equal(req.getHeader("content-length"), undefined);
+    for (let offset = 0; offset < body.byteLength; offset += 4096) {
+      req.write(body.subarray(offset, Math.min(offset + 4096, body.byteLength)));
+    }
+    req.end();
+  });
+}
+
 async function postJson(origin, pathname, body) {
   const response = await fetch(`${origin}${pathname}`, {
     method: "POST",
@@ -439,15 +479,24 @@ async function main() {
     assertJsonResponse(unknownApi);
     assert.deepEqual(await unknownApi.json(), { error: "fixture API route not found" });
 
-    const wrongGet = await fetch(`${started.origin}/api/share/list`);
-    assert.equal(wrongGet.status, 405);
-    assertJsonResponse(wrongGet);
-    assert.deepEqual(await wrongGet.json(), { error: "Method Not Allowed" });
-
-    const wrongPost = await postJson(started.origin, "/api/share/meta/local-media", {});
-    assert.equal(wrongPost.response.status, 405);
-    assertJsonResponse(wrongPost.response);
-    assert.deepEqual(wrongPost.body, { error: "Method Not Allowed" });
+    const wrongMethodCases = [
+      ["POST", "/api/share/meta/local-media"],
+      ["GET", "/api/share/verify"],
+      ["GET", "/api/share/redirect"],
+      ["GET", "/api/share/list"],
+      ["GET", "/api/share/summary"],
+      ["GET", "/api/share/refresh-dl"],
+      ["GET", "/api/share/file-info"],
+      ["GET", "/api/share/zip-ticket"],
+      ["GET", "/api/share/opened"],
+      ["GET", "/api/share/track"],
+    ];
+    for (const [method, pathname] of wrongMethodCases) {
+      const wrongMethod = await fetch(`${started.origin}${pathname}`, { method });
+      assert.equal(wrongMethod.status, 405, `${method} ${pathname}`);
+      assertJsonResponse(wrongMethod);
+      assert.deepEqual(await wrongMethod.json(), { error: "Method Not Allowed" });
+    }
 
     const invalidJsonResponse = await fetch(`${started.origin}/api/share/list`, {
       method: "POST",
@@ -458,14 +507,26 @@ async function main() {
     assertJsonResponse(invalidJsonResponse);
     assert.deepEqual(await invalidJsonResponse.json(), { error: "invalid JSON body" });
 
-    const oversizedResponse = await fetch(`${started.origin}/api/share/list`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ slug: "local-media", padding: "x".repeat(64 * 1024) }),
-    });
+    const boundaryBody = exactJsonBody(64 * 1024);
+    const boundaryResponse = await rawChunkedJsonRequest(
+      started.port,
+      "/api/share/track",
+      boundaryBody,
+    );
+    assert.equal(boundaryResponse.status, 204);
+    assert.equal(boundaryResponse.body.byteLength, 0);
+
+    const oversizedBody = exactJsonBody((64 * 1024) + 1);
+    const oversizedResponse = await rawChunkedJsonRequest(
+      started.port,
+      "/api/share/track",
+      oversizedBody,
+    );
     assert.equal(oversizedResponse.status, 413);
-    assertJsonResponse(oversizedResponse);
-    assert.deepEqual(await oversizedResponse.json(), { error: "request body too large" });
+    assert.match(oversizedResponse.headers["content-type"] || "", /^application\/json\b/);
+    assert.deepEqual(JSON.parse(oversizedResponse.body.toString("utf8")), {
+      error: "request body too large",
+    });
 
     const unknownShare = await fetch(`${started.origin}/s/unknown`);
     assert.equal(unknownShare.status, 404);
