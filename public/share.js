@@ -35,7 +35,9 @@ let sortMode = localStorage.getItem("lhdb_sort") || "name";
 let tileScale = readScale("lhdb_gallery_scale", localStorage.getItem("lhdb_tile_size") === "compact" ? 3 : localStorage.getItem("lhdb_tile_size") === "large" ? 7 : 5);
 const STRIP_WIDTHS = [34, 40, 46, 54, 64, 76, 90, 106, 124, 144, 168, 192, 216];
 const STRIP_HEIGHTS = [26, 30, 35, 42, 49, 58, 68, 80, 94, 108, 126, 144, 162];
-let stripScale = readScale("lhdb_strip_scale", 5, STRIP_WIDTHS.length);
+let stripScale = readScale("lhdb_strip_scale", matchMedia("(max-width: 640px)").matches ? 3 : 5, STRIP_WIDTHS.length);
+const viewerChrome = { top: 104, bottom: stripHeightForScale() + 70 };
+let viewerChromeMetrics = { refresh: () => {}, cleanup: () => {} };
 // crumbs: [{ fid, name, token }]. fid "" = root. Navigation is keyed on the
 // stable fid, never on `token` (a signed "ls" token that is re-minted with a
 // new signature on every listing call and therefore compares unequal across
@@ -693,7 +695,8 @@ function installGalleryTools() {
 }
 
 function readScale(key, fallback, max = 9) {
-  const value = key ? Number(localStorage.getItem(key)) : Number(fallback);
+  const stored = key ? localStorage.getItem(key) : null;
+  const value = stored == null ? Number(fallback) : Number(stored);
   return Math.max(1, Math.min(max, Number.isFinite(value) ? Math.round(value) : 5));
 }
 
@@ -1637,7 +1640,7 @@ async function openViewer(index, sourceEl) {
     wheelToZoom: true,
     preload: [1, 1],
     loop: false,
-    paddingFn: () => ({ top: window.innerWidth <= 640 ? 116 : 104, bottom: pswp?.element?.classList.contains("pswp-filmstrip-hidden") ? 56 : stripHeightForScale() + 70, left: 0, right: 0 }),
+    paddingFn: () => ({ top: viewerChrome.top, bottom: viewerChrome.bottom, left: 0, right: 0 }),
     appendToEl: document.body,
   });
 
@@ -1723,6 +1726,8 @@ async function openViewer(index, sourceEl) {
     for (const fileId of neighborWarmIds) abortAssetLoad(fileId);
     neighborWarmIds.clear();
     syncRotationUi = () => {};
+    viewerChromeMetrics.cleanup();
+    viewerChromeMetrics = { refresh: () => {}, cleanup: () => {} };
     destroyStrip();
     closeViewerPanels({ forceInfo: true });
     pswp = null;
@@ -1730,6 +1735,7 @@ async function openViewer(index, sourceEl) {
 
   pswp.init();
   mountBottomBar(pswp);
+  viewerChromeMetrics = mountViewerChromeMetrics(pswp);
   updateCaption(file);
   bindRapidPointer(pswp.element?.querySelector(".pswp__button--arrow--prev"), "previous");
   bindRapidPointer(pswp.element?.querySelector(".pswp__button--arrow--next"), "next");
@@ -2026,7 +2032,7 @@ function toggleFilmstrip() {
   const root = pswp?.element;
   if (!root) return;
   const hidden = root.classList.toggle("pswp-filmstrip-hidden");
-  pswp.updateSize(true);
+  viewerChromeMetrics.refresh();
   trackEvent("filmstrip_toggle", hidden ? "hidden" : "visible");
 }
 
@@ -2316,6 +2322,48 @@ function mountBottomBar(instance) {
   instance.element.appendChild(bar);
   mountStrip(instance, bar);
   mountFileInfo(instance);
+}
+
+function mountViewerChromeMetrics(instance) {
+  const root = instance.element;
+  const top = root.querySelector(".pswp__top-bar");
+  const bottom = root.querySelector(".pswp-bottom-bar");
+  let scheduled = 0;
+  const measure = () => {
+    scheduled = 0;
+    if (!root?.isConnected) return;
+    const rootRect = root.getBoundingClientRect();
+    const topRect = top?.getBoundingClientRect();
+    const bottomRect = bottom?.getBoundingClientRect();
+    const nextTop = Math.ceil(topRect?.height || 56) + 8;
+    const measuredBottom = bottomRect ? Math.ceil(rootRect.bottom - bottomRect.top) + 8 : stripHeightForScale() + 62;
+    const nextBottom = root.classList.contains("pswp-filmstrip-hidden") ? Math.max(64, measuredBottom) : measuredBottom;
+    const changed = viewerChrome.top !== nextTop || viewerChrome.bottom !== nextBottom;
+    viewerChrome.top = nextTop;
+    viewerChrome.bottom = nextBottom;
+    root.style.setProperty("--viewer-top-space", `${viewerChrome.top}px`);
+    root.style.setProperty("--viewer-bottom-space", `${viewerChrome.bottom}px`);
+    if (changed) instance.updateSize(true);
+  };
+  const schedule = () => {
+    cancelAnimationFrame(scheduled);
+    scheduled = requestAnimationFrame(measure);
+  };
+  const observer = new ResizeObserver(schedule);
+  if (top) observer.observe(top);
+  if (bottom) observer.observe(bottom);
+  window.addEventListener("orientationchange", schedule);
+  window.visualViewport?.addEventListener("resize", schedule);
+  schedule();
+  return {
+    refresh: schedule,
+    cleanup() {
+      cancelAnimationFrame(scheduled);
+      observer.disconnect();
+      window.removeEventListener("orientationchange", schedule);
+      window.visualViewport?.removeEventListener("resize", schedule);
+    },
+  };
 }
 
 let fileInfoPanel = null;
@@ -2619,7 +2667,7 @@ function applyStripScale(root, update) {
   if (update && strip && !strip.destroyed) {
     strip.update();
     centerStripSlide(pswp?.currIndex || 0);
-    pswp?.updateSize(true);
+    viewerChromeMetrics.refresh();
   }
 }
 

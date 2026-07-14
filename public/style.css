@@ -2560,6 +2560,8 @@ body.selecting .g-check {
 .pswp {
   --pswp-bg: #05080f;
   --info-drawer-width: min(480px, calc(100vw - 28px));
+  --viewer-top-space: 104px;
+  --viewer-bottom-space: calc(var(--strip-h, 42px) + 70px);
 }
 .pswp__bg {
   background: var(--pswp-bg);
