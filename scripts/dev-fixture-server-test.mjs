@@ -14,13 +14,123 @@ import { createFixtureServer } from "./dev-fixture-server.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicRoot = path.join(root, "public");
 const mediaRoot = path.join(root, "test", "dev-fixtures", "media");
-const fixtureFiles = [
-  ["landscape-image", "landscape.png", "image/png"],
-  ["portrait-image", "portrait.jpg", "image/jpeg"],
-  ["h264-video", "compatible-h264.mp4", "video/mp4"],
-  ["webm-video", "compatible-vp9.webm", "video/webm"],
-  ["unsupported-mov", "unsupported.mov", "video/quicktime"],
+const FIXTURE_AT = "2026-07-14T00:00:00.000Z";
+const FAR_FUTURE = 4102444800000;
+const fixtureRecords = [
+  {
+    id: "landscape-image",
+    file: "landscape.png",
+    name: "Landscape fixture.png",
+    mime: "image/png",
+    width: 480,
+    height: 270,
+    durationMs: 0,
+    thumbnailId: "landscape-image",
+    infoWidth: 480,
+    infoHeight: 270,
+    infoDurationMs: 0,
+  },
+  {
+    id: "portrait-image",
+    file: "portrait.jpg",
+    name: "Portrait fixture.jpg",
+    mime: "image/jpeg",
+    width: 270,
+    height: 480,
+    durationMs: 0,
+    thumbnailId: "portrait-image",
+    infoWidth: 270,
+    infoHeight: 480,
+    infoDurationMs: 0,
+  },
+  {
+    id: "h264-video",
+    file: "compatible-h264.mp4",
+    name: "Compatible H264.mp4",
+    mime: "video/mp4",
+    width: 320,
+    height: 180,
+    durationMs: 2000,
+    thumbnailId: "landscape-image",
+    infoWidth: 320,
+    infoHeight: 180,
+    infoDurationMs: 2000,
+  },
+  {
+    id: "webm-video",
+    file: "compatible-vp9.webm",
+    name: "Compatible VP9.webm",
+    mime: "video/webm",
+    width: 320,
+    height: 180,
+    durationMs: 2000,
+    thumbnailId: "landscape-image",
+    infoWidth: 320,
+    infoHeight: 180,
+    infoDurationMs: 2000,
+  },
+  {
+    id: "unsupported-mov",
+    file: "unsupported.mov",
+    name: "Unsupported QuickTime.mov",
+    mime: "video/quicktime",
+    width: 640,
+    height: 360,
+    durationMs: 1000,
+    thumbnailId: "landscape-image",
+    infoWidth: 0,
+    infoHeight: 0,
+    infoDurationMs: 0,
+  },
 ];
+const fixtureFiles = fixtureRecords.map(({ id, file, mime }) => [id, file, mime]);
+const expectedApiFiles = fixtureRecords.map((fixture) => {
+  const mediaPath = `/api/fixtures/media/${fixture.id}`;
+  const thumbnailPath = `/api/fixtures/media/${fixture.thumbnailId}`;
+  return {
+    id: fixture.id,
+    name: fixture.name,
+    size: fs.statSync(path.join(mediaRoot, fixture.file)).size,
+    mime: fixture.mime,
+    at: Date.parse(FIXTURE_AT),
+    thumb: thumbnailPath,
+    thumbs: {
+      base: thumbnailPath,
+      mid: thumbnailPath,
+      max: thumbnailPath,
+    },
+    thumbsExpireAt: FAR_FUTURE,
+    w: fixture.width,
+    h: fixture.height,
+    aspect: fixture.width / fixture.height,
+    dur: fixture.durationMs,
+    dl: mediaPath,
+    dlExpiresAt: FAR_FUTURE,
+    downloadBlocked: false,
+    downloadBlockReason: "",
+  };
+});
+const expectedLandscapeExif = {
+  source: "fixture",
+  time: FIXTURE_AT,
+  cameraMake: "Husky Labs",
+  cameraModel: "Fixture Camera",
+  lens: "Synthetic 24mm",
+  exposureTime: 0.008,
+  aperture: 5.6,
+  isoSpeed: 100,
+  focalLength: 24,
+  focalLength35mm: 24,
+  exposureBias: 0,
+  exposureMode: "Manual",
+  exposureProgram: "Manual",
+  meteringMode: "Pattern",
+  whiteBalance: "Auto",
+  flashUsed: false,
+  colorSpace: "sRGB",
+  rotation: 0,
+  location: null,
+};
 const silentLogger = { log() {}, error() {} };
 
 function rawRequest(port, requestPath, headers = {}) {
@@ -37,6 +147,20 @@ function rawRequest(port, requestPath, headers = {}) {
     req.on("error", reject);
     req.end();
   });
+}
+
+async function postJson(origin, pathname, body) {
+  const response = await fetch(`${origin}${pathname}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  return { response, body: text ? JSON.parse(text) : null, text };
+}
+
+function assertJsonResponse(response) {
+  assert.match(response.headers.get("content-type") || "", /^application\/json\b/);
 }
 
 function assertMediaHeaders(response, { type, length, range = null }) {
@@ -81,6 +205,267 @@ async function main() {
     const css = await fetch(`${started.origin}/style.css`);
     assert.equal(css.status, 200);
     assert.match(css.headers.get("content-type") || "", /^text\/css\b/);
+
+    const metaResponse = await fetch(`${started.origin}/api/share/meta/local-media`);
+    assert.equal(metaResponse.status, 200);
+    assertJsonResponse(metaResponse);
+    assert.deepEqual(await metaResponse.json(), {
+      slug: "local-media",
+      label: "Local media fixtures",
+      mode: "gallery",
+      requiresPin: false,
+      requiresAuth: false,
+      viewer: null,
+      allowZip: false,
+      state: "active",
+      expiresAt: null,
+      theme: { accentColor: "#2f6bff" },
+      appName: "LostHusky's DropBox",
+    });
+
+    const missingMeta = await fetch(`${started.origin}/api/share/meta/missing-share`);
+    assert.equal(missingMeta.status, 404);
+    assertJsonResponse(missingMeta);
+    assert.deepEqual(await missingMeta.json(), { error: "fixture share not found" });
+
+    const verified = await postJson(started.origin, "/api/share/verify", {
+      slug: "local-media",
+      pin: "",
+    });
+    assert.equal(verified.response.status, 200);
+    assertJsonResponse(verified.response);
+    assert.deepEqual(verified.body, { ok: true });
+
+    const missingVerify = await postJson(started.origin, "/api/share/verify", {
+      slug: "missing-share",
+      pin: "",
+    });
+    assert.equal(missingVerify.response.status, 404);
+    assertJsonResponse(missingVerify.response);
+    assert.deepEqual(missingVerify.body, { error: "fixture share not found" });
+
+    const redirect = await postJson(started.origin, "/api/share/redirect", {
+      slug: "local-media",
+      pin: "",
+    });
+    assert.equal(redirect.response.status, 400);
+    assertJsonResponse(redirect.response);
+    assert.deepEqual(redirect.body, { error: "not a redirect share" });
+
+    const listing = await postJson(started.origin, "/api/share/list", {
+      slug: "local-media",
+      pin: "",
+    });
+    assert.equal(listing.response.status, 200);
+    assertJsonResponse(listing.response);
+    assert.deepEqual(listing.body, {
+      folders: [{
+        index: 0,
+        fid: "",
+        name: "Local fixture media",
+        files: expectedApiFiles,
+        subfolders: [{
+          fid: "fixture-empty-folder",
+          name: "Empty fixture folder",
+          ls: "fixture-folder:empty",
+        }],
+        nextPageToken: "",
+        loadedCount: 5,
+        hasMore: false,
+      }],
+      allowZip: false,
+    });
+
+    const fileFields = [
+      "aspect",
+      "at",
+      "dl",
+      "dlExpiresAt",
+      "downloadBlockReason",
+      "downloadBlocked",
+      "dur",
+      "h",
+      "id",
+      "mime",
+      "name",
+      "size",
+      "thumb",
+      "thumbs",
+      "thumbsExpireAt",
+      "w",
+    ];
+    for (const file of listing.body.folders[0].files) {
+      assert.deepEqual(Object.keys(file).sort(), fileFields);
+      for (const field of ["id", "name", "mime", "thumb", "dl", "downloadBlockReason"]) {
+        assert.equal(typeof file[field], "string", `${file.id}.${field}`);
+      }
+      for (const field of ["size", "at", "thumbsExpireAt", "w", "h", "aspect", "dur", "dlExpiresAt"]) {
+        assert.equal(typeof file[field], "number", `${file.id}.${field}`);
+      }
+      assert.equal(typeof file.downloadBlocked, "boolean", `${file.id}.downloadBlocked`);
+      assert.equal(typeof file.thumbs, "object", `${file.id}.thumbs`);
+      assert.deepEqual(Object.keys(file.thumbs).sort(), ["base", "max", "mid"]);
+      assert.equal(file.thumb, file.thumbs.base);
+
+      for (const url of [file.dl, file.thumb, file.thumbs.base, file.thumbs.mid, file.thumbs.max]) {
+        const resolved = new URL(url, started.origin);
+        assert.equal(resolved.origin, started.origin);
+        assert.ok(resolved.pathname.startsWith("/api/fixtures/media/"), url);
+      }
+
+      const expectedThumbnailId = file.mime.startsWith("image/") ? file.id : "landscape-image";
+      for (const tier of ["base", "mid", "max"]) {
+        assert.equal(file.thumbs[tier], `/api/fixtures/media/${expectedThumbnailId}`);
+      }
+    }
+
+    const emptyListing = await postJson(started.origin, "/api/share/list", {
+      slug: "local-media",
+      pin: "",
+      folderToken: "fixture-folder:empty",
+    });
+    assert.equal(emptyListing.response.status, 200);
+    assertJsonResponse(emptyListing.response);
+    assert.deepEqual(emptyListing.body, {
+      folders: [{
+        index: 0,
+        fid: "fixture-empty-folder",
+        name: "Empty fixture folder",
+        files: [],
+        subfolders: [],
+        nextPageToken: "",
+        loadedCount: 0,
+        hasMore: false,
+      }],
+      allowZip: false,
+    });
+
+    const missingListing = await postJson(started.origin, "/api/share/list", {
+      slug: "missing-share",
+    });
+    assert.equal(missingListing.response.status, 404);
+    assertJsonResponse(missingListing.response);
+    assert.deepEqual(missingListing.body, { error: "fixture share not found" });
+
+    const summary = await postJson(started.origin, "/api/share/summary", {
+      slug: "local-media",
+      pin: "",
+    });
+    assert.equal(summary.response.status, 200);
+    assertJsonResponse(summary.response);
+    assert.deepEqual(summary.body, {
+      files: 5,
+      folders: 1,
+      bytes: expectedApiFiles.reduce((total, file) => total + file.size, 0),
+      images: 2,
+      videos: 3,
+      allowZip: false,
+    });
+
+    for (const file of expectedApiFiles) {
+      const refreshed = await postJson(started.origin, "/api/share/refresh-dl", {
+        slug: "local-media",
+        pin: "",
+        dl: file.dl,
+      });
+      assert.equal(refreshed.response.status, 200);
+      assertJsonResponse(refreshed.response);
+      assert.deepEqual(refreshed.body, {
+        dl: file.dl,
+        dlExpiresAt: FAR_FUTURE,
+        thumbs: file.thumbs,
+        thumbsExpireAt: FAR_FUTURE,
+      });
+      assert.ok(refreshed.body.dlExpiresAt > Date.now());
+      assert.ok(refreshed.body.thumbsExpireAt > Date.now());
+    }
+
+    const missingRefresh = await postJson(started.origin, "/api/share/refresh-dl", {
+      slug: "local-media",
+      dl: "/api/fixtures/media/missing-file",
+    });
+    assert.equal(missingRefresh.response.status, 404);
+    assertJsonResponse(missingRefresh.response);
+    assert.deepEqual(missingRefresh.body, { error: "fixture file not found" });
+
+    for (const fixtureRecord of fixtureRecords) {
+      const fileInfo = await postJson(started.origin, "/api/share/file-info", {
+        slug: "local-media",
+        pin: "",
+        dl: `/api/fixtures/media/${fixtureRecord.id}`,
+      });
+      assert.equal(fileInfo.response.status, 200);
+      assertJsonResponse(fileInfo.response);
+      const megapixels = fixtureRecord.infoWidth && fixtureRecord.infoHeight
+        ? Math.round((fixtureRecord.infoWidth * fixtureRecord.infoHeight) / 10000) / 100
+        : 0;
+      assert.deepEqual(fileInfo.body, {
+        file: {
+          id: fixtureRecord.id,
+          name: fixtureRecord.name,
+          mime: fixtureRecord.mime,
+          size: fs.statSync(path.join(mediaRoot, fixtureRecord.file)).size,
+          createdAt: FIXTURE_AT,
+          modifiedAt: FIXTURE_AT,
+          width: fixtureRecord.infoWidth,
+          height: fixtureRecord.infoHeight,
+          megapixels,
+          durationMs: fixtureRecord.infoDurationMs,
+        },
+        exif: fixtureRecord.id === "landscape-image" ? expectedLandscapeExif : {},
+      });
+    }
+
+    const zipTicket = await postJson(started.origin, "/api/share/zip-ticket", {
+      slug: "local-media",
+      pin: "",
+      files: expectedApiFiles.map(({ dl, name, size, mime }) => ({ dl, name, size, mime })),
+    });
+    assert.equal(zipTicket.response.status, 501);
+    assertJsonResponse(zipTicket.response);
+    assert.deepEqual(zipTicket.body, {
+      error: "ZIP downloads are not supported by the local fixture server.",
+    });
+
+    for (const pathname of ["/api/share/opened", "/api/share/track"]) {
+      const discarded = await postJson(started.origin, pathname, { slug: "local-media" });
+      assert.equal(discarded.response.status, 204);
+      assert.equal(discarded.text.length, 0);
+      assert.equal(discarded.body, null);
+    }
+
+    const unknownApi = await fetch(`${started.origin}/api/share/not-a-fixture-route`);
+    assert.equal(unknownApi.status, 404);
+    assertJsonResponse(unknownApi);
+    assert.deepEqual(await unknownApi.json(), { error: "fixture API route not found" });
+
+    const wrongGet = await fetch(`${started.origin}/api/share/list`);
+    assert.equal(wrongGet.status, 405);
+    assertJsonResponse(wrongGet);
+    assert.deepEqual(await wrongGet.json(), { error: "Method Not Allowed" });
+
+    const wrongPost = await postJson(started.origin, "/api/share/meta/local-media", {});
+    assert.equal(wrongPost.response.status, 405);
+    assertJsonResponse(wrongPost.response);
+    assert.deepEqual(wrongPost.body, { error: "Method Not Allowed" });
+
+    const invalidJsonResponse = await fetch(`${started.origin}/api/share/list`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    });
+    assert.equal(invalidJsonResponse.status, 400);
+    assertJsonResponse(invalidJsonResponse);
+    assert.deepEqual(await invalidJsonResponse.json(), { error: "invalid JSON body" });
+
+    const oversizedResponse = await fetch(`${started.origin}/api/share/list`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug: "local-media", padding: "x".repeat(64 * 1024) }),
+    });
+    assert.equal(oversizedResponse.status, 413);
+    assertJsonResponse(oversizedResponse);
+    assert.deepEqual(await oversizedResponse.json(), { error: "request body too large" });
 
     const unknownShare = await fetch(`${started.origin}/s/unknown`);
     assert.equal(unknownShare.status, 404);
