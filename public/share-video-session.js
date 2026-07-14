@@ -82,7 +82,13 @@ export function createVideoSession({ video, resolveSource, onState = () => {} })
   const playFromUser = async () => {
     userPaused = false;
     await load();
-    return video.play();
+    try {
+      return await video.play();
+    } catch (cause) {
+      const playbackError = cause instanceof Error ? cause : new Error(String(cause));
+      emit("error", playbackError);
+      throw playbackError;
+    }
   };
 
   return {

@@ -93,6 +93,18 @@ await broken.retry();
 assert.equal(brokenVideo.src, "/api/share/file/retry?inline=1");
 broken.destroy();
 
+const blockedVideo = new FakeVideo();
+blockedVideo.play = () => Promise.reject(new Error("playback blocked"));
+const blocked = createVideoSession({
+  video: blockedVideo,
+  resolveSource: async () => "/api/share/file/blocked?inline=1",
+  onState: () => {},
+});
+await blocked.activate({ autoplay: false });
+await assert.rejects(() => blocked.playFromUser(), /playback blocked/);
+assert.equal(blocked.snapshot().state, "error");
+blocked.destroy();
+
 assert.ok(states.some((entry) => entry.state === "loading"));
 assert.ok(states.some((entry) => entry.state === "playing"));
 console.log("share video session checks passed");
