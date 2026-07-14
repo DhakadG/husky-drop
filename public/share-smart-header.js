@@ -1,4 +1,7 @@
-export function createSmartHeaderState({ hideDelta = 8, showDelta = 4 } = {}) {
+const HIDE_DELTA = 8;
+const SHOW_DELTA = 4;
+
+export function createSmartHeaderState() {
   let hidden = false;
   let active = false;
   let lastY = 0;
@@ -6,13 +9,12 @@ export function createSmartHeaderState({ hideDelta = 8, showDelta = 4 } = {}) {
   let travel = 0;
 
   const visible = (y) => {
-    const changed = hidden;
     hidden = false;
     active = false;
     lastY = y;
     direction = 0;
     travel = 0;
-    return { hidden, changed };
+    return hidden;
   };
 
   return {
@@ -23,7 +25,7 @@ export function createSmartHeaderState({ hideDelta = 8, showDelta = 4 } = {}) {
       if (!active) {
         active = true;
         lastY = nextY;
-        return { hidden, changed: false };
+        return hidden;
       }
 
       const delta = nextY - lastY;
@@ -35,10 +37,9 @@ export function createSmartHeaderState({ hideDelta = 8, showDelta = 4 } = {}) {
         direction = nextDirection;
       }
 
-      const wasHidden = hidden;
-      if (!hidden && direction > 0 && travel >= hideDelta) hidden = true;
-      if (hidden && direction < 0 && travel >= showDelta) hidden = false;
-      return { hidden, changed: hidden !== wasHidden };
+      if (!hidden && direction > 0 && travel >= HIDE_DELTA) hidden = true;
+      if (hidden && direction < 0 && travel >= SHOW_DELTA) hidden = false;
+      return hidden;
     },
 
     reset(y = 0) {

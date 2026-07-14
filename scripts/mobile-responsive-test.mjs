@@ -194,7 +194,7 @@ assert.match(
 );
 assert.match(
   shareJs,
-  /toolbar\.classList\.toggle\("is-scroll-hidden",\s*result\.hidden\)/,
+  /toolbar\.classList\.toggle\("is-scroll-hidden",\s*hidden\)/,
   "the smart header toggles only its hidden-state class",
 );
 

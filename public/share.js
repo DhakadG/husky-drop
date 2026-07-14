@@ -681,8 +681,8 @@ function installSmartGalleryHeader() {
     const top = parseFloat(getComputedStyle(toolbar).top) || 0;
     const stuck = y > 0 && toolbar.getBoundingClientRect().top <= top + 1;
     const locked = document.body.classList.contains("gallery-tools-open") || toolbar.contains(document.activeElement);
-    const result = state.update({ y, stuck, enabled: media.matches, locked });
-    toolbar.classList.toggle("is-scroll-hidden", result.hidden);
+    const hidden = state.update({ y, stuck, enabled: media.matches, locked });
+    toolbar.classList.toggle("is-scroll-hidden", hidden);
   };
 
   const schedule = () => {
