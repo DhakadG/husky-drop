@@ -10,6 +10,7 @@ import {
 } from "./share-viewer-engine.js";
 import { createDragSelectionController } from "./share-selection-engine.js";
 import { computeJustifiedRows } from "./share-gallery-layout.js";
+import { createVideoSession } from "./share-video-session.js";
 
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
 // stable folder id (never on the rotating signed "ls" token), a justified
@@ -1597,6 +1598,10 @@ async function openViewer(index, sourceEl) {
   setGalleryToolsOpen(false);
   const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
+  if (/^video\//.test(file?.mime || "") && sourceEl) {
+    stopHoverPreview(sourceEl, file, { removeBar: true });
+    cleanupTilePreview(file);
+  }
   viewerAssets = createViewerAssetEngine({
     loadTier: loadTierAsset,
     abort: abortAssetLoad,
@@ -1809,67 +1814,121 @@ function resetCurrentRotation() {
 }
 
 function registerVideoContent(instance) {
-  instance.on("contentLoad", (e) => {
-    const { content } = e;
+  const sessions = new Set();
+  const finePointer = matchMedia("(hover: hover) and (pointer: fine)");
+  const pauseHidden = () => {
+    if (document.hidden) sessions.forEach((session) => session.pauseForVisibility());
+  };
+  document.addEventListener("visibilitychange", pauseHidden);
+  instance.on("destroy", () => {
+    document.removeEventListener("visibilitychange", pauseHidden);
+    sessions.forEach((session) => session.destroy());
+    sessions.clear();
+  });
+
+  instance.on("contentLoad", (event) => {
+    const { content } = event;
     if (content.data.type !== "video") return;
-    e.preventDefault();
+    event.preventDefault();
     const file = content.data.file;
     const wrap = document.createElement("div");
     wrap.className = "pswp-video-wrap";
     wrap.dataset.fileId = file.id;
     applyImageTransform(wrap, file);
-    if (file.thumb) {
-      const poster = document.createElement("img");
-      poster.className = "pswp-video-poster";
-      poster.src = thumbUrl(file, "base");
-      poster.alt = "";
-      wrap.appendChild(poster);
-    }
-    const loading = document.createElement("div");
-    loading.className = "pswp-video-loading";
-    loading.textContent = "Loading video";
-    wrap.appendChild(loading);
-    content._startVideo = () => content._videoPromise ||= getPreviewVideo(file)
-      .then((video) => {
-        cleanupTilePreview(file);
-        video.pause();
-        video.controls = true;
-        video.muted = false;
-        video.loop = false;
-        video.playsInline = true;
-        video.preload = "metadata";
-        video.className = "pswp-video";
-        video.style.opacity = "";
-        loading.remove();
-        wrap.appendChild(video);
-        content._video = video;
-        if (instance.currSlide?.data?.file?.id === file.id) video.play().catch(() => {});
-      })
-      .catch(() => {
-        loading.textContent = "Video could not be loaded";
-      });
+
+    const poster = document.createElement("img");
+    poster.className = "pswp-video-poster";
+    poster.src = file.thumb ? thumbUrl(file, "base") : "";
+    poster.alt = "";
+    poster.draggable = false;
+    if (poster.src) wrap.appendChild(poster);
+
+    const status = document.createElement("div");
+    status.className = "pswp-video-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.textContent = "Loading video";
+    wrap.appendChild(status);
+
+    const video = document.createElement("video");
+    video.className = "pswp-video";
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.setAttribute("aria-label", file.name);
+    video.setAttribute("controlslist", "nodownload");
+    wrap.appendChild(video);
+
+    const play = document.createElement("button");
+    play.className = "pswp-video-play";
+    play.type = "button";
+    play.setAttribute("aria-label", `Play ${file.name}`);
+    play.innerHTML = uiIcon("play", "pswp-video-play-icon");
+    wrap.appendChild(play);
+
+    const retry = document.createElement("button");
+    retry.className = "pswp-video-retry hidden";
+    retry.type = "button";
+    retry.textContent = "Retry video";
+    wrap.appendChild(retry);
+
+    let hasPlayed = false;
+    const session = createVideoSession({
+      video,
+      resolveSource: async (signal) => {
+        await ensureFreshDownload(file, true, signal);
+        return inlineUrl(file);
+      },
+      onState: ({ state, error }) => {
+        if (state === "playing") hasPlayed = true;
+        wrap.dataset.videoState = state;
+        poster.classList.toggle("hidden", hasPlayed && state !== "error");
+        play.classList.toggle("hidden", ["loading", "playing", "error", "destroyed"].includes(state));
+        retry.classList.toggle("hidden", state !== "error");
+        status.classList.toggle("hidden", !["loading", "error"].includes(state));
+        status.textContent = state === "error" ? error?.message || "Video could not be loaded" : "Loading video";
+      },
+    });
+    const playFromButton = (inputEvent) => {
+      inputEvent.stopPropagation();
+      void session.playFromUser().catch(() => {});
+    };
+    const retryFromButton = (inputEvent) => {
+      inputEvent.stopPropagation();
+      void session.retry().catch(() => {});
+    };
+    play.addEventListener("click", playFromButton);
+    retry.addEventListener("click", retryFromButton);
+    const stopPlayerGesture = (inputEvent) => inputEvent.stopPropagation();
+    const playerEvents = ["pointerdown", "pointermove", "pointerup", "touchstart", "touchmove", "click"];
+    for (const type of playerEvents) video.addEventListener(type, stopPlayerGesture, { passive: true });
+
+    content._video = video;
+    content._videoSession = session;
+    content._videoCleanup = () => {
+      play.removeEventListener("click", playFromButton);
+      retry.removeEventListener("click", retryFromButton);
+      for (const type of playerEvents) video.removeEventListener(type, stopPlayerGesture);
+    };
     content.element = wrap;
+    sessions.add(session);
+    content._videoPromise = session.load().catch(() => {});
   });
-  instance.on("contentActivate", (e) => {
-    if (!e.content?._video) e.content?._startVideo?.();
-    const video = e.content?._video;
-    if (video) video.play().catch(() => {});
+
+  instance.on("contentActivate", ({ content }) => {
+    void content?._videoSession?.activate({ autoplay: finePointer.matches }).catch(() => {});
   });
-  instance.on("contentDeactivate", (e) => {
-    const video = e.content?._video;
-    if (video) video.pause();
-  });
-  instance.on("contentDestroy", (e) => {
-    const video = e.content?._video;
-    if (video) {
-      video.pause();
-      video.controls = false;
-      video.muted = true;
-      video.loop = true;
-      video.className = "g-video-preview";
-      video.style.opacity = "0";
-      video.remove();
-    }
+  instance.on("contentDeactivate", ({ content }) => content?._videoSession?.deactivate());
+  instance.on("contentDestroy", ({ content }) => {
+    const session = content?._videoSession;
+    if (!session) return;
+    sessions.delete(session);
+    content._videoCleanup?.();
+    session.destroy();
+    content._videoSession = null;
+    content._videoPromise = null;
+    content._videoCleanup = null;
+    content._video = null;
   });
 }
 

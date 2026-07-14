@@ -2572,21 +2572,29 @@ body.selecting .g-check {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  isolation: isolate;
   background: #000;
 }
 .pswp-video-poster {
   position: absolute;
   inset: 0;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: contain;
   filter: blur(18px);
   transform: scale(1.06);
   opacity: 0.9;
+  transition: opacity 160ms ease;
+  pointer-events: none;
 }
-.pswp-video-loading {
-  position: relative;
-  z-index: 1;
+.pswp-video-status {
+  position: absolute;
+  left: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 4;
+  transform: translateX(-50%);
   padding: 8px 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.12);
@@ -2594,13 +2602,55 @@ body.selecting .g-check {
   font: 700 11px var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  text-align: center;
+  pointer-events: none;
 }
 .pswp-video {
   position: relative;
-  z-index: 1;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
   max-width: 100%;
   max-height: 100%;
+  object-fit: contain;
   background: transparent;
+  touch-action: manipulation;
+}
+.pswp-video-play,
+.pswp-video-retry {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  min-width: 64px;
+  min-height: 64px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(5, 12, 22, 0.78);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(14px);
+  touch-action: manipulation;
+}
+.pswp-video-play {
+  display: grid;
+  place-items: center;
+}
+.pswp-video-play-icon {
+  width: 28px;
+  height: 28px;
+  transform: translateX(2px);
+}
+.pswp-video-retry {
+  min-width: 132px;
+  padding: 0 18px;
+  font: 700 12px var(--font-mono);
+}
+.pswp-video-wrap[data-video-state="playing"] .pswp-video-poster,
+.pswp-video-wrap[data-video-state="paused"] .pswp-video-poster.hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .pswp-progressive-wrap {
