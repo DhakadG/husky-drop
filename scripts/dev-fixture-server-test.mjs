@@ -8,6 +8,7 @@ import { request } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { createFixtureServer } from "./dev-fixture-server.mjs";
 
@@ -149,6 +150,76 @@ function rawRequest(port, requestPath, headers = {}) {
   });
 }
 
+function abortAfterFirstChunk(port, requestPath) {
+  return new Promise((resolve, reject) => {
+    let status = null;
+    const req = request({ host: "127.0.0.1", port, path: requestPath }, (response) => {
+      status = response.statusCode;
+      response.once("data", () => {
+        response.destroy();
+        resolve({ status });
+      });
+      response.on("error", () => {});
+    });
+    req.on("error", (error) => {
+      if (error.code === "ECONNRESET") resolve({ status });
+      else reject(error);
+    });
+    req.end();
+  });
+}
+
+function closesWithin(
+  stream,
+  milliseconds = 1000,
+  allowedErrors = ["ECONNRESET", "ERR_STREAM_PREMATURE_CLOSE"],
+) {
+  if (stream.closed) return Promise.resolve(true);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      stream.off("close", onClose);
+      stream.off("error", onError);
+      if (error) reject(error);
+      else resolve(result);
+    };
+    const onClose = () => finish(null, true);
+    const onError = (error) => {
+      if (!allowedErrors.includes(error.code)) {
+        finish(error);
+      }
+    };
+    const timeout = setTimeout(() => finish(null, false), milliseconds);
+    stream.once("close", onClose);
+    stream.on("error", onError);
+    if (stream.closed) finish(null, true);
+  });
+}
+
+function listenerCounts(stream) {
+  return Object.fromEntries(stream.eventNames()
+    .filter((eventName) => typeof eventName === "string")
+    .map((eventName) => [eventName, stream.listenerCount(eventName)]));
+}
+
+function deferred(label, milliseconds = 1000) {
+  const { promise, resolve: finish, reject } = Promise.withResolvers();
+  const timeout = setTimeout(
+    () => reject(new Error(`timed out waiting for ${label}`)),
+    milliseconds,
+  );
+  return {
+    promise,
+    resolve(value) {
+      clearTimeout(timeout);
+      finish(value);
+    },
+  };
+}
+
 function exactJsonBody(byteLength) {
   const prefix = Buffer.from('{"slug":"local-media","padding":"', "utf8");
   const suffix = Buffer.from('"}', "utf8");
@@ -221,6 +292,18 @@ function assertNoPaths(response) {
 }
 
 async function main() {
+  const startStopFixture = createFixtureServer({ port: 0, mediaRoot, logger: silentLogger });
+  try {
+    const pendingStart = startStopFixture.start();
+    await startStopFixture.stop();
+    const brieflyStarted = await pendingStart;
+    await assert.rejects(() => fetch(brieflyStarted.origin, {
+      signal: AbortSignal.timeout(1000),
+    }));
+  } finally {
+    await startStopFixture.stop();
+  }
+
   const fixture = createFixtureServer({ port: 0, mediaRoot, logger: silentLogger });
   const started = await fixture.start();
   try {
@@ -445,8 +528,8 @@ async function main() {
           name: fixtureRecord.name,
           mime: fixtureRecord.mime,
           size: fs.statSync(path.join(mediaRoot, fixtureRecord.file)).size,
-          createdAt: FIXTURE_AT,
-          modifiedAt: FIXTURE_AT,
+          createdAt: Date.parse(FIXTURE_AT),
+          modifiedAt: Date.parse(FIXTURE_AT),
           width: fixtureRecord.infoWidth,
           height: fixtureRecord.infoHeight,
           megapixels,
@@ -644,6 +727,133 @@ async function main() {
   } finally {
     await fixture.stop();
     await fixture.stop();
+  }
+
+  const abortRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "husky-drop-stream-abort-"));
+  const abortPublicRoot = path.join(abortRoot, "public");
+  const abortMediaRoot = path.join(abortRoot, "media");
+  await fs.promises.mkdir(abortPublicRoot);
+  await fs.promises.cp(mediaRoot, abortMediaRoot, { recursive: true });
+  const earlyFile = path.join(abortPublicRoot, "early.bin");
+  const errorFile = path.join(abortPublicRoot, "error.bin");
+  await fs.promises.writeFile(earlyFile, Buffer.from("early"));
+  await fs.promises.writeFile(errorFile, Buffer.alloc(1));
+  await fs.promises.truncate(errorFile, 256 * 1024 * 1024);
+  await fs.promises.writeFile(path.join(abortPublicRoot, "small.bin"), Buffer.from("fixture"));
+  await fs.promises.writeFile(path.join(abortPublicRoot, "large.bin"), Buffer.alloc(1));
+  await fs.promises.truncate(path.join(abortPublicRoot, "large.bin"), 256 * 1024 * 1024);
+  await fs.promises.truncate(
+    path.join(abortMediaRoot, "compatible-h264.mp4"),
+    256 * 1024 * 1024,
+  );
+
+  const originalCreateReadStream = fs.createReadStream;
+  const originalStat = fs.promises.stat;
+  const capturedReadStreams = [];
+  const earlyStatEntered = deferred("delayed early-file stat");
+  const earlyStreamCreated = deferred("early-file read stream");
+  const delayedDestroyStarted = deferred("delayed stream destruction");
+  let delayedDestroyCallback = null;
+  let releaseEarlyStat;
+  const earlyStatRelease = new Promise((resolve) => { releaseEarlyStat = resolve; });
+  let delayEarlyStat = true;
+  fs.promises.stat = async (...args) => {
+    if (delayEarlyStat && path.resolve(String(args[0])) === path.resolve(earlyFile)) {
+      delayEarlyStat = false;
+      earlyStatEntered.resolve();
+      await earlyStatRelease;
+    }
+    return originalStat(...args);
+  };
+  fs.createReadStream = (...args) => {
+    const isErrorStream = path.resolve(String(args[0])) === path.resolve(errorFile);
+    const stream = isErrorStream
+      ? new Readable({
+          read() { this.push(Buffer.alloc(64 * 1024)); },
+          destroy(_error, callback) {
+            delayedDestroyCallback = callback;
+            delayedDestroyStarted.resolve();
+          },
+        })
+      : originalCreateReadStream(...args);
+    capturedReadStreams.push(stream);
+    if (path.resolve(String(args[0])) === path.resolve(earlyFile)) {
+      earlyStreamCreated.resolve(stream);
+    }
+    return stream;
+  };
+  const abortLoggerErrors = [];
+  const abortFixture = createFixtureServer({
+    port: 0,
+    publicRoot: abortPublicRoot,
+    mediaRoot: abortMediaRoot,
+    logger: { log() {}, error(error) { abortLoggerErrors.push(error); } },
+  });
+  try {
+    const abortStarted = await abortFixture.start();
+    const completedResponse = await rawRequest(abortStarted.port, "/small.bin");
+    assert.equal(completedResponse.body.toString("utf8"), "fixture");
+    const completedStream = capturedReadStreams.at(-1);
+
+    const earlyRequest = request({ host: "127.0.0.1", port: abortStarted.port, path: "/early.bin" });
+    earlyRequest.on("error", () => {});
+    earlyRequest.end();
+    await earlyStatEntered.promise;
+    earlyRequest.destroy();
+    releaseEarlyStat();
+    const earlyStream = await earlyStreamCreated.promise;
+    fs.promises.stat = originalStat;
+
+    const mediaStreamCount = capturedReadStreams.length;
+    const mediaAbort = await abortAfterFirstChunk(
+      abortStarted.port,
+      "/api/fixtures/media/h264-video",
+    );
+    assert.equal(mediaAbort.status, 200);
+    assert.equal(capturedReadStreams.length, mediaStreamCount + 1);
+    const mediaStream = capturedReadStreams[mediaStreamCount];
+
+    const staticStreamCount = capturedReadStreams.length;
+    const staticAbort = await abortAfterFirstChunk(abortStarted.port, "/large.bin");
+    assert.equal(staticAbort.status, 200);
+    assert.equal(capturedReadStreams.length, staticStreamCount + 1);
+    const staticStream = capturedReadStreams[staticStreamCount];
+    assert.notEqual(mediaStream, staticStream);
+
+    const errorStreamCount = capturedReadStreams.length;
+    const errorAbort = await abortAfterFirstChunk(abortStarted.port, "/error.bin");
+    assert.equal(errorAbort.status, 200);
+    assert.equal(capturedReadStreams.length, errorStreamCount + 1);
+    const errorStream = capturedReadStreams[errorStreamCount];
+    await delayedDestroyStarted.promise;
+    assert.equal(errorStream.listenerCount("error"), 1);
+    const errorClose = closesWithin(errorStream, 1000, ["EIO"]);
+    const delayedCloseError = Object.assign(new Error("fixture close failure"), { code: "EIO" });
+    delayedDestroyCallback(delayedCloseError);
+    delayedDestroyCallback = null;
+    assert.equal(await errorClose, true);
+
+    for (const [responsePath, stream] of [
+      ["completed", completedStream],
+      ["early", earlyStream],
+      ["media", mediaStream],
+      ["static", staticStream],
+      ["error", errorStream],
+    ]) {
+      assert.equal(await closesWithin(stream), true, `${responsePath} stream did not close`);
+      assert.equal(stream.destroyed, true, `${responsePath} stream was not destroyed`);
+      assert.equal(stream.closed, true, `${responsePath} stream was not closed`);
+      assert.deepEqual(listenerCounts(stream), {}, `${responsePath} stream retained listeners`);
+    }
+    assert.deepEqual(abortLoggerErrors, [delayedCloseError]);
+  } finally {
+    releaseEarlyStat();
+    if (delayedDestroyCallback) delayedDestroyCallback();
+    fs.promises.stat = originalStat;
+    for (const stream of capturedReadStreams) stream.destroy();
+    fs.createReadStream = originalCreateReadStream;
+    await abortFixture.stop();
+    await fs.promises.rm(abortRoot, { recursive: true, force: true });
   }
 
   const overlappingRootsFixture = createFixtureServer({

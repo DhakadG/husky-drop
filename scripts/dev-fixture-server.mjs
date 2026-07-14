@@ -25,9 +25,6 @@ const MEDIA_DEFINITIONS = [
     width: 480,
     height: 270,
     durationMs: 0,
-    infoWidth: 480,
-    infoHeight: 270,
-    infoDurationMs: 0,
     thumbnailId: "landscape-image",
   },
   {
@@ -38,9 +35,6 @@ const MEDIA_DEFINITIONS = [
     width: 270,
     height: 480,
     durationMs: 0,
-    infoWidth: 270,
-    infoHeight: 480,
-    infoDurationMs: 0,
     thumbnailId: "portrait-image",
   },
   {
@@ -51,9 +45,6 @@ const MEDIA_DEFINITIONS = [
     width: 320,
     height: 180,
     durationMs: 2000,
-    infoWidth: 320,
-    infoHeight: 180,
-    infoDurationMs: 2000,
     thumbnailId: "landscape-image",
   },
   {
@@ -64,9 +55,6 @@ const MEDIA_DEFINITIONS = [
     width: 320,
     height: 180,
     durationMs: 2000,
-    infoWidth: 320,
-    infoHeight: 180,
-    infoDurationMs: 2000,
     thumbnailId: "landscape-image",
   },
   {
@@ -225,13 +213,54 @@ function sendNoContent(response) {
   response.end();
 }
 
-function fixtureMediaPath(id) {
-  return `${MEDIA_PATH_PREFIX}${id}`;
+function streamResponse(source, response, logger) {
+  let loggedUnexpected = false;
+  const logUnexpected = (error) => {
+    if (
+      !loggedUnexpected &&
+      !["ECONNRESET", "ERR_STREAM_PREMATURE_CLOSE"].includes(error.code)
+    ) {
+      loggedUnexpected = true;
+      logger.error?.(error);
+    }
+  };
+  const cleanupSource = () => {
+    source.off("error", onSourceError);
+  };
+  const cleanupResponse = () => {
+    response.off("error", onResponseError);
+    response.off("close", onResponseClose);
+    response.off("finish", cleanupResponse);
+  };
+  const onSourceError = (error) => {
+    logUnexpected(error);
+    response.destroy();
+  };
+  const onResponseError = (error) => {
+    logUnexpected(error);
+    source.destroy();
+    response.destroy();
+  };
+  const onResponseClose = () => {
+    if (!response.writableFinished) source.destroy();
+    cleanupResponse();
+  };
+
+  source.on("error", onSourceError);
+  source.once("close", cleanupSource);
+  response.on("error", onResponseError);
+  response.once("close", onResponseClose);
+  response.once("finish", cleanupResponse);
+  if (response.destroyed) {
+    cleanupResponse();
+    source.destroy();
+    return;
+  }
+  source.pipe(response);
 }
 
-function fixtureThumbnails(id) {
-  const url = fixtureMediaPath(id);
-  return { base: url, mid: url, max: url };
+function fixtureMediaPath(id) {
+  return `${MEDIA_PATH_PREFIX}${id}`;
 }
 
 function buildFixtureData(mediaRoot) {
@@ -241,9 +270,13 @@ function buildFixtureData(mediaRoot) {
       throw new Error(`fixture media must be a file: ${definition.file}`);
     }
     const dl = fixtureMediaPath(definition.id);
-    const thumbs = fixtureThumbnails(definition.thumbnailId);
+    const thumbnail = fixtureMediaPath(definition.thumbnailId);
+    const thumbs = { base: thumbnail, mid: thumbnail, max: thumbnail };
     return {
       ...definition,
+      infoWidth: definition.infoWidth ?? definition.width,
+      infoHeight: definition.infoHeight ?? definition.height,
+      infoDurationMs: definition.infoDurationMs ?? definition.durationMs,
       size: stats.size,
       dl,
       thumbs,
@@ -460,8 +493,8 @@ async function serveShareApiRequest(request, response, requestPath, fixtureData)
           name: record.name,
           mime: record.type,
           size: record.size,
-          createdAt: FIXTURE_AT,
-          modifiedAt: FIXTURE_AT,
+          createdAt: Date.parse(FIXTURE_AT),
+          modifiedAt: Date.parse(FIXTURE_AT),
           width: record.infoWidth,
           height: record.infoHeight,
           megapixels,
@@ -548,11 +581,7 @@ async function serveMediaRequest(request, response, mediaRoot, requestPath, logg
   }
 
   const stream = fs.createReadStream(file, { start, end });
-  stream.on("error", (error) => {
-    logger.error?.(error);
-    response.destroy();
-  });
-  stream.pipe(response);
+  streamResponse(stream, response, logger);
 }
 
 async function serveRequest(request, response, publicRoot, mediaRoot, fixtureData, logger) {
@@ -627,32 +656,12 @@ async function serveRequest(request, response, publicRoot, mediaRoot, fixtureDat
   }
 
   const stream = fs.createReadStream(candidate);
-  stream.on("error", () => response.destroy());
-  stream.pipe(response);
+  streamResponse(stream, response, logger);
 }
 
-async function validatePublicRoot(publicRoot) {
-  let stats;
-  try {
-    stats = await fs.promises.stat(publicRoot);
-  } catch {
-    throw new Error("public root must be an existing directory");
-  }
-  if (!stats.isDirectory()) {
-    throw new Error("public root must be an existing directory");
-  }
-}
-
-async function validateMediaRoot(mediaRoot) {
-  let stats;
-  try {
-    stats = await fs.promises.stat(mediaRoot);
-  } catch {
-    throw new Error("media root must be an existing directory");
-  }
-  if (!stats.isDirectory()) {
-    throw new Error("media root must be an existing directory");
-  }
+async function validateDirectory(directory, label) {
+  const stats = await fs.promises.stat(directory).catch(() => null);
+  if (!stats?.isDirectory()) throw new Error(`${label} root must be an existing directory`);
 }
 
 export function createFixtureServer({
@@ -668,14 +677,16 @@ export function createFixtureServer({
   let server = null;
   let started = null;
   let starting = null;
+  let stopping = null;
 
   async function start() {
+    if (stopping) await stopping;
     if (started) return started;
     if (starting) return starting;
 
     starting = (async () => {
-      await validatePublicRoot(publicRoot);
-      await validateMediaRoot(mediaRoot);
+      await validateDirectory(publicRoot, "public");
+      await validateDirectory(mediaRoot, "media");
       const fixtureData = buildFixtureData(mediaRoot);
 
       const candidate = createServer((request, response) => {
@@ -728,19 +739,29 @@ export function createFixtureServer({
   }
 
   async function stop() {
-    const active = server;
-    if (!active) return;
-    server = null;
-    started = null;
-    await new Promise((resolve, reject) => {
-      active.close((error) => {
-        if (!error || error.code === "ERR_SERVER_NOT_RUNNING") {
-          resolve();
-        } else {
-          reject(error);
-        }
+    if (stopping) return stopping;
+    const operation = (async () => {
+      await starting?.catch(() => {});
+      const active = server;
+      if (!active) return;
+      server = null;
+      started = null;
+      await new Promise((resolve, reject) => {
+        active.close((error) => {
+          if (!error || error.code === "ERR_SERVER_NOT_RUNNING") {
+            resolve();
+          } else {
+            reject(error);
+          }
+        });
       });
-    });
+    })();
+    stopping = operation;
+    try {
+      await operation;
+    } finally {
+      if (stopping === operation) stopping = null;
+    }
   }
 
   return { start, stop };

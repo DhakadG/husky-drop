@@ -35,6 +35,11 @@ assert.equal(trackedPlans, "", "implementation-plan roots must be absent from th
 for (const durable of [
   "docs/PLAN.md",
   "docs/Personal Dropbox UI Redesign/redesign-package/PLAN.md",
+  "docs/superpowers/specs/2026-07-10-redesign-icon-fidelity-design.md",
+  "docs/superpowers/specs/2026-07-11-readme-redesign-design.md",
+  "docs/superpowers/specs/2026-07-12-drive-sharing-observability-design.md",
+  "docs/superpowers/specs/2026-07-12-viewer-intent-resolution-design.md",
+  "docs/superpowers/specs/2026-07-14-mobile-responsive-design.md",
   "docs/superpowers/specs/2026-07-14-safe-development-foundation-design.md",
 ]) {
   const tracked = git(["ls-files", "--error-unmatch", "--", durable], { allowFailure: true });
