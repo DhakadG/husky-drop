@@ -10,6 +10,7 @@ import {
 } from "./share-viewer-engine.js";
 import { createDragSelectionController } from "./share-selection-engine.js";
 import { computeJustifiedRows } from "./share-gallery-layout.js";
+import { createVideoSession } from "./share-video-session.js";
 
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
 // stable folder id (never on the rotating signed "ls" token), a justified
@@ -34,7 +35,10 @@ let sortMode = localStorage.getItem("lhdb_sort") || "name";
 let tileScale = readScale("lhdb_gallery_scale", localStorage.getItem("lhdb_tile_size") === "compact" ? 3 : localStorage.getItem("lhdb_tile_size") === "large" ? 7 : 5);
 const STRIP_WIDTHS = [34, 40, 46, 54, 64, 76, 90, 106, 124, 144, 168, 192, 216];
 const STRIP_HEIGHTS = [26, 30, 35, 42, 49, 58, 68, 80, 94, 108, 126, 144, 162];
-let stripScale = readScale("lhdb_strip_scale", 5, STRIP_WIDTHS.length);
+let stripScale = readScale("lhdb_strip_scale", matchMedia("(max-width: 640px)").matches ? 3 : 5, STRIP_WIDTHS.length);
+const viewerChrome = { top: 104, bottom: stripHeightForScale() + 70 };
+let viewerChromeMetrics = { refresh: () => {}, cleanup: () => {} };
+let mobileViewerControlsCleanup = () => {};
 // crumbs: [{ fid, name, token }]. fid "" = root. Navigation is keyed on the
 // stable fid, never on `token` (a signed "ls" token that is re-minted with a
 // new signature on every listing call and therefore compares unequal across
@@ -692,7 +696,8 @@ function installGalleryTools() {
 }
 
 function readScale(key, fallback, max = 9) {
-  const value = key ? Number(localStorage.getItem(key)) : Number(fallback);
+  const stored = key ? localStorage.getItem(key) : null;
+  const value = stored == null ? Number(fallback) : Number(stored);
   return Math.max(1, Math.min(max, Number.isFinite(value) ? Math.round(value) : 5));
 }
 
@@ -1597,6 +1602,10 @@ async function openViewer(index, sourceEl) {
   setGalleryToolsOpen(false);
   const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
+  if (/^video\//.test(file?.mime || "") && sourceEl) {
+    stopHoverPreview(sourceEl, file, { removeBar: true });
+    cleanupTilePreview(file);
+  }
   viewerAssets = createViewerAssetEngine({
     loadTier: loadTierAsset,
     abort: abortAssetLoad,
@@ -1632,7 +1641,7 @@ async function openViewer(index, sourceEl) {
     wheelToZoom: true,
     preload: [1, 1],
     loop: false,
-    paddingFn: () => ({ top: window.innerWidth <= 640 ? 116 : 104, bottom: pswp?.element?.classList.contains("pswp-filmstrip-hidden") ? 56 : stripHeightForScale() + 70, left: 0, right: 0 }),
+    paddingFn: () => ({ top: viewerChrome.top, bottom: viewerChrome.bottom, left: 0, right: 0 }),
     appendToEl: document.body,
   });
 
@@ -1718,6 +1727,10 @@ async function openViewer(index, sourceEl) {
     for (const fileId of neighborWarmIds) abortAssetLoad(fileId);
     neighborWarmIds.clear();
     syncRotationUi = () => {};
+    viewerChromeMetrics.cleanup();
+    viewerChromeMetrics = { refresh: () => {}, cleanup: () => {} };
+    mobileViewerControlsCleanup();
+    mobileViewerControlsCleanup = () => {};
     destroyStrip();
     closeViewerPanels({ forceInfo: true });
     pswp = null;
@@ -1725,6 +1738,8 @@ async function openViewer(index, sourceEl) {
 
   pswp.init();
   mountBottomBar(pswp);
+  mobileViewerControlsCleanup = mountMobileViewerControls(pswp);
+  viewerChromeMetrics = mountViewerChromeMetrics(pswp);
   updateCaption(file);
   bindRapidPointer(pswp.element?.querySelector(".pswp__button--arrow--prev"), "previous");
   bindRapidPointer(pswp.element?.querySelector(".pswp__button--arrow--next"), "next");
@@ -1809,67 +1824,126 @@ function resetCurrentRotation() {
 }
 
 function registerVideoContent(instance) {
-  instance.on("contentLoad", (e) => {
-    const { content } = e;
+  const sessions = new Set();
+  const finePointer = matchMedia("(hover: hover) and (pointer: fine)");
+  const pauseHidden = () => {
+    if (document.hidden) sessions.forEach((session) => session.pauseForVisibility());
+  };
+  document.addEventListener("visibilitychange", pauseHidden);
+  instance.on("destroy", () => {
+    document.removeEventListener("visibilitychange", pauseHidden);
+    sessions.forEach((session) => session.destroy());
+    sessions.clear();
+  });
+
+  instance.on("contentLoad", (event) => {
+    const { content } = event;
     if (content.data.type !== "video") return;
-    e.preventDefault();
+    event.preventDefault();
     const file = content.data.file;
     const wrap = document.createElement("div");
     wrap.className = "pswp-video-wrap";
     wrap.dataset.fileId = file.id;
     applyImageTransform(wrap, file);
-    if (file.thumb) {
-      const poster = document.createElement("img");
-      poster.className = "pswp-video-poster";
-      poster.src = thumbUrl(file, "base");
-      poster.alt = "";
-      wrap.appendChild(poster);
-    }
-    const loading = document.createElement("div");
-    loading.className = "pswp-video-loading";
-    loading.textContent = "Loading video";
-    wrap.appendChild(loading);
-    content._startVideo = () => content._videoPromise ||= getPreviewVideo(file)
-      .then((video) => {
-        cleanupTilePreview(file);
-        video.pause();
-        video.controls = true;
-        video.muted = false;
-        video.loop = false;
-        video.playsInline = true;
-        video.preload = "metadata";
-        video.className = "pswp-video";
-        video.style.opacity = "";
-        loading.remove();
-        wrap.appendChild(video);
-        content._video = video;
-        if (instance.currSlide?.data?.file?.id === file.id) video.play().catch(() => {});
-      })
-      .catch(() => {
-        loading.textContent = "Video could not be loaded";
-      });
+
+    const poster = document.createElement("img");
+    poster.className = "pswp-video-poster";
+    poster.src = file.thumb ? thumbUrl(file, "base") : "";
+    poster.alt = "";
+    poster.draggable = false;
+    if (poster.src) wrap.appendChild(poster);
+
+    const status = document.createElement("div");
+    status.className = "pswp-video-status hidden";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.textContent = "Loading video";
+    wrap.appendChild(status);
+
+    const video = document.createElement("video");
+    video.className = "pswp-video";
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = "metadata";
+    video.setAttribute("aria-label", file.name);
+    video.setAttribute("controlslist", "nodownload");
+    wrap.appendChild(video);
+
+    const play = document.createElement("button");
+    play.className = "pswp-video-play hidden";
+    play.type = "button";
+    play.setAttribute("aria-label", `Play ${file.name}`);
+    play.innerHTML = uiIcon("play", "pswp-video-play-icon");
+    wrap.appendChild(play);
+
+    const retry = document.createElement("button");
+    retry.className = "pswp-video-retry hidden";
+    retry.type = "button";
+    retry.textContent = "Retry video";
+    wrap.appendChild(retry);
+
+    let hasPlayed = false;
+    const session = createVideoSession({
+      video,
+      resolveSource: async (signal) => {
+        await ensureFreshDownload(file, true, signal);
+        return inlineUrl(file);
+      },
+      onState: ({ state, error }) => {
+        if (state === "playing") hasPlayed = true;
+        wrap.dataset.videoState = state;
+        poster.classList.toggle("hidden", hasPlayed && state !== "error");
+        play.classList.toggle("hidden", ["loading", "playing", "error", "destroyed"].includes(state));
+        retry.classList.toggle("hidden", state !== "error");
+        status.classList.toggle("hidden", !["loading", "error"].includes(state));
+        status.textContent = state === "error" ? error?.message || "Video could not be loaded" : "Loading video";
+      },
+    });
+    const playFromButton = (inputEvent) => {
+      inputEvent.stopPropagation();
+      void session.playFromUser().catch(() => {});
+    };
+    const retryFromButton = (inputEvent) => {
+      inputEvent.stopPropagation();
+      void session.retry().catch(() => {});
+    };
+    play.addEventListener("click", playFromButton);
+    retry.addEventListener("click", retryFromButton);
+    const stopPlayerGesture = (inputEvent) => inputEvent.stopPropagation();
+    const playerEvents = ["pointerdown", "pointermove", "pointerup", "touchstart", "touchmove", "click"];
+    for (const type of playerEvents) video.addEventListener(type, stopPlayerGesture, { passive: true });
+
+    content._video = video;
+    content._videoSession = session;
+    content._videoCleanup = () => {
+      play.removeEventListener("click", playFromButton);
+      retry.removeEventListener("click", retryFromButton);
+      for (const type of playerEvents) video.removeEventListener(type, stopPlayerGesture);
+    };
     content.element = wrap;
+    sessions.add(session);
+    content._videoPromise = null;
   });
-  instance.on("contentActivate", (e) => {
-    if (!e.content?._video) e.content?._startVideo?.();
-    const video = e.content?._video;
-    if (video) video.play().catch(() => {});
+
+  instance.on("contentActivate", ({ content }) => {
+    if (!content?._videoSession) return;
+    content.element?.classList.add("is-active");
+    content._videoPromise = content._videoSession.activate({ autoplay: finePointer.matches }).catch(() => {});
   });
-  instance.on("contentDeactivate", (e) => {
-    const video = e.content?._video;
-    if (video) video.pause();
+  instance.on("contentDeactivate", ({ content }) => {
+    content?.element?.classList.remove("is-active");
+    content?._videoSession?.deactivate();
   });
-  instance.on("contentDestroy", (e) => {
-    const video = e.content?._video;
-    if (video) {
-      video.pause();
-      video.controls = false;
-      video.muted = true;
-      video.loop = true;
-      video.className = "g-video-preview";
-      video.style.opacity = "0";
-      video.remove();
-    }
+  instance.on("contentDestroy", ({ content }) => {
+    const session = content?._videoSession;
+    if (!session) return;
+    sessions.delete(session);
+    content._videoCleanup?.();
+    session.destroy();
+    content._videoSession = null;
+    content._videoPromise = null;
+    content._videoCleanup = null;
+    content._video = null;
   });
 }
 
@@ -1899,7 +1973,7 @@ const SHORTCUTS = [
   ["Esc", "Close the active panel, then viewer"],
   ["Scroll wheel or drag", "Browse the filmstrip"],
   ["Shift + hover a tile", "Scrub a video (desktop)"],
-  ["Touch + hold a tile", "Scrub a video (touch)"],
+  ["Touch + hold a tile", "Select, then drag across more items"],
 ];
 
 const GUIDE_SECTIONS = [
@@ -1912,9 +1986,11 @@ const GUIDE_SECTIONS = [
 let viewerGuidePanel = null;
 let viewerGuideButton = null;
 let stripSettingsPanel = null;
+let mobileViewerDock = null;
+let mobileViewerActions = null;
 
 function hasOpenViewerPanel() {
-  return Boolean(viewerGuidePanel || stripSettingsPanel || viewerMotionPanel || fileInfoPanel?.classList.contains("open"));
+  return Boolean(viewerGuidePanel || stripSettingsPanel || viewerMotionPanel || (mobileViewerActions && !mobileViewerActions.hidden) || fileInfoPanel?.classList.contains("open"));
 }
 
 function syncViewerPanelState() {
@@ -1938,8 +2014,13 @@ function closeViewerPanels(options = {}) {
     viewerMotionPanel?.remove();
     viewerMotionPanel = null;
   }
-  if (except !== "file-info" && (forceInfo || !fileInfoPinned)) {
-    if (forceInfo) fileInfoPinned = false;
+  if (except !== "mobile-actions" && mobileViewerActions) {
+    mobileViewerActions.hidden = true;
+    mobileViewerDock?.querySelector(".pswp-mobile-more")?.setAttribute("aria-expanded", "false");
+  }
+  const compactViewer = matchMedia("(max-width: 640px)").matches;
+  if (except !== "file-info" && (forceInfo || compactViewer || !fileInfoPinned)) {
+    if (forceInfo || compactViewer) fileInfoPinned = false;
     setFileInfoOpen(false);
   }
   syncViewerPanelState();
@@ -1967,7 +2048,7 @@ function toggleFilmstrip() {
   const root = pswp?.element;
   if (!root) return;
   const hidden = root.classList.toggle("pswp-filmstrip-hidden");
-  pswp.updateSize(true);
+  viewerChromeMetrics.refresh();
   trackEvent("filmstrip_toggle", hidden ? "hidden" : "visible");
 }
 
@@ -2022,6 +2103,104 @@ function toggleViewerGuide(instance) {
   viewerGuideButton?.classList.add("is-active");
   viewerGuideButton?.setAttribute("aria-pressed", "true");
   syncViewerPanelState();
+}
+
+function downloadCurrentViewerFile() {
+  closeViewerPanels();
+  const file = pswp?.currSlide?.data?.file;
+  if (file) void downloadFile(file);
+}
+
+function setMobileActionsOpen(open, { restoreFocus = true } = {}) {
+  if (!mobileViewerActions || !mobileViewerDock) return;
+  const wasOpen = !mobileViewerActions.hidden;
+  if (open) closeViewerPanels({ except: "mobile-actions", forceInfo: true });
+  mobileViewerActions.hidden = !open;
+  const more = mobileViewerDock.querySelector(".pswp-mobile-more");
+  more?.setAttribute("aria-expanded", String(open));
+  if (open) mobileViewerActions.querySelector("button:not([disabled])")?.focus();
+  else if (wasOpen && restoreFocus) more?.focus({ preventScroll: true });
+  syncViewerPanelState();
+}
+
+function mountMobileViewerControls(instance) {
+  const dock = document.createElement("nav");
+  dock.className = "pswp-mobile-dock";
+  dock.setAttribute("aria-label", "Viewer actions");
+  const actions = [
+    ["rotate-ccw", "Rotate", () => rotateCurrentMedia(-90)],
+    ["file-text", "Details", () => toggleFileInfo(false)],
+    ["download", "Save", downloadCurrentViewerFile],
+  ];
+  for (const [iconName, label, handler] of actions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "pswp-mobile-action";
+    button.setAttribute("aria-label", label);
+    button.innerHTML = `${uiIcon(iconName, "pswp-mobile-action-icon")}<span>${label}</span>`;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      handler();
+    });
+    dock.appendChild(button);
+  }
+
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "pswp-mobile-action pswp-mobile-more";
+  more.setAttribute("aria-label", "More viewer actions");
+  more.setAttribute("aria-expanded", "false");
+  more.setAttribute("aria-controls", "pswp-mobile-actions");
+  more.innerHTML = '<b aria-hidden="true">•••</b><span>More</span>';
+  dock.appendChild(more);
+
+  const sheet = document.createElement("section");
+  sheet.id = "pswp-mobile-actions";
+  sheet.className = "pswp-mobile-actions";
+  sheet.setAttribute("aria-label", "More viewer actions");
+  sheet.setAttribute("role", "dialog");
+  sheet.tabIndex = -1;
+  sheet.hidden = true;
+  const sheetActions = [
+    ["Rotate right", () => rotateCurrentMedia(90), true],
+    ["Reset rotation", resetCurrentRotation, true],
+    ["Filmstrip size", () => mountStripSizeControl(instance), lightboxItems.length >= 2],
+    ["Show or hide filmstrip", toggleFilmstrip, lightboxItems.length >= 2],
+    ["Motion settings", () => mountViewerMotionPanel(instance), true],
+    ["Viewer guide", () => toggleViewerGuide(instance), true],
+    ["Fullscreen", toggleViewerFullscreen, true],
+  ];
+  for (const [label, handler, enabled] of sheetActions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.disabled = !enabled;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setMobileActionsOpen(false, { restoreFocus: false });
+      handler();
+    });
+    sheet.appendChild(button);
+  }
+
+  const toggleMore = (event) => {
+    event.stopPropagation();
+    setMobileActionsOpen(sheet.hidden);
+  };
+  more.addEventListener("click", toggleMore);
+  dock.addEventListener("pointerdown", (event) => event.stopPropagation());
+  sheet.addEventListener("pointerdown", (event) => event.stopPropagation());
+  instance.element.append(dock, sheet);
+  mobileViewerDock = dock;
+  mobileViewerActions = sheet;
+
+  return () => {
+    more.removeEventListener("click", toggleMore);
+    dock.remove();
+    sheet.remove();
+    if (mobileViewerDock === dock) mobileViewerDock = null;
+    if (mobileViewerActions === sheet) mobileViewerActions = null;
+  };
 }
 
 function registerUi(instance) {
@@ -2108,11 +2287,7 @@ function registerUi(instance) {
       isButton: true,
       tagName: "button",
       html: icon("download", "pswp__icn-download"),
-      onClick: (_evt, _el, pswpInstance) => {
-        closeViewerPanels();
-        const file = pswpInstance.currSlide?.data?.file;
-        if (file) downloadFile(file);
-      },
+      onClick: downloadCurrentViewerFile,
       title: "Download",
     });
     instance.ui.registerElement({
@@ -2259,6 +2434,55 @@ function mountBottomBar(instance) {
   mountFileInfo(instance);
 }
 
+function mountViewerChromeMetrics(instance) {
+  const root = instance.element;
+  const top = root.querySelector(".pswp__top-bar");
+  const counter = root.querySelector(".pswp__counter");
+  const assetLadder = root.querySelector(".pswp-asset-ladder");
+  const bottom = root.querySelector(".pswp-bottom-bar");
+  let scheduled = 0;
+  const measure = () => {
+    scheduled = 0;
+    if (!root?.isConnected) return;
+    const rootRect = root.getBoundingClientRect();
+    const bottomRect = bottom?.getBoundingClientRect();
+    const topBottom = [top, counter, assetLadder].reduce((furthest, element) => {
+      const rect = element?.getBoundingClientRect();
+      return Math.max(furthest, rect ? rect.bottom - rootRect.top : 0);
+    }, 56);
+    const nextTop = Math.ceil(topBottom) + 8;
+    const measuredBottom = bottomRect ? Math.ceil(rootRect.bottom - bottomRect.top) + 8 : stripHeightForScale() + 62;
+    const nextBottom = root.classList.contains("pswp-filmstrip-hidden") ? Math.max(64, measuredBottom) : measuredBottom;
+    const changed = viewerChrome.top !== nextTop || viewerChrome.bottom !== nextBottom;
+    viewerChrome.top = nextTop;
+    viewerChrome.bottom = nextBottom;
+    root.style.setProperty("--viewer-top-space", `${viewerChrome.top}px`);
+    root.style.setProperty("--viewer-bottom-space", `${viewerChrome.bottom}px`);
+    if (changed) instance.updateSize(true);
+  };
+  const schedule = () => {
+    cancelAnimationFrame(scheduled);
+    scheduled = requestAnimationFrame(measure);
+  };
+  const observer = new ResizeObserver(schedule);
+  if (top) observer.observe(top);
+  if (counter) observer.observe(counter);
+  if (assetLadder) observer.observe(assetLadder);
+  if (bottom) observer.observe(bottom);
+  window.addEventListener("orientationchange", schedule);
+  window.visualViewport?.addEventListener("resize", schedule);
+  schedule();
+  return {
+    refresh: schedule,
+    cleanup() {
+      cancelAnimationFrame(scheduled);
+      observer.disconnect();
+      window.removeEventListener("orientationchange", schedule);
+      window.visualViewport?.removeEventListener("resize", schedule);
+    },
+  };
+}
+
 let fileInfoPanel = null;
 let fileInfoPinned = false;
 let fileInfoToolbarButton = null;
@@ -2324,6 +2548,8 @@ function toggleFileInfoPin() {
 }
 
 function setFileInfoOpen(open) {
+  fileInfoPanel?.setAttribute("aria-hidden", String(!open));
+  fileInfoPanel?.toggleAttribute("inert", !open);
   fileInfoPanel?.classList.toggle("open", open);
   fileInfoPanel?.classList.toggle("pinned", Boolean(open && fileInfoPinned));
   const pinButton = fileInfoPanel?.querySelector(".pswp-info-pin");
@@ -2560,7 +2786,7 @@ function applyStripScale(root, update) {
   if (update && strip && !strip.destroyed) {
     strip.update();
     centerStripSlide(pswp?.currIndex || 0);
-    pswp?.updateSize(true);
+    viewerChromeMetrics.refresh();
   }
 }
 
