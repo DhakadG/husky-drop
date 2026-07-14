@@ -8,3 +8,7 @@ node_modules/
 .worktrees/
 .fuse_hidden*
 src/.fuse_hidden*
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json
