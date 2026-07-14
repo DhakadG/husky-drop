@@ -78,6 +78,7 @@ const UI_ICONS = {
   "wand-sparkles": { mode: "stroke", body: '<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path>' },
   "chevrons-left": { mode: "stroke", body: '<path d="m11 17-5-5 5-5"></path><path d="m18 17-5-5 5-5"></path>' },
   "chevrons-right": { mode: "stroke", body: '<path d="m6 17 5-5-5-5"></path><path d="m13 17 5-5-5-5"></path>' },
+  ellipsis: { mode: "stroke", body: '<circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle>' },
   maximize: { mode: "stroke", body: '<path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="m3 3 5 5"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="m21 3-5 5"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="m3 21 5-5"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path><path d="m21 21-5-5"></path>' },
   list: { mode: "stroke", body: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path>' },
   lock: { mode: "fill", body: '<rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.3"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6z"></path>' },

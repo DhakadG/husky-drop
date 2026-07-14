@@ -1900,6 +1900,10 @@ table.links td b {
   display: block;
   font-size: 12.5px;
 }
+.gate-account-switch {
+  width: 100%;
+  margin-top: 10px;
+}
 
 /* ============================================================
    Custom cursor follower (fine pointers only)
@@ -3414,7 +3418,8 @@ body.selecting .g-check {
   }
   .pswp .pswp-asset-ladder {
     top: calc(56px + env(safe-area-inset-top));
-    width: min(190px, calc(100vw - 140px));
+    width: fit-content;
+    max-width: calc(100vw - 140px);
     min-width: 0;
     padding: 0 10px;
   }
@@ -3496,6 +3501,10 @@ body.selecting .g-check {
   }
   .pswp-mobile-actions button {
     min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
     padding: 7px 9px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 11px;
@@ -3503,6 +3512,11 @@ body.selecting .g-check {
     background: rgba(255, 255, 255, 0.06);
     font: 650 11px var(--font-body);
     touch-action: manipulation;
+  }
+  .pswp-mobile-sheet-icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
   }
   .pswp-mobile-actions button:disabled {
     opacity: 0.38;
@@ -3521,6 +3535,7 @@ body.selecting .g-check {
     bottom: calc(var(--viewer-dock-h) + env(safe-area-inset-bottom) + 8px);
     z-index: 130;
     width: auto;
+    height: fit-content;
     max-height: min(70dvh, 620px);
     border-radius: 20px;
   }
@@ -3540,7 +3555,6 @@ body.selecting .g-check {
   }
 }
 @media (max-width: 640px) and (max-height: 420px) {
-  .pswp .pswp-asset-ladder,
   .pswp .pswp-caption {
     display: none;
   }

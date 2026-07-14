@@ -895,6 +895,7 @@ async function main() {
     assert.equal(res.status, 302, "login redirects to Google");
     authorizeUrl = new URL(res.headers.get("location"));
     assert.equal(authorizeUrl.hostname, "accounts.google.com");
+    assert.equal(authorizeUrl.searchParams.get("prompt"), "select_account", "share login always opens Google's account chooser");
     const state = authorizeUrl.searchParams.get("state");
     assert.ok(state, "login redirect includes a signed state token");
 

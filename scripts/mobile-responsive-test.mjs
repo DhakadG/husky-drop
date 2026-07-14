@@ -241,5 +241,20 @@ assert.match(
   /body\.share-page \.gallery-tools-toggle\s*\{[^}]*width:\s*100%[^}]*min-height:\s*44px/,
   "only the layout button stretches across its grid track",
 );
+assert.doesNotMatch(
+  css,
+  /@media \(max-width: 640px\) and \(max-height: 420px\)\s*\{[^}]*\.pswp \.pswp-asset-ladder/,
+  "the asset-state indicator remains visible in short phone landscape",
+);
+assert.match(
+  css,
+  /@media \(max-width: 640px\)[\s\S]*?\.pswp \.pswp-asset-ladder\s*\{[^}]*width:\s*fit-content[^}]*max-width:\s*calc\(100vw - 140px\)/,
+  "the compact asset ladder shrink-wraps its lamp and progress bar instead of leaving a dead gutter",
+);
+assert.match(
+  css,
+  /@media \(max-width: 640px\)[\s\S]*?\.pswp \.pswp-file-info,[\s\S]*?\{[^}]*height:\s*fit-content[^}]*max-height:\s*min\(70dvh, 620px\)/,
+  "compact viewer panels shrink to their content while retaining a bounded scrolling ceiling",
+);
 
 console.log("mobile responsive contracts passed");

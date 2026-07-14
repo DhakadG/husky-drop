@@ -54,6 +54,21 @@ assert.match(shareJs, /pswp-mobile-dock/);
 assert.match(shareJs, /pswp-mobile-actions/);
 assert.match(shareJs, /setMobileActionsOpen/);
 assert.match(shareJs, /mobileViewerActions && !mobileViewerActions\.hidden/);
+assert.match(shareJs, /uiIcon\("ellipsis", "pswp-mobile-action-icon"\)/, "More uses the shared SVG icon catalog");
+assert.doesNotMatch(shareJs, /•••/, "More no longer uses a text bullet glyph");
+assert.match(shareJs, /uiIcon\(iconName, "pswp-mobile-sheet-icon"\)/, "every mobile More action renders its catalog icon");
+assert.doesNotMatch(
+  shareJs,
+  /setMobileActionsOpen\(false, \{ restoreFocus: false \}\)/,
+  "reversible More actions stay available until the user touches the media or opens another panel",
+);
+assert.match(shareJs, /closeViewerPanels\("mobile-actions"\)/, "rotation preserves an already-open mobile More sheet");
+assert.match(shareJs, /function syncMobileViewerActions\(\)/, "More action labels and availability are synchronized from viewer state");
+assert.match(
+  shareJs,
+  /const mobileActionsHadFocus = mobileViewerActions\?\.contains\(document\.activeElement\);[\s\S]*if \(mobileActionsHadFocus\) more\?\.focus/,
+  "closing More never strands focus inside hidden content",
+);
 assert.match(shareJs, /toggleAttribute\("inert", !open\)/);
 assert.match(shareCss, /\.pswp-mobile-dock/);
 assert.match(shareCss, /min-height:\s*44px/);
@@ -86,8 +101,20 @@ assert.match(shareCss, /body\.share-page \.g-card \.g-dl::before[\s\S]+width:\s*
 assert.match(shareCss, /@media \(max-width: 640px\)[\s\S]+?\.gallery-tools-sheet/);
 assert.match(shareCss, /body\.share-page #gallery-tools-close/);
 assert.match(shareCss, /env\(safe-area-inset-bottom\)/);
+assert.match(
+  shareHtml,
+  /id="switch-google-account"[^>]*>Use a different Google account<\/button>/,
+  "the signed-in share gate exposes an account switch action",
+);
+assert.match(
+  shareJs,
+  /\$\("switch-google-account"\)\.onclick = async \(\) => \{[\s\S]*fetch\("\/api\/auth\/logout", \{ method: "POST" \}\)[\s\S]*startGoogleSignIn\(\)/,
+  "account switching clears the local viewer session before reopening the existing account chooser",
+);
 assert.match(shareJs, /className = "pswp-file-info"/);
 assert.match(shareJs, /File info/);
+assert.match(shareJs, /Reading media details…/);
+assert.doesNotMatch(shareJs, /Reading image metadata…/);
 assert.match(shareJs, /megapixels/);
 assert.match(shareJs, /\?inline=1/);
 assert.match(shareJs, /decodedImages/);
@@ -139,6 +166,21 @@ assert.match(shareJs, /function rotateCurrentMedia/);
 assert.match(shareJs, /function resetCurrentRotation/);
 assert.match(shareJs, /viewerTransforms/);
 assert.match(shareJs, /function closeViewerPanels/);
+assert.match(
+  shareJs,
+  /if \(except !== "file-info" && \(forceInfo \|\| !fileInfoPinned\)\)/,
+  "a deliberate file-info pin survives ordinary viewer interactions on compact screens",
+);
+assert.doesNotMatch(
+  shareJs,
+  /forceInfo \|\| compactViewer/,
+  "compact layout alone cannot clear a deliberate file-info pin",
+);
+assert.ok(
+  shareJs.indexOf('if (key === "Escape" && hasOpenViewerPanel())') <
+    shareJs.indexOf("if (editableTarget(event.target)) return;"),
+  "Escape closes the active viewer panel even when one of its controls has focus",
+);
 assert.match(shareJs, /viewerGuideButton[\s\S]+pointerdown[\s\S]+stopPropagation/);
 assert.match(shareJs, /closest\("input, button, select, textarea/);
 assert.match(shareJs, /range\.addEventListener\("keydown", \(event\) => event\.stopPropagation\(\)\)/);
@@ -187,10 +229,15 @@ assert.match(shareCss, /rotation-reset-button[\s\S]+data-rotation/);
 assert.match(shareCss, /\.pswp-info-pin\[aria-pressed="true"\]/);
 assert.match(shareCss, /button--file-info-button[\s\S]+?\.pswp__icn[\s\S]+?fill:\s*none[\s\S]+?stroke:/, "PhotoSwipe custom icons must render as stroked icons, not filled silhouettes");
 assert.match(shareFx, /animateViewerLed/);
+assert.match(
+  shareJs,
+  /const stateChanged = assetLadderElement\.dataset\.state !== mapped\.key;[\s\S]+if \(stateChanged\) fx\.animateViewerLed/,
+  "asset LED animation runs only when the semantic state changes, not on byte-progress emissions",
+);
 assert.doesNotMatch(shareFx, /animateViewerRotation/);
 assert.match(shareJs, /suppressNextViewerTransition/);
 assert.match(shareFx, /animateViewerTransition/);
-for (const icon of ["file-text", "circle-help", "gallery-horizontal-end", "rotate-ccw", "rotate-cw", "pin", "pin-off", "timer", "aperture", "gauge", "wand-sparkles", "chevrons-left", "chevrons-right"]) {
+for (const icon of ["file-text", "circle-help", "gallery-horizontal-end", "rotate-ccw", "rotate-cw", "rotate-ccw-square", "ellipsis", "maximize", "pin", "pin-off", "timer", "aperture", "gauge", "wand-sparkles", "chevrons-left", "chevrons-right"]) {
   assert.match(publicJs, new RegExp(`(?:"${icon}"|${icon}):`), `${icon} must exist in the shared icon catalog`);
 }
 assert.match(publicJs, /Lucide Icons/);

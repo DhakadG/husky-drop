@@ -177,8 +177,13 @@ function showGate(needsAuth, needsPin) {
   }
   $("gate-pin").classList.toggle("hidden", !needsPin);
   $("pin-go").classList.toggle("hidden", !needsPin || needsAuth);
-  $("google-signin").onclick = () => {
+  const startGoogleSignIn = () => {
     location.href = `/api/auth/login?slug=${encodeURIComponent(slug)}`;
+  };
+  $("google-signin").onclick = startGoogleSignIn;
+  $("switch-google-account").onclick = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    startGoogleSignIn();
   };
   $("pin-go").onclick = tryPin;
   $("pin")?.addEventListener("keydown", (e) => e.key === "Enter" && tryPin());
@@ -1542,6 +1547,7 @@ function renderActiveAsset(state) {
 function updateAssetLadder(state = activeAssetState) {
   if (!assetLadderElement || !state) return;
   const mapped = assetLampState(state);
+  const stateChanged = assetLadderElement.dataset.state !== mapped.key;
   assetLadderElement.dataset.state = mapped.key;
   assetLadderElement.dataset.tier = state.tier;
   assetLadderElement.querySelector(".pswp-asset-label").textContent = mapped.label;
@@ -1550,7 +1556,7 @@ function updateAssetLadder(state = activeAssetState) {
   const bar = assetLadderElement.querySelector(".pswp-asset-progress");
   bar?.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
   bar?.classList.toggle("indeterminate", Boolean(state.loading && !state.progress));
-  fx.animateViewerLed(assetLadderElement.querySelector(".pswp-asset-lamp"), mapped.key);
+  if (stateChanged) fx.animateViewerLed(assetLadderElement.querySelector(".pswp-asset-lamp"), mapped.key);
 }
 
 function handleAssetState(state) {
@@ -1716,8 +1722,14 @@ async function openViewer(index, sourceEl) {
   const editableTarget = (target) => target instanceof Element && target.closest("input, button, select, textarea, [contenteditable]");
   const goRelative = (amount) => pswp?.goTo(Math.max(0, Math.min(lightboxItems.length - 1, pswp.currIndex + amount)));
   const onViewerKeydown = (event) => {
-    if (editableTarget(event.target)) return;
     const key = event.key;
+    if (key === "Escape" && hasOpenViewerPanel()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeViewerPanels({ forceInfo: true });
+      return;
+    }
+    if (editableTarget(event.target)) return;
     if ((key === "ArrowLeft" || key === "ArrowRight") && event.repeat) noteRapidNavigation("key-hold", true);
     if (event.shiftKey && key === "ArrowLeft") return event.preventDefault(), goRelative(-10);
     if (event.shiftKey && key === "ArrowRight") return event.preventDefault(), goRelative(10);
@@ -1743,12 +1755,6 @@ async function openViewer(index, sourceEl) {
       F: toggleViewerFullscreen,
       "?": () => toggleViewerGuide(pswp),
     }[key];
-    if (key === "Escape" && hasOpenViewerPanel()) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      closeViewerPanels({ forceInfo: true });
-      return;
-    }
     if (action) {
       event.preventDefault();
       action();
@@ -1853,7 +1859,7 @@ function applyImageTransform(wrap, file) {
 function rotateCurrentMedia(delta) {
   const file = pswp?.currSlide?.data?.file;
   if (!file || !/^(image|video)\//.test(file.mime)) return;
-  closeViewerPanels();
+  closeViewerPanels("mobile-actions");
   const rotation = setRotation(file, rotationFor(file) + delta);
   suppressNextViewerTransition = true;
   pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
@@ -2051,6 +2057,7 @@ function syncViewerPanelState() {
 function closeViewerPanels(options = {}) {
   if (typeof options === "string") options = { except: options };
   const { except = "", forceInfo = false } = options;
+  const mobileActionsHadFocus = mobileViewerActions?.contains(document.activeElement);
   if (except !== "guide") {
     viewerGuidePanel?.remove();
     viewerGuidePanel = null;
@@ -2067,11 +2074,12 @@ function closeViewerPanels(options = {}) {
   }
   if (except !== "mobile-actions" && mobileViewerActions) {
     mobileViewerActions.hidden = true;
-    mobileViewerDock?.querySelector(".pswp-mobile-more")?.setAttribute("aria-expanded", "false");
+    const more = mobileViewerDock?.querySelector(".pswp-mobile-more");
+    more?.setAttribute("aria-expanded", "false");
+    if (mobileActionsHadFocus) more?.focus({ preventScroll: true });
   }
-  const compactViewer = matchMedia("(max-width: 640px)").matches;
-  if (except !== "file-info" && (forceInfo || compactViewer || !fileInfoPinned)) {
-    if (forceInfo || compactViewer) fileInfoPinned = false;
+  if (except !== "file-info" && (forceInfo || !fileInfoPinned)) {
+    if (forceInfo) fileInfoPinned = false;
     setFileInfoOpen(false);
   }
   syncViewerPanelState();
@@ -2081,6 +2089,7 @@ function syncViewerMotionUi() {
   viewerMotionButton?.classList.toggle("is-active", viewerMotion.enabled);
   viewerMotionButton?.setAttribute("aria-pressed", String(viewerMotion.enabled));
   viewerMotionPanel?.querySelector("[data-motion-toggle]")?.setAttribute("aria-pressed", String(viewerMotion.enabled));
+  syncMobileViewerActions();
 }
 
 function toggleViewerMotion() {
@@ -2100,6 +2109,7 @@ function toggleFilmstrip() {
   if (!root) return;
   const hidden = root.classList.toggle("pswp-filmstrip-hidden");
   viewerChromeMetrics.refresh();
+  syncMobileViewerActions();
   trackEvent("filmstrip_toggle", hidden ? "hidden" : "visible");
 }
 
@@ -2107,6 +2117,7 @@ async function toggleViewerFullscreen() {
   if (!pswp?.element) return;
   if (document.fullscreenElement) await document.exitFullscreen?.();
   else await pswp.element.requestFullscreen?.();
+  syncMobileViewerActions();
 }
 
 function mountViewerMotionPanel(instance) {
@@ -2138,6 +2149,7 @@ function mountViewerMotionPanel(instance) {
   viewerMotionPanel = panel;
   syncViewerMotionUi();
   syncViewerPanelState();
+  panel.querySelector("button")?.focus({ preventScroll: true });
 }
 
 function toggleViewerGuide(instance) {
@@ -2154,6 +2166,7 @@ function toggleViewerGuide(instance) {
   viewerGuideButton?.classList.add("is-active");
   viewerGuideButton?.setAttribute("aria-pressed", "true");
   syncViewerPanelState();
+  panel.querySelector("button")?.focus({ preventScroll: true });
 }
 
 function downloadCurrentViewerFile() {
@@ -2172,6 +2185,34 @@ function setMobileActionsOpen(open, { restoreFocus = true } = {}) {
   if (open) mobileViewerActions.querySelector("button:not([disabled])")?.focus();
   else if (wasOpen && restoreFocus) more?.focus({ preventScroll: true });
   syncViewerPanelState();
+}
+
+function syncMobileViewerActions() {
+  if (!mobileViewerActions) return;
+  const rotation = rotationFor(pswp?.currSlide?.data?.file);
+  const reset = mobileViewerActions.querySelector('[data-mobile-action="reset-rotation"]');
+  if (reset) {
+    reset.disabled = rotation === 0;
+    const label = rotation ? `Reset ${rotation}°` : "Reset rotation";
+    reset.setAttribute("aria-label", label);
+    reset.querySelector("span").textContent = label;
+  }
+  const filmstrip = mobileViewerActions.querySelector('[data-mobile-action="toggle-filmstrip"]');
+  if (filmstrip) {
+    const label = pswp?.element?.classList.contains("pswp-filmstrip-hidden") ? "Show filmstrip" : "Hide filmstrip";
+    filmstrip.setAttribute("aria-label", label);
+    filmstrip.querySelector("span").textContent = label;
+  }
+  const motion = mobileViewerActions.querySelector('[data-mobile-action="motion-settings"]');
+  if (motion) motion.querySelector("span").textContent = `Motion settings · ${viewerMotion.enabled ? "On" : "Off"}`;
+  const fullscreen = mobileViewerActions.querySelector('[data-mobile-action="fullscreen"]');
+  if (fullscreen) {
+    const active = Boolean(document.fullscreenElement);
+    const label = active ? "Exit fullscreen" : "Fullscreen";
+    fullscreen.disabled = !active && typeof pswp?.element?.requestFullscreen !== "function";
+    fullscreen.setAttribute("aria-label", label);
+    fullscreen.querySelector("span").textContent = label;
+  }
 }
 
 function mountMobileViewerControls(instance) {
@@ -2202,7 +2243,7 @@ function mountMobileViewerControls(instance) {
   more.setAttribute("aria-label", "More viewer actions");
   more.setAttribute("aria-expanded", "false");
   more.setAttribute("aria-controls", "pswp-mobile-actions");
-  more.innerHTML = '<b aria-hidden="true">•••</b><span>More</span>';
+  more.innerHTML = `${uiIcon("ellipsis", "pswp-mobile-action-icon")}<span>More</span>`;
   dock.appendChild(more);
 
   const sheet = document.createElement("section");
@@ -2213,23 +2254,25 @@ function mountMobileViewerControls(instance) {
   sheet.tabIndex = -1;
   sheet.hidden = true;
   const sheetActions = [
-    ["Rotate right", () => rotateCurrentMedia(90), true],
-    ["Reset rotation", resetCurrentRotation, true],
-    ["Filmstrip size", () => mountStripSizeControl(instance), lightboxItems.length >= 2],
-    ["Show or hide filmstrip", toggleFilmstrip, lightboxItems.length >= 2],
-    ["Motion settings", () => mountViewerMotionPanel(instance), true],
-    ["Viewer guide", () => toggleViewerGuide(instance), true],
-    ["Fullscreen", toggleViewerFullscreen, true],
+    ["rotate-cw", "Rotate right", "rotate-right", () => rotateCurrentMedia(90), true],
+    ["rotate-ccw-square", "Reset rotation", "reset-rotation", resetCurrentRotation, true],
+    ["gallery-horizontal-end", "Filmstrip size", "filmstrip-size", () => mountStripSizeControl(instance), lightboxItems.length >= 2],
+    ["gallery", "Hide filmstrip", "toggle-filmstrip", toggleFilmstrip, lightboxItems.length >= 2],
+    ["wand-sparkles", "Motion settings", "motion-settings", () => mountViewerMotionPanel(instance), true],
+    ["circle-help", "Viewer guide", "viewer-guide", () => toggleViewerGuide(instance), true],
+    ["maximize", "Fullscreen", "fullscreen", toggleViewerFullscreen, true],
   ];
-  for (const [label, handler, enabled] of sheetActions) {
+  for (const [iconName, label, actionName, handler, enabled] of sheetActions) {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = label;
+    button.dataset.mobileAction = actionName;
+    button.setAttribute("aria-label", label);
+    button.innerHTML = `${uiIcon(iconName, "pswp-mobile-sheet-icon")}<span>${label}</span>`;
     button.disabled = !enabled;
     button.addEventListener("click", (event) => {
       event.stopPropagation();
-      setMobileActionsOpen(false, { restoreFocus: false });
       handler();
+      syncMobileViewerActions();
     });
     sheet.appendChild(button);
   }
@@ -2244,9 +2287,13 @@ function mountMobileViewerControls(instance) {
   instance.element.append(dock, sheet);
   mobileViewerDock = dock;
   mobileViewerActions = sheet;
+  const syncFullscreen = () => syncMobileViewerActions();
+  document.addEventListener("fullscreenchange", syncFullscreen);
+  syncMobileViewerActions();
 
   return () => {
     more.removeEventListener("click", toggleMore);
+    document.removeEventListener("fullscreenchange", syncFullscreen);
     dock.remove();
     sheet.remove();
     if (mobileViewerDock === dock) mobileViewerDock = null;
@@ -2413,6 +2460,7 @@ function registerUi(instance) {
     });
     syncRotationUi = () => {
       const rotation = rotationFor(instance.currSlide?.data?.file);
+      syncMobileViewerActions();
       if (!rotationReset) return;
       rotationReset.disabled = rotation === 0;
       rotationReset.setAttribute("aria-disabled", String(rotation === 0));
@@ -2647,7 +2695,7 @@ async function refreshFileInfo(file) {
   if (!fileInfoPanel?.classList.contains("open") || !file) return;
   const body = fileInfoPanel.querySelector(".pswp-file-info-body");
   const seq = ++fileInfoRequest;
-  body.innerHTML = `<div class="pswp-info-loading"><i></i><span>Reading image metadata…</span></div>`;
+  body.innerHTML = `<div class="pswp-info-loading"><i></i><span>Reading media details…</span></div>`;
   try {
     const data = await fetchFileInfo(file);
     if (seq !== fileInfoRequest) return;
@@ -2825,6 +2873,7 @@ function mountStripSizeControl(instance) {
   stripSettingsPanel = panel;
   applyStripScale(instance.element, false);
   syncViewerPanelState();
+  panel.querySelector("button")?.focus({ preventScroll: true });
 }
 
 function applyStripScale(root, update) {
