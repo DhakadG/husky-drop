@@ -21,6 +21,8 @@ const {
   createViewerAssetEngine,
   normalizeRotation,
   normalizeViewerMotion,
+  resolvePanelReturnTarget,
+  restorePanelFocus,
   verifyFullAsset,
 } = viewerEngine;
 
@@ -56,6 +58,36 @@ function fakeClock() {
 const flush = async () => {
   for (let index = 0; index < 12; index++) await Promise.resolve();
 };
+
+{
+  const desktopButton = { focus() {} };
+  const mobileAction = { focus() {} };
+  const mobileMore = { focus() {} };
+  const panelControl = { focus() {} };
+  const panel = { contains: (element) => element === panelControl };
+  const mobileActions = { contains: (element) => element === mobileAction };
+  assert.equal(resolvePanelReturnTarget({ activeElement: desktopButton }), desktopButton);
+  assert.equal(resolvePanelReturnTarget({ activeElement: mobileAction, mobileActions, mobileMore }), mobileMore);
+  assert.equal(
+    resolvePanelReturnTarget({ activeElement: panelControl, panels: [panel], previousTarget: desktopButton }),
+    desktopButton,
+    "switching nested panels preserves the original invoker",
+  );
+}
+
+{
+  const panelControl = { focus() {} };
+  const outside = { focus() {} };
+  const panel = { contains: (element) => element === panelControl };
+  const calls = [];
+  const returnTarget = { isConnected: true, focus: (options) => calls.push(options) };
+  assert.equal(restorePanelFocus({ activeElement: panelControl, panels: [panel], returnTarget }), true);
+  assert.deepEqual(calls, [{ preventScroll: true }]);
+  assert.equal(restorePanelFocus({ activeElement: outside, panels: [panel], returnTarget }), false);
+  returnTarget.isConnected = false;
+  assert.equal(restorePanelFocus({ activeElement: panelControl, panels: [panel], returnTarget }), false);
+  assert.equal(calls.length, 1, "a detached invoker is never focused");
+}
 
 assert.deepEqual(ASSET_TIERS, ["base", "max", "full"]);
 assert.equal(INTENT_STEPS, 6);

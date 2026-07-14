@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 
+let switchGoogleAccount;
+try {
+  ({ switchGoogleAccount } = await import("../public/share-access.js"));
+} catch (error) {
+  assert.fail(`share access helper must exist and import cleanly: ${error.message}`);
+}
+
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const [shareJs, shareHtml, shareCss, shareFx, publicJs, viewerEngine, shareBackend, worker, drive, pkg] = await Promise.all([
   read("public/share.js"),
@@ -14,6 +21,78 @@ const [shareJs, shareHtml, shareCss, shareFx, publicJs, viewerEngine, shareBacke
   read("src/drive.js"),
   read("package.json"),
 ]);
+
+const makeAccountSwitchUi = () => ({
+  button: { disabled: false, textContent: "Use a different Google account" },
+  error: { textContent: "" },
+});
+
+{
+  const { button, error } = makeAccountSwitchUi();
+  let navigations = 0;
+  const switched = await switchGoogleAccount({
+    button,
+    error,
+    logout: async () => {
+      throw new Error("offline");
+    },
+    navigate: () => navigations++,
+  });
+  assert.equal(switched, false);
+  assert.equal(navigations, 0, "a rejected logout must not launch OAuth");
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, "Use a different Google account");
+  assert.equal(error.textContent, "Could not switch accounts. Please try again.");
+}
+
+{
+  const { button, error } = makeAccountSwitchUi();
+  let navigations = 0;
+  const switched = await switchGoogleAccount({
+    button,
+    error,
+    logout: async () => ({ ok: false }),
+    navigate: () => navigations++,
+  });
+  assert.equal(switched, false);
+  assert.equal(navigations, 0, "a non-2xx logout must not launch OAuth");
+  assert.equal(button.disabled, false);
+  assert.equal(error.textContent, "Could not switch accounts. Please try again.");
+}
+
+{
+  const { button, error } = makeAccountSwitchUi();
+  const events = [];
+  const switched = await switchGoogleAccount({
+    button,
+    error,
+    logout: async () => (events.push("logout"), { ok: true }),
+    navigate: () => events.push("navigate"),
+  });
+  assert.equal(switched, true);
+  assert.deepEqual(events, ["logout", "navigate"], "OAuth starts only after logout succeeds");
+  assert.equal(button.disabled, true);
+  assert.equal(button.textContent, "Choosing account...");
+  assert.equal(error.textContent, "");
+}
+
+{
+  const { button, error } = makeAccountSwitchUi();
+  let resolveLogout;
+  let logoutCalls = 0;
+  const logoutResult = new Promise((resolve) => (resolveLogout = resolve));
+  const first = switchGoogleAccount({
+    button,
+    error,
+    logout: () => (logoutCalls++, logoutResult),
+    navigate: () => {},
+  });
+  const second = await switchGoogleAccount({ button, error, logout: () => (logoutCalls++, logoutResult), navigate: () => {} });
+  assert.equal(second, false);
+  assert.equal(logoutCalls, 1, "a disabled switch button prevents concurrent logout attempts");
+  resolveLogout({ ok: true });
+  await first;
+}
 
 assert.match(worker, /\/api\/share\/file-info/);
 assert.match(worker, /\/api\/share\/thumb\//);
@@ -64,6 +143,17 @@ assert.doesNotMatch(
 );
 assert.match(shareJs, /closeViewerPanels\("mobile-actions"\)/, "rotation preserves an already-open mobile More sheet");
 assert.match(shareJs, /function syncMobileViewerActions\(\)/, "More action labels and availability are synchronized from viewer state");
+const mobileActionSync = shareJs.slice(
+  shareJs.indexOf("function syncMobileViewerActions()"),
+  shareJs.indexOf("\nfunction mountMobileViewerControls", shareJs.indexOf("function syncMobileViewerActions()")),
+);
+const mobileActionBuilder = shareJs.slice(
+  shareJs.indexOf("const sheetActions ="),
+  shareJs.indexOf("\n  const toggleMore", shareJs.indexOf("const sheetActions =")),
+);
+assert.doesNotMatch(mobileActionSync, /setAttribute\("aria-label"/, "live visible More labels are also their accessible names");
+assert.doesNotMatch(mobileActionBuilder, /setAttribute\("aria-label"/, "More actions do not override visible labels with stale names");
+assert.match(mobileActionSync, /Motion settings · \$\{viewerMotion\.enabled \? "On" : "Off"\}/);
 assert.match(
   shareJs,
   /const mobileActionsHadFocus = mobileViewerActions\?\.contains\(document\.activeElement\);[\s\S]*if \(mobileActionsHadFocus\) more\?\.focus/,
@@ -108,8 +198,8 @@ assert.match(
 );
 assert.match(
   shareJs,
-  /\$\("switch-google-account"\)\.onclick = async \(\) => \{[\s\S]*fetch\("\/api\/auth\/logout", \{ method: "POST" \}\)[\s\S]*startGoogleSignIn\(\)/,
-  "account switching clears the local viewer session before reopening the existing account chooser",
+  /switchGoogleAccount\(\{[\s\S]*logout: \(\) => fetch\("\/api\/auth\/logout", \{ method: "POST" \}\)[\s\S]*navigate: startGoogleSignIn/,
+  "account switching waits for the local viewer session to clear before reopening the account chooser",
 );
 assert.match(shareJs, /className = "pswp-file-info"/);
 assert.match(shareJs, /File info/);

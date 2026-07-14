@@ -56,6 +56,19 @@ export function normalizeViewerMotion(value) {
   };
 }
 
+export function resolvePanelReturnTarget({ activeElement, panels = [], mobileActions, mobileMore, previousTarget } = {}) {
+  if (panels.some((panel) => panel?.contains?.(activeElement))) return previousTarget || null;
+  if (mobileActions?.contains?.(activeElement)) return mobileMore || null;
+  return typeof activeElement?.focus === "function" ? activeElement : null;
+}
+
+export function restorePanelFocus({ activeElement, panels = [], returnTarget } = {}) {
+  if (!panels.some((panel) => panel?.contains?.(activeElement))) return false;
+  if (!returnTarget?.isConnected || typeof returnTarget.focus !== "function") return false;
+  returnTarget.focus({ preventScroll: true });
+  return true;
+}
+
 export function createRapidSurfController(options = {}) {
   const now = options.now || (() => performance.now());
   const schedule = options.setTimeout || setTimeout;

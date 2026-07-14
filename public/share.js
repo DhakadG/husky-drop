@@ -6,12 +6,15 @@ import {
   createViewerAssetEngine,
   normalizeRotation,
   normalizeViewerMotion,
+  resolvePanelReturnTarget,
+  restorePanelFocus,
   verifyFullAsset,
 } from "./share-viewer-engine.js";
 import { createDragSelectionController } from "./share-selection-engine.js";
 import { computeJustifiedRows } from "./share-gallery-layout.js";
 import { createSmartHeaderState } from "./share-smart-header.js";
 import { createVideoSession } from "./share-video-session.js";
+import { switchGoogleAccount } from "./share-access.js";
 
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
 // stable folder id (never on the rotating signed "ls" token), a justified
@@ -181,10 +184,14 @@ function showGate(needsAuth, needsPin) {
     location.href = `/api/auth/login?slug=${encodeURIComponent(slug)}`;
   };
   $("google-signin").onclick = startGoogleSignIn;
-  $("switch-google-account").onclick = async () => {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-    startGoogleSignIn();
-  };
+  const switchAccount = $("switch-google-account");
+  switchAccount.onclick = () =>
+    void switchGoogleAccount({
+      button: switchAccount,
+      error: $("gate-err"),
+      logout: () => fetch("/api/auth/logout", { method: "POST" }),
+      navigate: startGoogleSignIn,
+    });
   $("pin-go").onclick = tryPin;
   $("pin")?.addEventListener("keydown", (e) => e.key === "Enter" && tryPin());
   handleSigninError();
@@ -2043,6 +2050,7 @@ const GUIDE_SECTIONS = [
 let viewerGuidePanel = null;
 let viewerGuideButton = null;
 let stripSettingsPanel = null;
+let viewerPanelInvoker = null;
 let mobileViewerDock = null;
 let mobileViewerActions = null;
 
@@ -2057,6 +2065,12 @@ function syncViewerPanelState() {
 function closeViewerPanels(options = {}) {
   if (typeof options === "string") options = { except: options };
   const { except = "", forceInfo = false } = options;
+  const activeElement = document.activeElement;
+  const closingPanels = [
+    except !== "guide" && viewerGuidePanel,
+    except !== "filmstrip" && stripSettingsPanel,
+    except !== "motion" && viewerMotionPanel,
+  ].filter(Boolean);
   const mobileActionsHadFocus = mobileViewerActions?.contains(document.activeElement);
   if (except !== "guide") {
     viewerGuidePanel?.remove();
@@ -2082,7 +2096,21 @@ function closeViewerPanels(options = {}) {
     if (forceInfo) fileInfoPinned = false;
     setFileInfoOpen(false);
   }
+  if (closingPanels.length) {
+    restorePanelFocus({ activeElement, panels: closingPanels, returnTarget: viewerPanelInvoker });
+    viewerPanelInvoker = null;
+  }
   syncViewerPanelState();
+}
+
+function nextViewerPanelInvoker() {
+  return resolvePanelReturnTarget({
+    activeElement: document.activeElement,
+    panels: [viewerGuidePanel, stripSettingsPanel, viewerMotionPanel].filter(Boolean),
+    mobileActions: mobileViewerActions,
+    mobileMore: mobileViewerDock?.querySelector(".pswp-mobile-more"),
+    previousTarget: viewerPanelInvoker,
+  });
 }
 
 function syncViewerMotionUi() {
@@ -2122,7 +2150,9 @@ async function toggleViewerFullscreen() {
 
 function mountViewerMotionPanel(instance) {
   if (viewerMotionPanel) return closeViewerPanels();
+  const invoker = nextViewerPanelInvoker();
   closeViewerPanels("motion");
+  viewerPanelInvoker = invoker;
   const panel = document.createElement("section");
   panel.className = "pswp-motion-settings";
   panel.setAttribute("aria-label", "Viewer motion settings");
@@ -2154,7 +2184,9 @@ function mountViewerMotionPanel(instance) {
 
 function toggleViewerGuide(instance) {
   if (viewerGuidePanel) return closeViewerPanels();
+  const invoker = nextViewerPanelInvoker();
   closeViewerPanels("guide");
+  viewerPanelInvoker = invoker;
   const panel = document.createElement("section");
   panel.className = "pswp-guide";
   panel.setAttribute("aria-label", "Viewer guide");
@@ -2194,13 +2226,11 @@ function syncMobileViewerActions() {
   if (reset) {
     reset.disabled = rotation === 0;
     const label = rotation ? `Reset ${rotation}°` : "Reset rotation";
-    reset.setAttribute("aria-label", label);
     reset.querySelector("span").textContent = label;
   }
   const filmstrip = mobileViewerActions.querySelector('[data-mobile-action="toggle-filmstrip"]');
   if (filmstrip) {
     const label = pswp?.element?.classList.contains("pswp-filmstrip-hidden") ? "Show filmstrip" : "Hide filmstrip";
-    filmstrip.setAttribute("aria-label", label);
     filmstrip.querySelector("span").textContent = label;
   }
   const motion = mobileViewerActions.querySelector('[data-mobile-action="motion-settings"]');
@@ -2210,7 +2240,6 @@ function syncMobileViewerActions() {
     const active = Boolean(document.fullscreenElement);
     const label = active ? "Exit fullscreen" : "Fullscreen";
     fullscreen.disabled = !active && typeof pswp?.element?.requestFullscreen !== "function";
-    fullscreen.setAttribute("aria-label", label);
     fullscreen.querySelector("span").textContent = label;
   }
 }
@@ -2266,7 +2295,6 @@ function mountMobileViewerControls(instance) {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.mobileAction = actionName;
-    button.setAttribute("aria-label", label);
     button.innerHTML = `${uiIcon(iconName, "pswp-mobile-sheet-icon")}<span>${label}</span>`;
     button.disabled = !enabled;
     button.addEventListener("click", (event) => {
@@ -2845,7 +2873,9 @@ function stopFilmstripPropagation(host) {
 
 function mountStripSizeControl(instance) {
   if (stripSettingsPanel) return closeViewerPanels();
+  const invoker = nextViewerPanelInvoker();
   closeViewerPanels("filmstrip");
+  viewerPanelInvoker = invoker;
   const panel = document.createElement("section");
   panel.className = "pswp-strip-settings";
   panel.setAttribute("aria-label", "Filmstrip size settings");
