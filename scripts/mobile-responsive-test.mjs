@@ -84,5 +84,30 @@ assert.match(
   /\.home-v3 \.brand\s*\{[^}]*font-size:\s*13\.5px/,
   "the home brand remains readable beside the admin action at 320px",
 );
+assert.match(
+  css,
+  /body\.drop-page\s*\{[^}]*min-height:\s*var\(--mobile-vh\)[^}]*overflow-x:\s*clip/,
+  "the uploader cannot create document-level horizontal overflow",
+);
+assert.match(
+  css,
+  /\.drop-v3\s*\{[^}]*width:\s*100%[^}]*padding-inline-start:\s*var\(--mobile-safe-left\)/,
+  "the uploader shell uses phone-safe full-width geometry",
+);
+assert.match(
+  css,
+  /\.drop-topbar\s*\{[^}]*flex-wrap:\s*wrap/,
+  "the uploader status wraps instead of widening small screens",
+);
+assert.match(
+  css,
+  /body\.admin-page \.admin-shell\s*\{[^}]*padding-bottom:\s*var\(--mobile-safe-bottom\)/,
+  "signed-out admin pages do not inherit desktop bottom padding",
+);
+assert.match(
+  css,
+  /\.auth-wrap\s*\{[^}]*min-height:\s*calc\(var\(--mobile-vh\) - 40px\)[^}]*overflow-y:\s*auto/,
+  "admin authentication stays reachable with short mobile viewports",
+);
 
 console.log("mobile responsive contracts passed");

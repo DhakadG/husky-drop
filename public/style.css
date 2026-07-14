@@ -6983,3 +6983,110 @@ table.uploads .empty-cell {
     height: 34px;
   }
 }
+
+/* ---------- Mobile: uploader and admin authentication ---------- */
+@media (max-width: 640px) {
+  body.drop-page {
+    min-height: var(--mobile-vh);
+    overflow-x: clip;
+  }
+  .drop-v3 {
+    width: 100%;
+    max-width: none;
+    padding-block: 14px;
+    padding-inline-start: var(--mobile-safe-left);
+    padding-inline-end: var(--mobile-safe-right);
+  }
+  .drop-topbar {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .drop-topbar .brand {
+    min-width: 0;
+    gap: 8px;
+    font-size: 14px;
+  }
+  .drop-topbar .brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+  .drop-topbar .secure-pill {
+    margin-left: auto;
+  }
+  .collector-hero,
+  .transfer-panel-v3,
+  .dropzone-wrap,
+  .edge-card,
+  .edge-gate {
+    min-width: 0;
+  }
+  .edge-card,
+  .edge-gate {
+    margin-top: max(24px, 7vh);
+  }
+  .edge-card,
+  .edge-card-inner {
+    padding: 22px 18px;
+  }
+  .collector-hero h1,
+  .transfer-panel-v3 .file-row :is(b, span) {
+    overflow-wrap: anywhere;
+  }
+  .drop-v3 .dropzone {
+    min-height: 170px;
+    padding: 20px 14px;
+    touch-action: manipulation;
+  }
+  .drop-v3 :is(input, .btn, .mini) {
+    min-height: var(--mobile-control);
+  }
+  .transfer-panel-v3 .file-row,
+  .transfer-panel-v3 .file-row > * {
+    min-width: 0;
+  }
+  .promo-video iframe {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  body.admin-page {
+    overflow-x: clip;
+  }
+  body.admin-page .admin-shell {
+    width: 100%;
+    padding-inline-start: var(--mobile-safe-left);
+    padding-inline-end: var(--mobile-safe-right);
+    padding-bottom: var(--mobile-safe-bottom);
+  }
+  .auth-wrap {
+    min-height: calc(var(--mobile-vh) - 40px);
+    gap: 14px;
+    padding: 8px 0 12px;
+    overflow-y: auto;
+  }
+  .auth-inner {
+    gap: 13px;
+    padding: 24px 22px 20px;
+  }
+  .auth-card {
+    width: min(100%, 400px);
+  }
+  .auth-input,
+  .auth-card .btn {
+    min-height: var(--mobile-control);
+  }
+  .auth-input input {
+    font-size: 16px;
+  }
+  .auth-input button {
+    min-width: var(--mobile-control);
+    min-height: var(--mobile-control);
+  }
+}
+
+@media (max-width: 640px) and (max-height: 560px) {
+  .auth-wrap {
+    justify-content: flex-start;
+  }
+}
