@@ -321,8 +321,8 @@ async function main() {
     assert.match(share.headers.get("content-type") || "", /^text\/html\b/);
     const fixtureCsp = share.headers.get("content-security-policy") || "";
     assert.match(fixtureCsp, /connect-src 'self'/);
-    assert.match(fixtureCsp, /font-src 'self' data:/);
-    assert.doesNotMatch(fixtureCsp, /https?:/);
+    assert.match(fixtureCsp, /style-src 'self' 'unsafe-inline' https:\/\/fonts\.googleapis\.com/);
+    assert.match(fixtureCsp, /font-src 'self' data: https:\/\/fonts\.gstatic\.com/);
     assert.equal(await share.text(), fs.readFileSync(path.join(publicRoot, "share.html"), "utf8"));
 
     const css = await fetch(`${started.origin}/style.css`);

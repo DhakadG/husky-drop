@@ -14,7 +14,7 @@ const MEDIA_PATH_PREFIX = "/api/fixtures/media/";
 const FIXTURE_AT = "2026-07-14T00:00:00.000Z";
 const FAR_FUTURE = 4102444800000;
 const MAX_JSON_BODY_BYTES = 64 * 1024;
-const FIXTURE_CSP = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:";
+const FIXTURE_CSP = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; worker-src 'self' blob:";
 
 const MEDIA_DEFINITIONS = [
   {
