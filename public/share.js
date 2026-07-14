@@ -10,6 +10,7 @@ import {
 } from "./share-viewer-engine.js";
 import { createDragSelectionController } from "./share-selection-engine.js";
 import { computeJustifiedRows } from "./share-gallery-layout.js";
+import { createSmartHeaderState } from "./share-smart-header.js";
 import { createVideoSession } from "./share-video-session.js";
 
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
@@ -280,6 +281,7 @@ async function showGallery() {
   installTracking();
   crumbs.push({ fid: "", name: meta.label, token: "" });
   await navigate(crumbs[0], { push: false });
+  installSmartGalleryHeader();
 }
 
 // ---- Navigation core (stable fid, dedupe, browser history) ----
@@ -648,6 +650,7 @@ function installTileSizeControl() {
 
 const galleryToolsMedia = matchMedia("(max-width: 640px)");
 let galleryToolsInstalled = false;
+let refreshSmartGalleryHeader = () => {};
 
 function setGalleryToolsOpen(open) {
   const sheet = $("gallery-tools-sheet");
@@ -657,13 +660,57 @@ function setGalleryToolsOpen(open) {
   sheet.hidden = !open;
   toggle.setAttribute("aria-expanded", String(open));
   document.body.classList.toggle("gallery-tools-open", open);
+  if (open) refreshSmartGalleryHeader();
   if (open) sheet.querySelector("button, input, select")?.focus();
   else if (wasOpen && galleryToolsMedia.matches) toggle.focus({ preventScroll: true });
 }
 
+function installSmartGalleryHeader() {
+  const toolbar = document.querySelector(".gallery-toolbar");
+  if (!toolbar) return;
+  const media = matchMedia("(max-width: 640px)");
+  const state = createSmartHeaderState();
+  let frame = 0;
+
+  const refresh = () => {
+    frame = 0;
+    const y = Math.max(0, window.scrollY || 0);
+    const top = parseFloat(getComputedStyle(toolbar).top) || 0;
+    const stuck = y > 0 && toolbar.getBoundingClientRect().top <= top + 1;
+    const locked = document.body.classList.contains("gallery-tools-open") || toolbar.contains(document.activeElement);
+    const result = state.update({ y, stuck, enabled: media.matches, locked });
+    toolbar.classList.toggle("is-scroll-hidden", result.hidden);
+  };
+
+  const schedule = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(refresh);
+  };
+
+  const onBreakpointChange = () => {
+    if (!media.matches) {
+      state.reset(window.scrollY);
+      toolbar.classList.remove("is-scroll-hidden");
+    }
+    schedule();
+  };
+
+  refreshSmartGalleryHeader = () => {
+    state.reset(window.scrollY);
+    toolbar.classList.remove("is-scroll-hidden");
+    schedule();
+  };
+  window.addEventListener("scroll", schedule, { passive: true });
+  document.addEventListener("focusin", schedule);
+  if (media.addEventListener) media.addEventListener("change", onBreakpointChange);
+  else media.addListener(onBreakpointChange);
+  refresh();
+}
+
 function syncGalleryToolsPlacement() {
   const sort = $("sort");
-  const toolbar = sort?.parentElement;
+  const toolbar = sort?.closest(".toolbar-tools");
+  const sortControl = sort?.closest(".sort-control") || sort;
   const slot = $("gallery-tools-slot");
   if (!toolbar || !slot) return;
   if (galleryToolsMedia.matches) {
@@ -671,7 +718,7 @@ function syncGalleryToolsPlacement() {
     return;
   }
   setGalleryToolsOpen(false);
-  toolbar.insertBefore($("tile-size"), sort);
+  toolbar.insertBefore($("tile-size"), sortControl);
   toolbar.insertBefore($("select-all"), $("sel-info"));
   toolbar.insertBefore($("select-none"), $("sel-info"));
 }

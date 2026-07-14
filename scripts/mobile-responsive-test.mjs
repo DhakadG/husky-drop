@@ -10,10 +10,12 @@ const htmlPaths = [
   "public/admin.html",
   "public/share.html",
 ];
-const [css, ...pages] = await Promise.all([
+const [css, shareJs, ...pages] = await Promise.all([
   read("public/style.css"),
+  read("public/share.js"),
   ...htmlPaths.map(read),
 ]);
+const shareHtml = pages[htmlPaths.indexOf("public/share.html")];
 
 for (const [index, page] of pages.entries()) {
   assert.match(
@@ -148,6 +150,86 @@ assert.match(
   css,
   /\.share-mode-card > input\s*\{[^}]*width:\s*1px[^}]*min-height:\s*0/,
   "hidden share-mode radios cannot widen the mobile admin page",
+);
+
+assert.match(
+  shareJs,
+  /import\s+\{\s*createSmartHeaderState\s*\}\s+from\s+"\.\/share-smart-header\.js";/,
+  "the share gallery imports its DOM-free smart-header state",
+);
+assert.equal(
+  (shareJs.match(/\binstallSmartGalleryHeader\(\);/g) || []).length,
+  1,
+  "the smart gallery header is installed once after navigation",
+);
+assert.match(
+  shareJs,
+  /window\.addEventListener\("scroll",\s*schedule,\s*\{\s*passive:\s*true\s*\}\)/,
+  "the smart toolbar uses one passive window scroll listener",
+);
+assert.match(
+  shareJs,
+  /if\s*\(frame\)\s*return;[\s\S]*frame\s*=\s*requestAnimationFrame\(refresh\)/,
+  "scroll work is coalesced into one animation frame",
+);
+assert.match(
+  shareJs,
+  /parseFloat\(getComputedStyle\(toolbar\)\.top\)[\s\S]*toolbar\.getBoundingClientRect\(\)\.top\s*<=\s*top\s*\+\s*1/,
+  "sticky state is measured against the toolbar's computed top inset",
+);
+assert.match(
+  shareJs,
+  /document\.body\.classList\.contains\("gallery-tools-open"\)[\s\S]*toolbar\.contains\(document\.activeElement\)/,
+  "open gallery tools and toolbar focus lock the smart header visible",
+);
+assert.match(
+  shareJs,
+  /toolbar\.classList\.toggle\("is-scroll-hidden",\s*result\.hidden\)/,
+  "the smart header toggles only its hidden-state class",
+);
+
+assert.match(shareHtml, /<span class="sort-control">[\s\S]*<select id="sort"[^>]*aria-label="sort files"/);
+assert.match(shareHtml, /<\/select>\s*<svg[^>]*aria-hidden="true"/);
+
+assert.match(
+  css,
+  /body\.share-page \.gallery-toolbar\s*\{[^}]*--gallery-toolbar-top:\s*max\(6px, env\(safe-area-inset-top\)\)[^}]*top:\s*var\(--gallery-toolbar-top\)[^}]*transform:\s*translate3d\(0, 0, 0\)[^}]*transition:\s*transform/,
+  "the phone toolbar keeps its safe-area inset and animates only its transform",
+);
+assert.match(
+  css,
+  /body\.share-page \.gallery-toolbar\.is-scroll-hidden\s*\{[^}]*transform:\s*translate3d\(0, calc\(-100% - var\(--gallery-toolbar-top\) - 6px\), 0\)[^}]*pointer-events:\s*none/,
+  "the hidden toolbar moves out of view without changing layout",
+);
+assert.match(
+  css,
+  /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*body\.share-page \.gallery-toolbar\s*\{[^}]*transition:\s*none/,
+  "reduced-motion users do not receive the toolbar transition",
+);
+assert.match(
+  css,
+  /body\.share-page \.toolbar-tools\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\)/,
+  "the phone toolbar reserves intrinsic sort width and lets the layout action fill",
+);
+assert.match(
+  css,
+  /body\.share-page \.sort-control\s*\{[^}]*width:\s*max-content[^}]*max-width:\s*min\(48vw, 190px\)/,
+  "the phone sort wrapper stays compact",
+);
+assert.match(
+  css,
+  /body\.share-page \.sort-select\s*\{[^}]*width:\s*auto[^}]*min-height:\s*44px[^}]*appearance:\s*none/,
+  "the native sort remains accessible and intrinsic-width",
+);
+assert.match(
+  css,
+  /body\.share-page \.sort-control > svg\s*\{[^}]*pointer-events:\s*none/,
+  "the decorative sort chevron cannot intercept the native select",
+);
+assert.match(
+  css,
+  /body\.share-page \.gallery-tools-toggle\s*\{[^}]*width:\s*100%[^}]*min-height:\s*44px/,
+  "only the layout button stretches across its grid track",
 );
 
 console.log("mobile responsive contracts passed");

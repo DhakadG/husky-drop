@@ -122,13 +122,18 @@
                 </svg><small>Detail</small></span>
             </div>
           </div>
-          <select id="sort" class="sort-select" aria-label="sort files">
-            <option value="name">Name A-Z</option>
-            <option value="new">Newest first</option>
-            <option value="old">Oldest first</option>
-            <option value="size">Largest first</option>
-            <option value="type">Type</option>
-          </select>
+          <span class="sort-control">
+            <select id="sort" class="sort-select" aria-label="sort files">
+              <option value="name">Name A-Z</option>
+              <option value="new">Newest first</option>
+              <option value="old">Oldest first</option>
+              <option value="size">Largest first</option>
+              <option value="type">Type</option>
+            </select>
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+              <path d="m6 8 4 4 4-4" />
+            </svg>
+          </span>
           <button class="mini gallery-tools-toggle" id="gallery-tools-toggle" type="button" aria-expanded="false"
             aria-controls="gallery-tools-sheet">Layout &amp; select</button>
           <button class="mini" id="select-all" type="button">select all</button>

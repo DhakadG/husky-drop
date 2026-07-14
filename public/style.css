@@ -1742,6 +1742,9 @@ table.links td b {
     transition: none !important;
     animation: none !important;
   }
+  body.share-page .gallery-toolbar {
+    transition: none;
+  }
 }
 
 /* ---- v2 additions: resume banner, report button, chart, QR modal,
@@ -2073,6 +2076,13 @@ body.has-fx-cursor .mobile-select-bar * {
   background: rgba(255, 255, 255, 0.8);
   color: var(--ink-soft);
   cursor: pointer;
+}
+.sort-control {
+  display: inline-flex;
+  min-width: 0;
+}
+.sort-control > svg {
+  display: none;
 }
 
 /* Breadcrumbs */
@@ -3925,12 +3935,19 @@ table.uploads .empty-cell {
     padding: 7px 10px;
   }
   body.share-page .gallery-toolbar {
+    --gallery-toolbar-top: max(6px, env(safe-area-inset-top));
     position: sticky;
-    top: max(6px, env(safe-area-inset-top));
+    top: var(--gallery-toolbar-top);
     z-index: 30;
     justify-content: flex-start;
     padding: 9px !important;
     gap: 8px;
+    transform: translate3d(0, 0, 0);
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  body.share-page .gallery-toolbar.is-scroll-hidden {
+    transform: translate3d(0, calc(-100% - var(--gallery-toolbar-top) - 6px), 0);
+    pointer-events: none;
   }
   body.share-page .crumbs {
     width: 100%;
@@ -3950,16 +3967,38 @@ table.uploads .empty-cell {
   body.share-page .toolbar-tools {
     width: 100%;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: max-content minmax(0, 1fr);
     gap: 7px;
   }
-  body.share-page .sort-select,
-  body.share-page .gallery-tools-toggle {
-    width: 100%;
+  body.share-page .sort-control {
+    position: relative;
+    width: max-content;
+    max-width: min(48vw, 190px);
+  }
+  body.share-page .sort-select {
+    width: auto;
+    max-width: 100%;
     min-height: 44px;
+    appearance: none;
+    padding-right: 34px;
+  }
+  body.share-page .sort-control > svg {
+    display: block;
+    position: absolute;
+    right: 11px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translateY(-50%);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    pointer-events: none;
   }
   body.share-page .gallery-tools-toggle {
     display: inline-flex;
+    width: 100%;
+    min-height: 44px;
     justify-content: center;
   }
   body.share-page .gallery-tools-sheet:not([hidden]) {
