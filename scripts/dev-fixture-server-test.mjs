@@ -200,6 +200,31 @@ async function main() {
     await fixture.stop();
   }
 
+  const overlappingRootsFixture = createFixtureServer({
+    port: 0,
+    publicRoot: root,
+    mediaRoot,
+    logger: silentLogger,
+  });
+  try {
+    const overlappingRootsStarted = await overlappingRootsFixture.start();
+    const leakedFixture = await rawRequest(
+      overlappingRootsStarted.port,
+      "/test/dev-fixtures/media/compatible-h264.mp4",
+    );
+    assert.equal(leakedFixture.status, 404);
+    assertNoPaths(leakedFixture);
+
+    const fixtureDirectory = await rawRequest(
+      overlappingRootsStarted.port,
+      "/test/dev-fixtures/media",
+    );
+    assert.equal(fixtureDirectory.status, 404);
+    assertNoPaths(fixtureDirectory);
+  } finally {
+    await overlappingRootsFixture.stop();
+  }
+
   const temporaryPublicRoot = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), "husky-drop-fixture-public-"),
   );

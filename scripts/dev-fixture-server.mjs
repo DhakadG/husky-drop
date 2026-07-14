@@ -222,7 +222,8 @@ async function serveRequest(request, response, publicRoot, mediaRoot, logger) {
     throw error;
   }
 
-  if (!stats.isFile() || !realPathIsInside(publicRoot, candidate)) {
+  const isFixtureMedia = realPathIsInside(mediaRoot, candidate);
+  if (!stats.isFile() || !realPathIsInside(publicRoot, candidate) || isFixtureMedia) {
     sendStatus(response, 404, "Not Found");
     return;
   }
