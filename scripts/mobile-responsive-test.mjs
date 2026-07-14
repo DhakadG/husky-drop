@@ -109,5 +109,45 @@ assert.match(
   /\.auth-wrap\s*\{[^}]*min-height:\s*calc\(var\(--mobile-vh\) - 40px\)[^}]*overflow-y:\s*auto/,
   "admin authentication stays reachable with short mobile viewports",
 );
+assert.match(
+  css,
+  /\.admin-side :is\(\.tab, \.tab-more\) \.tab-label\s*\{[^}]*display:\s*block/,
+  "mobile admin destinations keep visible labels",
+);
+assert.match(
+  css,
+  /\.admin-side\s*\{[^}]*position:\s*fixed[^}]*top:\s*auto/,
+  "the fixed admin bar clears the desktop sticky top inset",
+);
+assert.match(
+  css,
+  /\.admin-mobile-more\s*\{[^}]*bottom:\s*calc\(76px \+ env\(safe-area-inset-bottom\)\)/,
+  "the admin More sheet clears the bottom safe area and navigation",
+);
+assert.match(
+  css,
+  /\.admin-content \.link-action\s*\{[^}]*min-height:\s*var\(--mobile-control\)/,
+  "admin card actions remain usable touch targets",
+);
+assert.match(
+  css,
+  /:is\(\.qr-card, \.share-edit-card, \.folder-picker-panel, \.confirm-card\)\s*\{[^}]*max-height:\s*calc\(var\(--mobile-vh\)/,
+  "admin dialogs remain reachable inside short phone viewports",
+);
+assert.match(
+  css,
+  /\.qr-actions \.btn:last-child\s*\{[^}]*grid-column:\s*1 \/ -1/,
+  "the QR dialog keeps its final action balanced on phones",
+);
+assert.match(
+  css,
+  /\.folder-picker-panel :is\(button, input\)\s*\{[^}]*min-height:\s*var\(--mobile-control\)/,
+  "Drive browser controls remain usable touch targets",
+);
+assert.match(
+  css,
+  /\.share-mode-card > input\s*\{[^}]*width:\s*1px[^}]*min-height:\s*0/,
+  "hidden share-mode radios cannot widen the mobile admin page",
+);
 
 console.log("mobile responsive contracts passed");

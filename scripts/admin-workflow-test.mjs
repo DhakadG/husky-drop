@@ -29,6 +29,16 @@ assert.match(adminJs, /function syncShareEditMode\(/, "share settings explain an
 assert.match(adminJs, /folderPickerMode\s*===\s*"share-edit"/, "the shared Drive picker also edits existing share links");
 assert.match(css, /\.folder-browse-button\s*\{[\s\S]*?align-self:\s*end/, "Browse Drive aligns with its destination field");
 
+assert.match(adminHtml, /id="admin-more-toggle"/, "mobile admin navigation exposes a More destination");
+assert.match(adminHtml, /id="admin-mobile-more"/, "mobile admin navigation provides a More sheet");
+assert.match(adminHtml, /data-mobile-tab="activity"/, "the More sheet routes to Activity");
+assert.match(adminHtml, /data-mobile-tab="create"/, "the More sheet routes to New drop link");
+assert.match(adminHtml, /data-mobile-tab="create-share"/, "the More sheet routes to New share link");
+assert.match(adminJs, /function setAdminMobileMoreOpen\(/, "the More sheet owns its open and focus state");
+assert.match(adminJs, /admin-mobile-more-close/, "the More sheet has an explicit close control");
+assert.match(adminJs, /adminSecondaryTabs\.has\(name\)/, "secondary destinations keep More visibly active");
+assert.match(adminJs, /event\.target\.closest\?\./, "the More sheet tolerates non-Element event targets");
+
 assert.match(adminHtml, /value="auto"[^>]*checked/, "smart automatic parallelism is the recommended default");
 assert.match(adminHtml, /value="balanced"/, "balanced preset is available");
 assert.match(adminHtml, /value="maximum"/, "maximum preset is available");

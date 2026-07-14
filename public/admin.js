@@ -20,6 +20,9 @@ let activityOldestDay = new Date().toISOString().slice(0, 10);
 let activityLoading = false;
 const openActivitySessions = new Set();
 let currentQrUrl = "";
+let adminMobileMore = null;
+let adminMoreToggle = null;
+const adminSecondaryTabs = new Set(["activity", "create", "create-share"]);
 
 init();
 
@@ -32,6 +35,24 @@ async function init() {
   $("tok").addEventListener("keydown", (e) => e.key === "Enter" && tryToken());
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => showTab(tab.dataset.tab));
+  });
+  adminMobileMore = $("admin-mobile-more");
+  adminMoreToggle = $("admin-more-toggle");
+  adminMoreToggle?.addEventListener("click", () => setAdminMobileMoreOpen(adminMobileMore.hidden));
+  $("admin-mobile-more-close")?.addEventListener("click", () => setAdminMobileMoreOpen(false));
+  $("admin-mobile-more-backdrop")?.addEventListener("click", () => setAdminMobileMoreOpen(false));
+  adminMobileMore?.addEventListener("click", (event) => {
+    const destination = event.target.closest?.("[data-mobile-tab]")?.dataset.mobileTab;
+    if (!destination) return;
+    setAdminMobileMoreOpen(false, false);
+    document.querySelector(`.admin-side .tab[data-tab="${CSS.escape(destination)}"]`)?.click();
+  });
+  $("admin-mobile-lock")?.addEventListener("click", () => {
+    setAdminMobileMoreOpen(false, false);
+    logout();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && adminMobileMore && !adminMobileMore.hidden) setAdminMobileMoreOpen(false);
   });
   const tokenEye = $("tok-eye");
   tokenEye?.addEventListener("click", () => {
@@ -181,10 +202,23 @@ function tickLive() {
   if (currentDetailSlug) renderDetailLive(currentDetailSlug);
 }
 
+function setAdminMobileMoreOpen(open, restoreFocus = true) {
+  if (!adminMobileMore || !adminMoreToggle) return;
+  const wasOpen = !adminMobileMore.hidden;
+  adminMobileMore.hidden = !open;
+  $("admin-mobile-more-backdrop").hidden = !open;
+  adminMoreToggle.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("admin-more-open", open);
+  if (open) adminMobileMore.querySelector("[data-mobile-tab]")?.focus();
+  else if (wasOpen && restoreFocus) adminMoreToggle.focus({ preventScroll: true });
+}
+
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll(".tab-pane").forEach((p) => p.classList.add("hidden"));
   $(`tab-${name}`).classList.remove("hidden");
+  adminMoreToggle?.classList.toggle("active", adminSecondaryTabs.has(name));
+  setAdminMobileMoreOpen(false, false);
 }
 
 async function refreshAll() {
