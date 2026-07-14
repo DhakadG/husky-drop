@@ -268,6 +268,7 @@ async function showGallery() {
     render();
   });
   installTileSizeControl();
+  installGalleryTools();
   window.addEventListener("resize", scheduleLayout);
   window.addEventListener("blur", cancelTouchSelection);
   document.addEventListener("visibilitychange", () => document.hidden && cancelTouchSelection());
@@ -349,6 +350,7 @@ async function resolveListing(entry) {
 
 async function navigate(entry, { push = true, fromHistory = false } = {}) {
   cancelTouchSelection();
+  setGalleryToolsOpen(false);
   if (navigating) return;
   const fid = entry.fid || "";
   if (push && crumbs.length && crumbs[crumbs.length - 1].fid === fid) return;
@@ -433,6 +435,9 @@ function renderCrumbs() {
     box.appendChild(el);
   });
   fx.crumbSwap(box);
+  requestAnimationFrame(() => {
+    box.scrollLeft = box.scrollWidth;
+  });
 }
 
 // ---- Rendering ----
@@ -635,6 +640,55 @@ function installTileSizeControl() {
   };
   range.addEventListener("input", () => apply(range.value, true));
   apply(tileScale);
+}
+
+const galleryToolsMedia = matchMedia("(max-width: 640px)");
+let galleryToolsInstalled = false;
+
+function setGalleryToolsOpen(open) {
+  const sheet = $("gallery-tools-sheet");
+  const toggle = $("gallery-tools-toggle");
+  if (!sheet || !toggle) return;
+  const wasOpen = !sheet.hidden;
+  sheet.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("gallery-tools-open", open);
+  if (open) sheet.querySelector("button, input, select")?.focus();
+  else if (wasOpen && galleryToolsMedia.matches) toggle.focus({ preventScroll: true });
+}
+
+function syncGalleryToolsPlacement() {
+  const sort = $("sort");
+  const toolbar = sort?.parentElement;
+  const slot = $("gallery-tools-slot");
+  if (!toolbar || !slot) return;
+  if (galleryToolsMedia.matches) {
+    slot.append($("tile-size"), $("select-all"), $("select-none"));
+    return;
+  }
+  setGalleryToolsOpen(false);
+  toolbar.insertBefore($("tile-size"), sort);
+  toolbar.insertBefore($("select-all"), $("sel-info"));
+  toolbar.insertBefore($("select-none"), $("sel-info"));
+}
+
+function installGalleryTools() {
+  if (galleryToolsInstalled) return syncGalleryToolsPlacement();
+  galleryToolsInstalled = true;
+  $("gallery-tools-toggle").addEventListener("click", () => setGalleryToolsOpen($("gallery-tools-sheet").hidden));
+  $("gallery-tools-close").addEventListener("click", () => setGalleryToolsOpen(false));
+  const onBreakpointChange = () => syncGalleryToolsPlacement();
+  if (galleryToolsMedia.addEventListener) galleryToolsMedia.addEventListener("change", onBreakpointChange);
+  else galleryToolsMedia.addListener(onBreakpointChange);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("gallery-tools-sheet").hidden) setGalleryToolsOpen(false);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    const sheet = $("gallery-tools-sheet");
+    if (sheet.hidden || sheet.contains(event.target) || $("gallery-tools-toggle").contains(event.target)) return;
+    setGalleryToolsOpen(false);
+  });
+  syncGalleryToolsPlacement();
 }
 
 function readScale(key, fallback, max = 9) {
@@ -1174,7 +1228,7 @@ function aspectOf(file) {
 
 function layoutGallery(grid) {
   const files = grid._files || [];
-  const W = grid.clientWidth;
+  const W = Math.floor(grid.getBoundingClientRect().width);
   if (!W || !files.length) return;
   const base = [0.52, 0.62, 0.72, 0.84, 1, 1.18, 1.36, 1.58, 1.82][tileScale - 1];
   const target = Math.round((W < 640 ? 148 : W < 1280 ? 210 : 250) * base);
@@ -1540,6 +1594,7 @@ function pswpItem(file) {
 async function openViewer(index, sourceEl) {
   if (index < 0 || index >= lightboxItems.length) return;
   cancelTouchSelection();
+  setGalleryToolsOpen(false);
   const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
   viewerAssets = createViewerAssetEngine({

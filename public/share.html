@@ -114,12 +114,21 @@
           <option value="size">Largest first</option>
           <option value="type">Type</option>
         </select>
+        <button class="mini gallery-tools-toggle" id="gallery-tools-toggle" type="button" aria-expanded="false" aria-controls="gallery-tools-sheet">Layout &amp; select</button>
         <button class="mini" id="select-all" type="button">select all</button>
         <button class="mini hidden" id="select-none" type="button">clear</button>
         <span class="muted" id="sel-info"></span>
         <button class="btn zip-btn hidden" id="zip-btn" type="button">Download zip</button>
       </div>
     </div>
+
+    <section class="gallery-tools-sheet" id="gallery-tools-sheet" role="dialog" aria-label="Gallery layout and selection tools" tabindex="-1" hidden>
+      <header>
+        <b>Gallery tools</b>
+        <button class="mini" id="gallery-tools-close" type="button" aria-label="Close gallery tools">Close</button>
+      </header>
+      <div id="gallery-tools-slot"></div>
+    </section>
 
     <div id="folders"></div>
   </section>
