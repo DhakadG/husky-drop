@@ -8,6 +8,8 @@ import {
   normalizeViewerMotion,
   verifyFullAsset,
 } from "./share-viewer-engine.js";
+import { createDragSelectionController } from "./share-selection-engine.js";
+import { computeJustifiedRows } from "./share-gallery-layout.js";
 
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
 // stable folder id (never on the rotating signed "ls" token), a justified
@@ -40,6 +42,7 @@ let stripScale = readScale("lhdb_strip_scale", 5, STRIP_WIDTHS.length);
 const crumbs = [];
 const listingCache = new Map(); // fid -> { d, token, at }
 const selected = new Map(); // fileId -> file
+const visibleFiles = new Map(); // fileId -> currently rendered file
 let lightboxItems = [];
 let summarySeq = 0;
 const TOKEN_REFRESH_MS = 90 * 1000;
@@ -265,7 +268,10 @@ async function showGallery() {
     render();
   });
   installTileSizeControl();
+  installGalleryTools();
   window.addEventListener("resize", scheduleLayout);
+  window.addEventListener("blur", cancelTouchSelection);
+  document.addEventListener("visibilitychange", () => document.hidden && cancelTouchSelection());
   window.addEventListener("popstate", onPopState);
   installTracking();
   crumbs.push({ fid: "", name: meta.label, token: "" });
@@ -343,6 +349,8 @@ async function resolveListing(entry) {
 }
 
 async function navigate(entry, { push = true, fromHistory = false } = {}) {
+  cancelTouchSelection();
+  setGalleryToolsOpen(false);
   if (navigating) return;
   const fid = entry.fid || "";
   if (push && crumbs.length && crumbs[crumbs.length - 1].fid === fid) return;
@@ -427,6 +435,9 @@ function renderCrumbs() {
     box.appendChild(el);
   });
   fx.crumbSwap(box);
+  requestAnimationFrame(() => {
+    box.scrollLeft = box.scrollWidth;
+  });
 }
 
 // ---- Rendering ----
@@ -443,10 +454,12 @@ function sortFiles(files) {
 }
 
 function render(revealOnlyIds = null) {
+  cancelTouchSelection();
   renderCrumbs();
   renderMeta();
   const host = $("folders");
   host.innerHTML = "";
+  visibleFiles.clear();
   lightboxItems = [];
   const folders = current?.folders || [];
   if (!folders.length || folders.every((f) => !f.files.length && !f.subfolders?.length)) {
@@ -485,6 +498,7 @@ function render(revealOnlyIds = null) {
       file._renderIndex = i;
       const el = card(file);
       file._el = el;
+      visibleFiles.set(file.id, file);
       grid.appendChild(el);
       revealTargets.push(el);
       if (revealOnlyIds?.has(file.id)) newRevealTargets.push(el);
@@ -628,6 +642,55 @@ function installTileSizeControl() {
   apply(tileScale);
 }
 
+const galleryToolsMedia = matchMedia("(max-width: 640px)");
+let galleryToolsInstalled = false;
+
+function setGalleryToolsOpen(open) {
+  const sheet = $("gallery-tools-sheet");
+  const toggle = $("gallery-tools-toggle");
+  if (!sheet || !toggle) return;
+  const wasOpen = !sheet.hidden;
+  sheet.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("gallery-tools-open", open);
+  if (open) sheet.querySelector("button, input, select")?.focus();
+  else if (wasOpen && galleryToolsMedia.matches) toggle.focus({ preventScroll: true });
+}
+
+function syncGalleryToolsPlacement() {
+  const sort = $("sort");
+  const toolbar = sort?.parentElement;
+  const slot = $("gallery-tools-slot");
+  if (!toolbar || !slot) return;
+  if (galleryToolsMedia.matches) {
+    slot.append($("tile-size"), $("select-all"), $("select-none"));
+    return;
+  }
+  setGalleryToolsOpen(false);
+  toolbar.insertBefore($("tile-size"), sort);
+  toolbar.insertBefore($("select-all"), $("sel-info"));
+  toolbar.insertBefore($("select-none"), $("sel-info"));
+}
+
+function installGalleryTools() {
+  if (galleryToolsInstalled) return syncGalleryToolsPlacement();
+  galleryToolsInstalled = true;
+  $("gallery-tools-toggle").addEventListener("click", () => setGalleryToolsOpen($("gallery-tools-sheet").hidden));
+  $("gallery-tools-close").addEventListener("click", () => setGalleryToolsOpen(false));
+  const onBreakpointChange = () => syncGalleryToolsPlacement();
+  if (galleryToolsMedia.addEventListener) galleryToolsMedia.addEventListener("change", onBreakpointChange);
+  else galleryToolsMedia.addListener(onBreakpointChange);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("gallery-tools-sheet").hidden) setGalleryToolsOpen(false);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    const sheet = $("gallery-tools-sheet");
+    if (sheet.hidden || sheet.contains(event.target) || $("gallery-tools-toggle").contains(event.target)) return;
+    setGalleryToolsOpen(false);
+  });
+  syncGalleryToolsPlacement();
+}
+
 function readScale(key, fallback, max = 9) {
   const value = key ? Number(localStorage.getItem(key)) : Number(fallback);
   return Math.max(1, Math.min(max, Number.isFinite(value) ? Math.round(value) : 5));
@@ -734,6 +797,7 @@ function card(file) {
     if (file._lbIndex != null) openViewer(file._lbIndex, fig);
     else downloadFile(file);
   });
+  installTouchSelection(fig, file);
   installHoverPreview(fig, file);
   fx.tileDepth(fig);
   if (cardObserver) cardObserver.observe(fig);
@@ -832,11 +896,8 @@ function installHoverPreview(fig, file) {
   if (!/^video\//.test(file.mime)) return;
   let hoverTimer = 0;
   let scrubRaf = 0;
-  let touchHoldTimer = 0;
-  let touchStart = null;
-  let touchArmed = false;
   let startPromise = null;
-  const state = { scrubbing: false, suppressClickUntil: 0 };
+  const state = { scrubbing: false };
 
   const requestPreview = () => {
     if (!startPromise) {
@@ -884,7 +945,7 @@ function installHoverPreview(fig, file) {
     cancelAnimationFrame(scrubRaf);
     scrubRaf = 0;
     state.scrubbing = false;
-    fig.classList.remove("scrubbing", "touch-scrubbing");
+    fig.classList.remove("scrubbing");
     fig.style.removeProperty("--scrub-x");
     fx.setScrubbing(false, fig);
     const video = previewVideos.get(file.id);
@@ -920,74 +981,6 @@ function installHoverPreview(fig, file) {
     });
   }
 
-  // Touch: press-and-hold arms scrubbing, then a horizontal drag scrubs.
-  // A plain tap (no hold) still opens the viewer as normal.
-  fig.addEventListener(
-    "pointerdown",
-    (e) => {
-      if (e.pointerType !== "touch" || selected.size) return;
-      clearTimeout(touchHoldTimer);
-      touchStart = { x: e.clientX, y: e.clientY, id: e.pointerId };
-      touchArmed = false;
-      touchHoldTimer = setTimeout(async () => {
-        if (!touchStart) return;
-        try {
-          fig.setPointerCapture(e.pointerId);
-        } catch {}
-        await requestPreview();
-        const video = previewVideos.get(file.id);
-        if (video && !video.duration) await waitForVideoDuration(video);
-        if (!touchStart) return;
-        touchArmed = true;
-        fig.classList.add("touch-scrubbing");
-        if (beginScrub()) scrubTo(touchStart.x);
-      }, 420);
-    },
-    { passive: true },
-  );
-
-  fig.addEventListener(
-    "pointermove",
-    (e) => {
-      if (e.pointerType !== "touch" || !touchStart) return;
-      if (!touchArmed) {
-        const moved = Math.hypot(e.clientX - touchStart.x, e.clientY - touchStart.y);
-        if (moved > 12) {
-          clearTimeout(touchHoldTimer);
-          touchStart = null;
-        }
-        return;
-      }
-      e.preventDefault();
-      scrubTo(e.clientX);
-    },
-    { passive: false },
-  );
-
-  const finishTouch = (e) => {
-    clearTimeout(touchHoldTimer);
-    if (touchArmed) {
-      e.preventDefault();
-      endScrub({ resume: false, stopPreview: true });
-      state.suppressClickUntil = performance.now() + 260;
-      try {
-        fig.releasePointerCapture(touchStart?.id);
-      } catch {}
-    }
-    touchArmed = false;
-    touchStart = null;
-  };
-  fig.addEventListener("pointerup", finishTouch, { passive: false });
-  fig.addEventListener("pointercancel", finishTouch, { passive: false });
-  fig.addEventListener(
-    "click",
-    (e) => {
-      if (performance.now() >= state.suppressClickUntil) return;
-      e.preventDefault();
-      e.stopPropagation();
-    },
-    true,
-  );
 }
 
 async function startHoverPreview(fig, file, opts = {}) {
@@ -1235,33 +1228,27 @@ function aspectOf(file) {
 
 function layoutGallery(grid) {
   const files = grid._files || [];
-  const W = grid.clientWidth;
+  const W = Math.floor(grid.getBoundingClientRect().width);
   if (!W || !files.length) return;
-  const GAP = 2;
   const base = [0.52, 0.62, 0.72, 0.84, 1, 1.18, 1.36, 1.58, 1.82][tileScale - 1];
   const target = Math.round((W < 640 ? 148 : W < 1280 ? 210 : 250) * base);
-  const rows = [];
-  let row = [];
-  let sum = 0;
-  for (const f of files) {
-    row.push(f);
-    sum += aspectOf(f);
-    if (sum * target + GAP * (row.length - 1) >= W) {
-      rows.push({ items: row, sum });
-      row = [];
-      sum = 0;
-    }
-  }
-  if (row.length) rows.push({ items: row, sum, last: true });
-  for (const r of rows) {
-    const gaps = GAP * (r.items.length - 1);
-    let h = r.last ? Math.min(target, (W - gaps) / r.sum) : (W - gaps) / r.sum;
-    h = Math.min(h, target * 1.35);
-    for (const f of r.items) {
-      const el = f._el;
+  const planned = computeJustifiedRows(
+    files.map((file) => ({ id: file.id, aspect: aspectOf(file) })),
+    {
+      containerWidth: W,
+      gap: W <= 640 ? 3 : 2,
+      targetHeight: target,
+      maxItems: W <= 640 ? 2 : Infinity,
+      wideThreshold: W <= 640 ? 2.2 : Infinity,
+    },
+  );
+  const byId = new Map(files.map((file) => [file.id, file]));
+  for (const row of planned) {
+    for (const item of row.items) {
+      const el = byId.get(item.id)?._el;
       if (!el) continue;
-      el.style.width = `${Math.floor(aspectOf(f) * h)}px`;
-      el.style.height = `${Math.round(h)}px`;
+      el.style.width = `${item.width}px`;
+      el.style.height = `${item.height}px`;
     }
   }
 }
@@ -1606,6 +1593,8 @@ function pswpItem(file) {
 
 async function openViewer(index, sourceEl) {
   if (index < 0 || index >= lightboxItems.length) return;
+  cancelTouchSelection();
+  setGalleryToolsOpen(false);
   const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
   viewerAssets = createViewerAssetEngine({
@@ -1887,7 +1876,7 @@ function registerVideoContent(instance) {
 function cleanupTilePreview(file) {
   const fig = file?._el;
   if (!fig) return;
-  fig.classList.remove("previewing", "buffering", "scrubbing", "touch-scrubbing");
+  fig.classList.remove("previewing", "buffering", "scrubbing");
   fig.style.removeProperty("--scrub-x");
   fig.querySelector(".buffer-bar")?.remove();
   fig._scrubBadge = null;
@@ -2646,16 +2635,109 @@ function destroyStrip() {
 
 // ---- Selection + zip ----
 
-function toggleSelect(file, fig) {
-  if (selected.has(file.id)) selected.delete(file.id);
-  else selected.set(file.id, file);
-  fig.classList.toggle("selected", selected.has(file.id));
-  if (selected.has(file.id)) fx.pop(fig.querySelector(".g-check"));
+const touchSelection = createDragSelectionController({
+  isSelected: (fileId) => selected.has(fileId),
+  setSelected: (fileId, on) => {
+    const file = visibleFiles.get(fileId);
+    if (!file?._el) return;
+    document.body.classList.add("drag-selecting");
+    setSelection(file, file._el, on);
+  },
+  hitTest: (x, y) => document.elementFromPoint(x, y)?.closest(".g-card")?._file?.id || "",
+  scrollBy: (delta) => window.scrollBy(0, delta),
+  viewportHeight: () => window.visualViewport?.height || window.innerHeight,
+  vibrate: (duration) => {
+    if (typeof navigator.vibrate === "function") navigator.vibrate(duration);
+  },
+});
+
+function cancelTouchSelection() {
+  touchSelection.cancel();
+  document.body.classList.remove("drag-selecting");
+}
+
+function installTouchSelection(fig, file) {
+  let suppressClickUntil = 0;
+
+  fig.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.pointerType !== "touch" || event.target.closest("button, a")) return;
+      touchSelection.pointerDown({
+        pointerId: event.pointerId,
+        fileId: file.id,
+        x: event.clientX,
+        y: event.clientY,
+        capture: (pointerId) => {
+          try {
+            fig.setPointerCapture(pointerId);
+          } catch {}
+        },
+        release: (pointerId) => {
+          try {
+            if (fig.hasPointerCapture(pointerId)) fig.releasePointerCapture(pointerId);
+          } catch {}
+        },
+      });
+    },
+    { passive: true },
+  );
+
+  fig.addEventListener(
+    "pointermove",
+    (event) => {
+      if (event.pointerType !== "touch") return;
+      const active = touchSelection.pointerMove({ pointerId: event.pointerId, x: event.clientX, y: event.clientY });
+      if (active) event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  fig.addEventListener(
+    "pointerup",
+    (event) => {
+      if (event.pointerType !== "touch") return;
+      const wasActive = touchSelection.pointerUp(event.pointerId);
+      document.body.classList.remove("drag-selecting");
+      if (!wasActive) return;
+      suppressClickUntil = performance.now() + 500;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    { passive: false },
+  );
+
+  const cancelPointer = () => cancelTouchSelection();
+  fig.addEventListener("pointercancel", cancelPointer);
+  fig.addEventListener("lostpointercapture", cancelPointer);
+  fig.addEventListener(
+    "click",
+    (event) => {
+      if (performance.now() >= suppressClickUntil) return;
+      suppressClickUntil = 0;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    },
+    true,
+  );
+}
+
+function setSelection(file, fig, on) {
+  const changed = selected.has(file.id) !== on;
+  if (on) selected.set(file.id, file);
+  else selected.delete(file.id);
+  fig.classList.toggle("selected", on);
+  if (changed && on) fx.pop(fig.querySelector(".g-check"));
   document.body.classList.toggle("selecting", selected.size > 0);
   updateSelInfo();
 }
 
+function toggleSelect(file, fig) {
+  setSelection(file, fig, !selected.has(file.id));
+}
+
 function selectAll(on) {
+  cancelTouchSelection();
   selected.clear();
   if (on) {
     for (const f of current?.folders || []) for (const file of f.files) selected.set(file.id, file);
