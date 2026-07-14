@@ -164,6 +164,16 @@ assert.equal(
 );
 assert.match(
   shareJs,
+  /let smartGalleryHeaderInstalled\s*=\s*false;/,
+  "the smart gallery header keeps a module-scope installation guard",
+);
+assert.match(
+  shareJs,
+  /function installSmartGalleryHeader\(\)\s*\{\s*if \(smartGalleryHeaderInstalled\) return;\s*const toolbar\s*=\s*document\.querySelector\("\.gallery-toolbar"\);\s*if \(!toolbar\) return;\s*smartGalleryHeaderInstalled\s*=\s*true;/,
+  "the smart gallery header becomes installed only after its toolbar exists",
+);
+assert.match(
+  shareJs,
   /window\.addEventListener\("scroll",\s*schedule,\s*\{\s*passive:\s*true\s*\}\)/,
   "the smart toolbar uses one passive window scroll listener",
 );

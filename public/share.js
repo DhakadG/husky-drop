@@ -650,6 +650,7 @@ function installTileSizeControl() {
 
 const galleryToolsMedia = matchMedia("(max-width: 640px)");
 let galleryToolsInstalled = false;
+let smartGalleryHeaderInstalled = false;
 let refreshSmartGalleryHeader = () => {};
 
 function setGalleryToolsOpen(open) {
@@ -666,8 +667,10 @@ function setGalleryToolsOpen(open) {
 }
 
 function installSmartGalleryHeader() {
+  if (smartGalleryHeaderInstalled) return;
   const toolbar = document.querySelector(".gallery-toolbar");
   if (!toolbar) return;
+  smartGalleryHeaderInstalled = true;
   const media = matchMedia("(max-width: 640px)");
   const state = createSmartHeaderState();
   let frame = 0;
