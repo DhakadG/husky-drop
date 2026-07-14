@@ -4010,6 +4010,9 @@ table.uploads .empty-cell {
   }
   body.share-page .g-card {
     touch-action: pan-y pinch-zoom;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
   body.share-page.drag-selecting {
     overscroll-behavior-y: contain;
@@ -4023,11 +4026,39 @@ table.uploads .empty-cell {
     padding: 26px 8px 7px;
     gap: 6px;
   }
-  body.share-page .g-card .g-check,
-  body.share-page .g-card .g-dl {
-    opacity: 1;
+  body.share-page .g-card .g-check {
     width: 44px;
     height: 44px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  body.share-page.selecting .g-card .g-check,
+  body.share-page.drag-selecting .g-card .g-check,
+  body.share-page .g-card.selected .g-check,
+  body.share-page .g-card .g-check:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  body.share-page .g-card .g-dl {
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+    background: transparent;
+  }
+  body.share-page .g-card .g-dl::before {
+    content: "";
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: rgba(8, 16, 28, 0.5);
+  }
+  body.share-page .g-card .g-dl svg {
+    position: relative;
+    z-index: 1;
+  }
+  body.share-page .g-card .g-dl.blocked::before {
+    background: rgba(240, 85, 107, 0.78);
   }
   body.share-page .g-card:hover {
     transform: none;

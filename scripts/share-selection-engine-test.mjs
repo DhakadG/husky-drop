@@ -60,9 +60,31 @@ function createHarness(initialSelected = []) {
 {
   const h = createHarness();
   h.down();
-  assert.equal(h.controller.pointerMove({ pointerId: 7, x: 60, y: 400 }), false);
-  assert.equal(h.holds.size, 0, "pre-hold movement cancels without selecting");
+  assert.equal(h.controller.pointerMove({ pointerId: 7, x: 51, y: 400 }), false);
+  assert.equal(h.holds.size, 1, "sub-slop movement keeps the pending hold alive");
+  [...h.holds.values()][0]();
+  assert.equal(h.controller.isActive(), true);
+  assert.deepEqual([...h.selected], ["a"]);
+  assert.equal(h.values().captured, 1, "activation after sub-slop movement captures the pointer");
+  h.controller.cancel();
+}
+
+{
+  const h = createHarness();
+  h.down();
+  assert.equal(h.controller.pointerMove({ pointerId: 7, x: 53, y: 400 }), false);
+  assert.equal(h.holds.size, 0, "movement beyond the slop cancels the pending hold");
   assert.deepEqual([...h.selected], []);
+  assert.equal(h.values().captured, 0, "a cancelled hold never captures the pointer");
+}
+
+{
+  const h = createHarness();
+  h.down();
+  assert.equal(h.controller.pointerUp(7), false, "pointer-up before activation stays a normal tap");
+  assert.equal(h.holds.size, 0, "early pointer-up cancels the scheduled hold");
+  assert.equal(h.frames.size, 0);
+  assert.equal(h.values().released, 0, "uncaptured pointers are not released");
 }
 
 {
@@ -87,7 +109,10 @@ function createHarness(initialSelected = []) {
   assert.equal(h.controller.pointerUp(7), true);
   assert.equal(h.controller.isActive(), false);
   assert.equal(h.values().released, 1);
+  assert.equal(h.holds.size, 0, "active pointer release clears pending holds");
   assert.equal(h.frames.size, 0, "pointer release cancels edge scrolling");
+  assert.equal(h.controller.pointerUp(7), false);
+  assert.equal(h.values().released, 1, "active pointer capture is released exactly once");
 }
 
 {
@@ -103,9 +128,15 @@ function createHarness(initialSelected = []) {
   const h = createHarness();
   h.down();
   [...h.holds.values()][0]();
+  h.controller.pointerMove({ pointerId: 7, x: 80, y: 795 });
+  assert.equal(h.frames.size, 1);
   assert.equal(h.controller.pointerMove({ pointerId: 99, x: 80, y: 410 }), false, "unrelated pointers are ignored");
   h.controller.cancel();
   assert.equal(h.values().released, 1, "cancel releases an active capture");
+  assert.equal(h.holds.size, 0, "cancel clears scheduled holds");
+  assert.equal(h.frames.size, 0, "cancel clears scheduled frames");
+  h.controller.cancel();
+  assert.equal(h.values().released, 1, "cancel releases capture exactly once");
 }
 
 console.log("share selection engine checks passed");

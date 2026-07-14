@@ -761,6 +761,7 @@ function card(file) {
     const mediaBox = document.createElement("div");
     mediaBox.className = "g-media";
     const img = document.createElement("img");
+    img.draggable = false;
     img.loading = file._renderIndex < 18 ? "eager" : "lazy";
     img.decoding = "async";
     img.fetchPriority = file._renderIndex < 8 ? "high" : "auto";
@@ -2918,6 +2919,20 @@ function installTouchSelection(fig, file) {
     },
     { passive: false },
   );
+
+  fig.addEventListener(
+    "touchmove",
+    (event) => {
+      if (touchSelection.isActive()) event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  fig.addEventListener("contextmenu", (event) => {
+    const fromTouch = event.pointerType === "touch" || event.sourceCapabilities?.firesTouchEvents;
+    if (!fromTouch || event.target.closest("button, a")) return;
+    event.preventDefault();
+  });
 
   fig.addEventListener(
     "pointerup",
