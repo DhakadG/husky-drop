@@ -1336,6 +1336,7 @@ let neighborWarmIds = new Set();
 let viewerMotionButton = null;
 let viewerMotionPanel = null;
 let suppressNextViewerTransition = false;
+let viewerRefreshPanelException = "";
 let syncRotationUi = () => {};
 
 function loadViewerMotion() {
@@ -1714,8 +1715,8 @@ async function openViewer(index, sourceEl) {
   registerUi(pswp);
   pswp.on("change", () => {
     noteRapidNavigation("slide-change");
-    closeViewerPanels({ except: fileInfoPinned ? "file-info" : "" });
     const current = lightboxItems[pswp.currIndex];
+    closeViewerPanels({ except: viewerRefreshPanelException || (fileInfoPinned ? "file-info" : "") });
     updateCaption(current);
     syncStrip(pswp.currIndex);
     refreshFileInfo(current);
@@ -1863,14 +1864,24 @@ function applyImageTransform(wrap, file) {
   wrap.classList.toggle("quarter-turn", rotation === 90 || rotation === 270);
 }
 
+function refreshRotatedMedia(file) {
+  const index = pswp.currIndex;
+  viewerRefreshPanelException = mobileViewerActions && !mobileViewerActions.hidden ? "mobile-actions" : "";
+  try {
+    pswp.options.dataSource[index] = pswpItem(file);
+    pswp.refreshSlideContent(index);
+  } finally {
+    viewerRefreshPanelException = "";
+  }
+}
+
 function rotateCurrentMedia(delta) {
   const file = pswp?.currSlide?.data?.file;
   if (!file || !/^(image|video)\//.test(file.mime)) return;
   closeViewerPanels("mobile-actions");
   const rotation = setRotation(file, rotationFor(file) + delta);
   suppressNextViewerTransition = true;
-  pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
-  pswp.refreshSlideContent(pswp.currIndex);
+  refreshRotatedMedia(file);
   syncRotationUi();
   trackEvent("media_rotate", `${rotation}°`, { file: file.name, direction: delta < 0 ? "left" : "right", mime: file.mime });
 }
@@ -1881,8 +1892,7 @@ function resetCurrentRotation() {
   if (!file || !currentRotation) return;
   setRotation(file, 0);
   suppressNextViewerTransition = true;
-  pswp.options.dataSource[pswp.currIndex] = pswpItem(file);
-  pswp.refreshSlideContent(pswp.currIndex);
+  refreshRotatedMedia(file);
   syncRotationUi();
   trackEvent("media_rotation_reset", file.name, { mime: file.mime });
 }

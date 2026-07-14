@@ -255,6 +255,16 @@ assert.match(shareJs, /rotation-reset-button/);
 assert.match(shareJs, /function rotateCurrentMedia/);
 assert.match(shareJs, /function resetCurrentRotation/);
 assert.match(shareJs, /viewerTransforms/);
+assert.match(
+  shareJs,
+  /viewerRefreshPanelException = mobileViewerActions && !mobileViewerActions\.hidden \? "mobile-actions" : "";[\s\S]*try \{[\s\S]*refreshSlideContent\(index\)[\s\S]*finally \{[\s\S]*viewerRefreshPanelException = "";/,
+  "rotation refresh preserves an open mobile More sheet only for its synchronous PhotoSwipe change event",
+);
+assert.match(
+  shareJs,
+  /closeViewerPanels\(\{ except: viewerRefreshPanelException \|\| \(fileInfoPinned \? "file-info" : ""\) \}\)/,
+  "real slide navigation still closes More while pinned File info survives",
+);
 assert.match(shareJs, /function closeViewerPanels/);
 assert.match(
   shareJs,
