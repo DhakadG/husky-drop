@@ -54,4 +54,35 @@ assert.doesNotMatch(
   "document scrolling must not be disabled globally",
 );
 
+assert.match(
+  css,
+  /body\.home,\s*body\.legal-page\s*\{[^}]*overflow-x:\s*clip/,
+  "home and legal pages clip decorative overflow on phones",
+);
+assert.match(
+  css,
+  /\.home-v3\s*\{[^}]*padding-inline-start:\s*var\(--mobile-safe-left\)[^}]*padding-inline-end:\s*var\(--mobile-safe-right\)/,
+  "home content respects phone safe areas",
+);
+assert.match(
+  css,
+  /\.hero-actions\s*\{[^}]*grid-template-columns:\s*1fr/,
+  "home calls to action stack at narrow phone widths",
+);
+assert.match(
+  css,
+  /\.legal-card\s*\{[^}]*overflow-wrap:\s*anywhere/,
+  "legal copy cannot widen the page",
+);
+assert.match(
+  css,
+  /\.legal-shell \.topbar\s*\{[^}]*flex-wrap:\s*wrap/,
+  "legal navigation wraps below the brand on narrow phones",
+);
+assert.match(
+  css,
+  /\.home-v3 \.brand\s*\{[^}]*font-size:\s*13\.5px/,
+  "the home brand remains readable beside the admin action at 320px",
+);
+
 console.log("mobile responsive contracts passed");

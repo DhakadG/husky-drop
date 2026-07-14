@@ -6877,3 +6877,109 @@ table.uploads .empty-cell {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Mobile: public home and legal pages ---------- */
+@media (max-width: 640px) {
+  body.home,
+  body.legal-page {
+    overflow-x: clip;
+  }
+  .home-v3 {
+    width: 100%;
+    padding-inline-start: var(--mobile-safe-left);
+    padding-inline-end: var(--mobile-safe-right);
+  }
+  .home-v3 .topbar {
+    gap: 10px;
+  }
+  .home-v3 .brand,
+  .home-v3 .brand > span,
+  .hero-v3,
+  .hero-v3-copy,
+  .hero-v3-visual,
+  .mini-drop-card,
+  .mini-drop-head > div,
+  .mini-file b {
+    min-width: 0;
+  }
+  .home-v3 .brand > span,
+  .mini-drop-title,
+  .mini-file b {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hero-v3 h1,
+  .foot-v3 span {
+    overflow-wrap: break-word;
+  }
+  .steps-v3-grid,
+  .strip-v3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .foot-v3 {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .legal-shell {
+    width: 100%;
+    padding-inline-start: var(--mobile-safe-left);
+    padding-inline-end: var(--mobile-safe-right);
+    padding-bottom: calc(48px + var(--mobile-safe-bottom));
+  }
+  .legal-shell .topbar {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .legal-shell .nav-cluster {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .legal-card {
+    min-width: 0;
+    padding: 22px 18px;
+    overflow-wrap: anywhere;
+  }
+  .legal-card h1 {
+    font-size: clamp(30px, 10vw, 44px);
+  }
+  .legal-card p,
+  .legal-card li {
+    font-size: 16px;
+    line-height: 1.72;
+  }
+  .legal-card :is(a, code) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+  .hero-actions .btn {
+    width: 100%;
+    min-height: var(--mobile-control);
+    justify-content: center;
+  }
+  .hero-v3-visual {
+    min-height: 260px;
+  }
+}
+
+@media (max-width: 360px) {
+  .home-v3 .brand {
+    gap: 8px;
+    font-size: 13.5px;
+  }
+  .home-v3 .brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+}
