@@ -37,6 +37,13 @@ assert.match(
   /not end-to-end encryption/i,
   "README must state the encryption boundary",
 );
+assert.match(readme, /npm run dev:fixtures/, "README documents the isolated fixture server");
+assert.match(readme, /127\.0\.0\.1:8788\/s\/local-media/, "README prints the deterministic fixture URL");
+assert.match(
+  readme,
+  /fixture server[\s\S]{0,500}(?:does not|never)[\s\S]{0,180}(?:Cloudflare|Google Drive)/i,
+  "README explains the fixture server's production isolation",
+);
 
 const localTargets = new Set();
 for (const match of readme.matchAll(/!?(?:\[[^\]]*\])\(([^)]+)\)/g)) {

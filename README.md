@@ -140,6 +140,24 @@ There is no frontend framework, application bundler, database server, or file-st
 - A Google OAuth web client and refresh token for the Drive account that will receive files.
 - A hostname for the Worker if you want a custom domain.
 
+### Preview a share gallery without production services
+
+For isolated share-gallery work, use the local-only fixture server:
+
+```bash
+npm run dev:fixtures
+# http://127.0.0.1:8788/s/local-media
+```
+
+The fixture server:
+
+- Serves the real browser UI with synthetic local images and videos.
+- Requires no Cloudflare account, Google token, KV namespace, `.dev.vars`, or live share.
+- Never contacts Cloudflare KV, Google Drive, or production analytics.
+- Adds a fixture-only CSP that blocks every off-origin browser request; fallback system fonts are expected locally.
+- Supports real byte-range responses so video seeking can be tested.
+- Is the default command for isolated share-gallery work; `npm run dev` uses Wrangler and the developer's configured bindings.
+
 ### 1. Install and create safe local configuration
 
 ```bash
@@ -234,6 +252,7 @@ husky-drop/
 │   └── util.js         # normalizers, security helpers, constants
 ├── public/             # home, admin, drop, share, legal pages and assets
 ├── scripts/            # OAuth helper and automated test suites
+├── test/dev-fixtures/  # synthetic local-only test media
 ├── docs/               # architecture, API, security, setup, deployment
 ├── wrangler.example.jsonc
 └── package.json
@@ -242,6 +261,7 @@ husky-drop/
 ## Testing
 
 ```bash
+npm run test:fixtures
 npm test
 ```
 
