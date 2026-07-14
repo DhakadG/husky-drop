@@ -48,6 +48,14 @@
   --font-display: "Unbounded", system-ui, sans-serif;
   --font-body: "Plus Jakarta Sans", system-ui, sans-serif;
   --font-mono: "Spline Sans Mono", ui-monospace, monospace;
+
+  /* Shared phone geometry. Route-specific rules consume these tokens. */
+  --mobile-gutter: 12px;
+  --mobile-safe-left: max(var(--mobile-gutter), env(safe-area-inset-left));
+  --mobile-safe-right: max(var(--mobile-gutter), env(safe-area-inset-right));
+  --mobile-safe-bottom: max(12px, env(safe-area-inset-bottom));
+  --mobile-control: 44px;
+  --mobile-vh: 100dvh;
 }
 
 * {
@@ -2019,6 +2027,30 @@ body.has-fx-cursor .mobile-select-bar * {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+@media (max-width: 640px) {
+  html,
+  body {
+    max-width: 100%;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    max-inline-size: 100%;
+  }
+  :where(.topbar, .panel, .field, .meta-row, .transfer-actions, .pane-head, .section-title) {
+    min-width: 0;
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  :where(.auth-wrap, .edge-card, .edge-gate) {
+    justify-content: flex-start;
+    min-height: var(--mobile-vh);
+    overflow-y: auto;
+  }
 }
 .gallery-tools-toggle,
 .gallery-tools-sheet {
