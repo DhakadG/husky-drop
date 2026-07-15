@@ -2849,7 +2849,7 @@ body.selecting .g-check {
 }
 .pswp .pswp-asset-ladder {
   --asset-color: #f4f8ff;
-  --asset-progress: 100%;
+  --asset-progress: 1;
   position: absolute;
   z-index: 2;
   top: 9px;
@@ -2870,12 +2870,22 @@ body.selecting .g-check {
   color: rgba(255, 255, 255, 0.74);
   font: 650 9px var(--font-mono);
 }
+.pswp .pswp-asset-ladder[hidden] { display: none; }
 .pswp .pswp-asset-lamp {
-  width: 8px;
-  height: 8px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
-  background: #62a0ff;
-  box-shadow: 0 0 0 3px rgba(98, 160, 255, 0.12), 0 0 12px rgba(98, 160, 255, 0.72);
+  color: var(--asset-color);
+  background: color-mix(in srgb, var(--asset-color) 14%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--asset-color) 56%, transparent);
+}
+.pswp .pswp-asset-lamp .pswp-asset-glyph {
+  width: 11px;
+  height: 11px;
+  margin: 0;
 }
 .pswp .pswp-asset-label {
   min-width: 0;
@@ -2897,37 +2907,29 @@ body.selecting .g-check {
 .pswp .pswp-asset-progress i {
   position: absolute;
   inset: 0 auto 0 0;
-  width: var(--asset-progress);
+  width: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, color-mix(in srgb, var(--asset-color) 68%, #2f6bff), var(--asset-color));
   box-shadow: 0 0 12px color-mix(in srgb, var(--asset-color) 60%, transparent);
-  transition: width 120ms linear, background-color 160ms ease;
+  transform: scaleX(var(--asset-progress));
+  transform-origin: left center;
+  transition: transform 220ms cubic-bezier(.2, .8, .2, 1), background-color 160ms ease;
 }
 .pswp .pswp-asset-progress.indeterminate i {
-  width: 34%;
   animation: pswpAssetScan 760ms ease-in-out infinite alternate;
 }
-@keyframes pswpAssetScan { to { transform: translateX(194%); } }
-.pswp .pswp-asset-ladder[data-state="full-ready"] .pswp-asset-lamp {
-  --asset-color: #44d49d;
-  background: #44d49d;
-  box-shadow: 0 0 0 3px rgba(68, 212, 157, 0.12), 0 0 12px rgba(68, 212, 157, 0.7);
-}
+@keyframes pswpAssetScan { from { transform: translateX(-68%) scaleX(.34); } to { transform: translateX(194%) scaleX(.34); } }
 .pswp .pswp-asset-ladder[data-state="base-ready"] { --asset-color: #f4f8ff; }
-.pswp .pswp-asset-ladder[data-state="base-ready"] .pswp-asset-lamp { background: #fff; box-shadow: 0 0 12px rgba(255,255,255,.72); }
-.pswp .pswp-asset-ladder[data-state="max-fetching"] .pswp-asset-lamp,
-.pswp .pswp-asset-ladder[data-state="max-presenting"] .pswp-asset-lamp,
-.pswp .pswp-asset-ladder[data-state="max-ready"] .pswp-asset-lamp { background: #76dce4; box-shadow: 0 0 12px rgba(118,220,228,.7); }
 .pswp .pswp-asset-ladder[data-state^="max-"] { --asset-color: #76dce4; }
-.pswp .pswp-asset-ladder[data-state="intent"] .pswp-asset-lamp,
-.pswp .pswp-asset-ladder[data-state="full-fetching"] .pswp-asset-lamp,
-.pswp .pswp-asset-ladder[data-state="full-presenting"] .pswp-asset-lamp { background: #4f8dff; animation: pswpLampBlink .76s ease-in-out infinite; box-shadow: 0 0 14px rgba(79,141,255,.75); }
 .pswp .pswp-asset-ladder[data-state="intent"],
 .pswp .pswp-asset-ladder[data-state^="full-"] { --asset-color: #4f8dff; }
 .pswp .pswp-asset-ladder[data-state="full-ready"] { --asset-color: #44d49d; }
 .pswp .pswp-asset-ladder[data-state="failed"] { --asset-color: #f05b71; }
-.pswp .pswp-asset-ladder[data-state="failed"] .pswp-asset-lamp { background: #f05b71; box-shadow: 0 0 12px rgba(240, 91, 113, 0.72); }
-@keyframes pswpLampBlink { 50% { opacity: .38; box-shadow: 0 0 4px currentColor; } }
+.pswp .pswp-asset-ladder[data-state$="-fetching"] .pswp-asset-glyph,
+.pswp .pswp-asset-ladder[data-state="intent"] .pswp-asset-glyph { animation: pswpAssetGlyphSpin 900ms linear infinite; }
+.pswp .pswp-asset-ladder[data-state$="-presenting"] .pswp-asset-glyph { animation: pswpAssetGlyphFocus 620ms ease-in-out infinite alternate; }
+@keyframes pswpAssetGlyphSpin { to { transform: rotate(1turn); } }
+@keyframes pswpAssetGlyphFocus { to { opacity: .42; transform: scale(.78); } }
 .pswp .pswp__top-bar .pswp__button:hover .pswp__icn { transform: scale(1.08); }
 .pswp .pswp__top-bar .pswp__button--rotate-left-button:hover .pswp__icn { transform: rotate(-14deg) scale(1.06); }
 .pswp .pswp__top-bar .pswp__button--rotate-right-button:hover .pswp__icn { transform: rotate(14deg) scale(1.06); }

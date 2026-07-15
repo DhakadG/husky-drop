@@ -1558,13 +1558,19 @@ function updateAssetLadder(state = activeAssetState) {
   const stateChanged = assetLadderElement.dataset.state !== mapped.key;
   assetLadderElement.dataset.state = mapped.key;
   assetLadderElement.dataset.tier = state.tier;
+  assetLadderElement.setAttribute("aria-label", mapped.label);
   assetLadderElement.querySelector(".pswp-asset-label").textContent = mapped.label;
   const progress = assetProgress(state);
-  assetLadderElement.style.setProperty("--asset-progress", `${Math.round(progress * 100)}%`);
+  assetLadderElement.style.setProperty("--asset-progress", progress.toFixed(4));
   const bar = assetLadderElement.querySelector(".pswp-asset-progress");
   bar?.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+  bar?.setAttribute("aria-valuetext", mapped.label);
   bar?.classList.toggle("indeterminate", Boolean(state.loading && !state.progress));
   if (stateChanged) fx.animateViewerLed(assetLadderElement.querySelector(".pswp-asset-lamp"), mapped.key);
+}
+
+function syncAssetLadderVisibility(file = pswp?.currSlide?.data?.file) {
+  if (assetLadderElement) assetLadderElement.hidden = !/^image\//.test(file?.mime || "");
 }
 
 function handleAssetState(state) {
@@ -1716,6 +1722,7 @@ async function openViewer(index, sourceEl) {
   pswp.on("change", () => {
     noteRapidNavigation("slide-change");
     const current = lightboxItems[pswp.currIndex];
+    syncAssetLadderVisibility(current);
     closeViewerPanels({ except: viewerRefreshPanelException || (fileInfoPinned ? "file-info" : "") });
     updateCaption(current);
     syncStrip(pswp.currIndex);
@@ -2359,13 +2366,14 @@ function registerUi(instance) {
       order: 7,
       isButton: false,
       tagName: "div",
-      html: '<span class="pswp-asset-lamp" aria-hidden="true"></span><span class="pswp-asset-label">Preview</span><span class="pswp-asset-progress" role="progressbar" aria-label="Image loading and full-resolution intent" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>',
+      html: `<span class="pswp-asset-lamp" aria-hidden="true">${uiIcon("aperture", "pswp-asset-glyph")}</span><span class="pswp-asset-label">Preview</span><span class="pswp-asset-progress" role="progressbar" aria-label="Media preview loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>`,
       onInit: (element) => {
         element.className += " pswp-asset-ladder";
         element.setAttribute("role", "status");
         element.setAttribute("aria-live", "polite");
         assetLadderElement = element;
         updateAssetLadder();
+        syncAssetLadderVisibility();
       },
     });
     for (const [name, amount, iconName, title, keys] of [
@@ -2502,7 +2510,7 @@ function registerUi(instance) {
       if (!rotationReset) return;
       rotationReset.disabled = rotation === 0;
       rotationReset.setAttribute("aria-disabled", String(rotation === 0));
-      rotationReset.setAttribute("aria-label", rotation ? `Reset ${rotation} degree rotation` : "Image orientation is unchanged");
+      rotationReset.setAttribute("aria-label", rotation ? `Reset ${rotation} degree rotation` : "Media orientation is unchanged");
       if (rotation) rotationReset.dataset.rotation = `${rotation}°`;
       else delete rotationReset.dataset.rotation;
     };

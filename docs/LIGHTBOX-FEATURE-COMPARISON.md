@@ -11,9 +11,9 @@ Official lightGallery references: [core feature list](https://www.lightgalleryjs
 - Justified, responsive Drive gallery with nine density levels.
 - Image and HTML5 video lightbox with keyboard, pointer, touch, pan, pinch, wheel zoom, and vertical-drag closing.
 - Interactive filmstrip with click, drag, wheel navigation, active-item centering, and thirteen user-selectable thumbnail sizes.
-- Four-stage Base → Mid → Max → Full loading through same-origin signed Drive thumbnail routes, decoded-image reuse, a four-item full-resolution LRU, and smart signed-URL refresh.
+- Three-stage Base → Max → Full viewer loading through same-origin signed Drive thumbnail routes, decoded-image reuse, a four-item full-resolution LRU, and smart signed-URL refresh. Mid remains available to large gallery tiles but is intentionally skipped in the viewer.
 - Intent-based bandwidth control: Full is requested only after six seconds on the active slide or an explicit zoom action; rapid navigation forces the Base tier until the user settles.
-- A ten-cell loading ladder with grey, white, yellow, orange, blue and green states for empty, thumbnail, intermediate, intent/fetch and full-resolution readiness.
+- A compact Aperture status and smooth progress rail for Base, Max, intent/fetch, failure, and verified Full readiness.
 - Direct downloads, multi-file selection, ZIP handoff, and download/view telemetry that distinguishes viewing from downloading.
 - On-demand camera metadata with an exposure triangle, shutter speed, aperture, ISO, lens, focal length, exposure bias, metering, white balance, flash, sensor, orientation, subject distance, color space, dates, dimensions, megapixels, file size, and GPS when Drive reports it.
 - Rotate left/right controls for images and videos, a 140 ms visual turn, contextual angle status, and one-action reset.
@@ -32,9 +32,9 @@ Official lightGallery references: [core feature list](https://www.lightgalleryjs
 | Pinch, wheel and actual-size zoom | Yes | Yes, through Zoom | Equivalent; Husky Drop uses PhotoSwipe zoom behavior. |
 | Keyboard navigation and accessibility labels | Yes, including ±10, Home/End and tool shortcuts | Yes | Husky Drop adds asset-manager-style skip and inspection shortcuts. |
 | Thumbnail filmstrip | Yes | Yes, through Thumbnail | Husky Drop adds wheel/drag navigation and thirteen live size levels. |
-| Progressive thumbnail-to-full-image loading | Base/Mid/Max/Full with intent gating | Smart preload | Husky Drop retains a decoded lower tier until its replacement is ready and avoids speculative full-resolution downloads. |
+| Progressive thumbnail-to-full-image loading | Base/Max/Full with intent gating | Smart preload | Husky Drop retains a decoded lower tier until its replacement is ready and avoids speculative full-resolution downloads. |
 | Rapid-surf bandwidth throttle | Yes | Preload tuning | Husky Drop advantage for large private Drive libraries. |
-| Visible asset readiness state | Ten-cell tier/intent ladder | Loader/preloader | Husky Drop exposes more specific loading intent and quality state. |
+| Visible asset readiness state | Compact icon and tier/intent progress rail | Loader/preloader | Husky Drop exposes specific loading intent and quality state without crowding mobile media. |
 | EXIF and camera inspection | Yes | Not a standard plugin | Husky Drop advantage. |
 | Resolution, megapixels, file size and dates | Yes | Caption-dependent | Husky Drop advantage. |
 | Rotate left/right | Yes, image and video, with status/reset | Yes, through Rotate | Husky Drop adds contextual state and a reset action. |

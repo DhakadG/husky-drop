@@ -138,7 +138,7 @@ The viewer combines Layout A's immersive control hierarchy with Layout B's persi
 - Primary thumb-reachable actions contain rotation, details, download, and more/settings.
 - Lower-frequency viewer guide, motion, strip size, fullscreen support, rotation reset, and related actions live in one mutually exclusive mobile sheet.
 - Tapping unobstructed image space may hide/show chrome. Controls, video, panels, and thumbnail-strip interactions never trigger chrome toggling.
-- The existing quality/asset ladder remains visible in a compact form without overlapping the media or top rail.
+- The image quality rail remains visible in a compact form without overlapping the media or top rail, and is hidden on video/non-image slides.
 - Previous/next swipe and pinch zoom remain PhotoSwipe-owned for images.
 - File-info, guide, settings, and other panels become safe-area bottom sheets on phones and remain drawers/popovers on desktop.
 - Only one viewer panel can be open at a time. Escape/back first closes the active panel, then the viewer.

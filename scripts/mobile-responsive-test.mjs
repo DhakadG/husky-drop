@@ -253,6 +253,11 @@ assert.match(
 );
 assert.match(
   css,
+  /\.pswp \.pswp-asset-progress i\s*\{[\s\S]*?transform-origin:\s*left center[\s\S]*?transition:\s*transform/,
+  "asset progress changes stay smooth without triggering repeated layout",
+);
+assert.match(
+  css,
   /@media \(max-width: 640px\)[\s\S]*?\.pswp \.pswp-file-info,[\s\S]*?\{[^}]*height:\s*fit-content[^}]*max-height:\s*min\(70dvh, 620px\)/,
   "compact viewer panels shrink to their content while retaining a bounded scrolling ceiling",
 );

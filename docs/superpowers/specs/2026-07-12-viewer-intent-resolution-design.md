@@ -30,8 +30,8 @@ Each file has one record:
 ```js
 {
   fileId,
-  tier: "empty" | "base" | "mid" | "max" | "full",
-  loading: "" | "base" | "mid" | "max" | "full",
+  tier: "empty" | "base" | "max" | "full",
+  loading: "" | "base" | "max" | "full",
   intentStep: 0,
   intentSteps: 6,
   rapid: false,
@@ -45,11 +45,10 @@ Resolution policy:
 | Tier | Requested size | Purpose |
 |---|---:|---|
 | Base | 512 px | Gallery tiles and rapid surfing |
-| Mid | viewport-aware 960 or 1280 px | Immediate lightbox display after navigation settles |
 | Max thumbnail | 1600 px | High-quality Drive-rendered preview |
 | Full | Original inline stream | Requested only after six seconds of stable intent or an explicit zoom/actual-size request |
 
-On slide activation the engine displays any ready Base image immediately. After 240 ms without another navigation event it requests Mid, then Max. Only after Max is ready does a six-step, six-second intent timer begin. Leaving the slide cancels pending timers and aborts any fetch owned by that inactive record. Original bytes are never prefetched for neighbors.
+On slide activation the engine displays any ready Base image immediately. After 240 ms without another navigation event it requests Max. Only after Max is visibly presented does a six-step, six-second intent timer begin. Leaving the slide cancels pending timers and aborts any fetch owned by that inactive record. Original bytes are never prefetched for neighbors. Mid remains a gallery-tile derivative and is intentionally skipped in the viewer.
 
 RAW and other browser-unsupported formats stop at the Drive-rendered Max tier and announce that the rendered preview is the highest browser-viewable tier. Video retains its poster-first behavior and starts the stream only for the active slide.
 
@@ -63,30 +62,17 @@ Rapid mode starts when either condition is true:
 While rapid mode is active:
 
 - the active slide renders the Base tier even if a larger decoded image is cached;
-- Mid, Max, intent, and Full work is not started for newly traversed slides;
+- Max, intent, and Full work is not started for newly traversed slides;
 - optional slide transitions are bypassed;
 - the generic PhotoSwipe preloader is suppressed because a valid Base preview is already visible.
 
 `keyup`, `pointerup`, `pointercancel`, window blur, or 260 ms without navigation schedules settle. The engine then refreshes only the final active slide, upgrades it through Mid and Max, and restarts intent detection. This prevents intermediate full-resolution decoding from delaying navigation.
 
-## LED asset ladder
+## Compact asset-state rail
 
-The toolbar status is a ten-cell asset ladder with an accessible text label:
+Image slides show one Aperture status glyph, an accessible state label, and a smooth progress rail. The rail covers Base, Max, six intent steps, Full fetch/presentation, verified Full readiness, and failure. It is hidden for video and non-image slides so stale image-quality state is never presented as media playback status.
 
-```text
-[base] [mid] [max] [1] [2] [3] [4] [5] [6] [full]
-```
-
-- Grey: tier unavailable.
-- Blinking white: Base fetch in progress; static white: Base ready.
-- Blinking yellow/static yellow: Mid fetching/ready.
-- Blinking orange/static orange: Max fetching/ready.
-- Blue cells 3–8: sequential intent dwell; the active step breathes.
-- Blinking blue final cell: Full fetch/decode in progress.
-- Green final cell and completed rail: Full decoded and reusable.
-- Red final cell: Full failed while Max remains visible; retry stays available.
-
-GSAP animates only state changes, uses transforms/opacity rather than layout, and is disabled under `prefers-reduced-motion`. The DOM is updated synchronously first so the status remains correct without GSAP.
+State colors remain white for Base, teal for Max, blue for intent/Full work, green for verified Full, and red for failure. GSAP pops the glyph only when the semantic state changes; active fetching/presentation states animate the glyph with CSS transforms. Progress uses `scaleX`, and all motion is disabled under `prefers-reduced-motion`. The DOM and accessible labels update synchronously first.
 
 ## Interaction and keyboard map
 
@@ -137,7 +123,7 @@ The viewer remains a dark photographic inspection surface. Controls use crisp wh
 
 - Thumbnail proxy sizes are allowlisted and clamped; arbitrary upstream URLs never come from the client.
 - The proxy resolves the file from a verified share token, checks active share/auth state, fetches metadata server-side, and caches by file ID, modified revision, and size.
-- A failed Mid or Max tier leaves the last ready lower tier visible and may retry once when the file becomes active again.
+- A failed Max tier leaves Base visible and may retry once when the file becomes active again.
 - A failed Full fetch leaves Max visible, marks the final LED red, and offers retry. It never reports a download event.
 - Object URLs are revoked when records are evicted or the page exits.
 - The engine caps decoded originals with a small LRU budget rather than retaining an unbounded gallery.
@@ -147,7 +133,7 @@ The viewer remains a dark photographic inspection surface. Controls use crisp wh
 - Pure Node behavior tests cover rapid-entry/settle thresholds, intent cancellation, six-step completion, no Full request before intent, URL tier selection, transition defaults, and rotation normalization.
 - Worker smoke tests cover thumbnail route signature validation, size clamping, upstream credentialing, revision cache keys, and response headers.
 - Viewer source/structure checks cover Lucide attribution, toolbar controls, EXIF pin semantics, keyboard map, status ladder, and no neighbor original warmup.
-- Browser verification covers press-and-hold Arrow navigation, chevron hold, pinned/unpinned EXIF behavior, toolbar alignment, every LED state, rotation feedback/reset, transition toggle/speed, mobile layout, and reduced motion.
+- Browser verification covers press-and-hold Arrow navigation, chevron hold, pinned/unpinned File info behavior, toolbar alignment, every compact asset state, rotation feedback/reset, transition toggle/speed, mobile layout, and reduced motion.
 - `npm test`, `git diff --check`, and `npx wrangler deploy --dry-run` are mandatory release gates.
 
 ## Source references
