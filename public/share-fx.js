@@ -212,7 +212,7 @@
       "rotate-right": [{ opacity: 0, rotate: 7, scale: 0.94 }, { opacity: 1, rotate: 0, scale: 1 }],
       "flip-x": [{ opacity: 0, rotateY: 36, transformPerspective: 900 }, { opacity: 1, rotateY: 0, transformPerspective: 900 }],
       "flip-y": [{ opacity: 0, rotateX: 30, transformPerspective: 900 }, { opacity: 1, rotateX: 0, transformPerspective: 900 }],
-      blur: [{ opacity: 0.35, filter: "blur(12px)" }, { opacity: 1, filter: "blur(0px)" }],
+      blur: [{ opacity: 0.3, filter: "blur(18px)" }, { opacity: 1, filter: "blur(0px)" }],
       brightness: [{ opacity: 0.65, filter: "brightness(1.8)" }, { opacity: 1, filter: "brightness(1)" }],
       "film-cut": [
         { opacity: 0, filter: "brightness(1.45) contrast(0.9)" },
@@ -222,13 +222,36 @@
       swing: [{ opacity: 0, rotateZ: -3, transformOrigin: "50% 0%" }, { opacity: 1, rotateZ: 0, transformOrigin: "50% 0%" }],
     };
     const preset = presets[mode] || presets.fade;
+    const phaseDuration = mode === "blur" ? duration / 2 : duration;
     gsap.killTweensOf(element);
     gsap.fromTo(element, preset[0], {
       ...preset[1],
-      duration,
+      duration: phaseDuration,
       ease: preset[1].ease || "power2.out",
       clearProps: "transform,opacity,filter",
     });
+  }
+
+  function animateViewerExit(element, speed) {
+    if (!element || reduced || !hasGsap) return Promise.resolve(false);
+    const duration = Math.max(0.08, Math.min(0.7, Number(speed) / 1000)) / 2;
+    gsap.killTweensOf(element);
+    return new Promise((resolve) => {
+      gsap.to(element, {
+        opacity: 0.3,
+        filter: "blur(18px)",
+        duration,
+        ease: "power2.in",
+        onComplete: () => resolve(true),
+        onInterrupt: () => resolve(false),
+      });
+    });
+  }
+
+  function cancelViewerTransition(element) {
+    if (!element || !hasGsap) return;
+    gsap.killTweensOf(element);
+    gsap.set(element, { clearProps: "transform,opacity,filter" });
   }
 
   // Tile hover lift/depth is pure CSS now (see .g-card:hover in style.css) -
@@ -250,7 +273,9 @@
     setScrubbing,
     tileDepth,
     animateViewerLed,
+    animateViewerExit,
     animateViewerTransition,
+    cancelViewerTransition,
     hasMotion: hasGsap && !reduced,
     canHoverPreview: canHover,
   };

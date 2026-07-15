@@ -356,6 +356,13 @@ assert.match(
 assert.doesNotMatch(shareFx, /animateViewerRotation/);
 assert.match(shareJs, /suppressNextViewerTransition/);
 assert.match(shareFx, /animateViewerTransition/);
+assert.match(shareFx, /function animateViewerExit/);
+assert.match(shareFx, /onInterrupt:[^\n]+resolve\(false\)/, "interrupted outgoing blur cannot commit a stale slide change");
+assert.match(shareFx, /mode === "blur" \? duration \/ 2 : duration/, "the configured blur speed is split across outgoing and incoming phases");
+assert.match(shareJs, /function installViewerNavigationTransitions/);
+assert.match(shareJs, /fx\.animateViewerExit\(element, viewerMotion\.speed\)[\s\S]+goImmediately\(plannedIndex\)/, "blur navigation swaps slides only after the outgoing phase");
+assert.match(shareJs, /if \(suppressNextViewerTransition\) suppressNextViewerTransition = false;[\s\S]+else applyViewerTransition\(\);/, "rotation refresh suppresses only its synthetic incoming transition");
+assert.doesNotMatch(videoContent, /applyViewerTransition\(/, "content creation does not duplicate the central slide transition");
 for (const icon of ["file-text", "circle-help", "gallery-horizontal-end", "rotate-ccw", "rotate-cw", "rotate-ccw-square", "ellipsis", "maximize", "pin", "pin-off", "timer", "aperture", "gauge", "wand-sparkles", "chevrons-left", "chevrons-right"]) {
   assert.match(publicJs, new RegExp(`(?:"${icon}"|${icon}):`), `${icon} must exist in the shared icon catalog`);
 }

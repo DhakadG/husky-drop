@@ -1639,10 +1639,50 @@ async function warmViewerNeighbors(index) {
 
 function bindRapidPointer(button, direction) {
   if (!button) return;
-  button.addEventListener("pointerdown", () => noteRapidNavigation(`arrow-${direction}`, true));
+  let holdTimer = 0;
+  button.addEventListener("pointerdown", () => {
+    noteRapidNavigation(`arrow-${direction}`);
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => noteRapidNavigation(`arrow-${direction}-hold`, true), 240);
+  });
   for (const type of ["pointerup", "pointercancel", "pointerleave"]) {
-    button.addEventListener(type, () => endRapidNavigation(`arrow-${direction}-release`));
+    button.addEventListener(type, () => {
+      clearTimeout(holdTimer);
+      endRapidNavigation(`arrow-${direction}-release`);
+    });
   }
+}
+
+function installViewerNavigationTransitions(instance) {
+  const goImmediately = instance.goTo.bind(instance);
+  let plannedIndex = instance.currIndex;
+  let operation = 0;
+  const navigate = (target) => {
+    plannedIndex = Math.max(0, Math.min(lightboxItems.length - 1, Number(target) || 0));
+    if (plannedIndex === instance.currIndex) return;
+    const element = instance.currSlide?.content?.element;
+    const twoPhase = element && viewerMotion.enabled && viewerMotion.mode === "blur" && !rapidSurf && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!twoPhase) {
+      operation += 1;
+      fx.cancelViewerTransition?.(element);
+      goImmediately(plannedIndex);
+      return;
+    }
+    const currentOperation = ++operation;
+    void fx.animateViewerExit(element, viewerMotion.speed).then((completed) => {
+      if (!completed || currentOperation !== operation || instance.isDestroying) return;
+      goImmediately(plannedIndex);
+      fx.cancelViewerTransition?.(element);
+    });
+  };
+  instance.goTo = navigate;
+  instance.next = () => navigate(plannedIndex + 1);
+  instance.prev = () => navigate(plannedIndex - 1);
+  instance.on("change", () => { plannedIndex = instance.currIndex; });
+  instance.on("destroy", () => {
+    operation += 1;
+    fx.cancelViewerTransition?.(instance.currSlide?.content?.element);
+  });
 }
 
 function loadPswp() {
@@ -1716,6 +1756,7 @@ async function openViewer(index, sourceEl) {
     appendToEl: document.body,
   });
 
+  installViewerNavigationTransitions(pswp);
   registerProgressiveImageContent(pswp);
   registerVideoContent(pswp);
   registerUi(pswp);
@@ -1730,7 +1771,8 @@ async function openViewer(index, sourceEl) {
     if (/^image\//.test(current?.mime || "")) {
       void viewerAssets.activate(current).then(() => warmViewerNeighbors(pswp.currIndex));
     }
-    applyViewerTransition();
+    if (suppressNextViewerTransition) suppressNextViewerTransition = false;
+    else applyViewerTransition();
     syncRotationUi();
     trackEvent("view", current?.name || "");
   });
@@ -1847,10 +1889,6 @@ function registerProgressiveImageContent(instance) {
     const state = viewerAssets?.stateFor(file) || { fileId: file.id, tier: "base", presentedTier: "base", loading: "", intentStep: 0, intentSteps: 6, progress: 1 };
     renderTierIntoWrap(wrap, file, state);
     setProgressiveLoading(content, false);
-    if (instance.currSlide?.data?.file?.id === file.id) {
-      if (suppressNextViewerTransition) suppressNextViewerTransition = false;
-      else applyViewerTransition(wrap);
-    }
   });
 }
 
@@ -1875,9 +1913,11 @@ function refreshRotatedMedia(file) {
   const index = pswp.currIndex;
   pswp.options.dataSource[index] = pswpItem(file);
   if (/^video\//.test(file.mime || "")) {
+    suppressNextViewerTransition = false;
     applyImageTransform(pswp.currSlide?.content?.element, file);
     return;
   }
+  suppressNextViewerTransition = true;
   viewerRefreshPanelException = mobileViewerActions && !mobileViewerActions.hidden ? "mobile-actions" : "";
   try {
     pswp.refreshSlideContent(index);
@@ -1891,7 +1931,6 @@ function rotateCurrentMedia(delta) {
   if (!file || !/^(image|video)\//.test(file.mime)) return;
   closeViewerPanels("mobile-actions");
   const rotation = setRotation(file, rotationFor(file) + delta);
-  suppressNextViewerTransition = true;
   refreshRotatedMedia(file);
   syncRotationUi();
   trackEvent("media_rotate", `${rotation}°`, { file: file.name, direction: delta < 0 ? "left" : "right", mime: file.mime });
@@ -1902,7 +1941,6 @@ function resetCurrentRotation() {
   const currentRotation = rotationFor(file);
   if (!file || !currentRotation) return;
   setRotation(file, 0);
-  suppressNextViewerTransition = true;
   refreshRotatedMedia(file);
   syncRotationUi();
   trackEvent("media_rotation_reset", file.name, { mime: file.mime });
