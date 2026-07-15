@@ -2632,6 +2632,7 @@ body.selecting .g-check {
   place-items: center;
   transform: translate(-50%, -50%) rotate(var(--media-rotation, 0deg));
   transform-origin: center;
+  cursor: pointer;
 }
 .pswp-video-wrap.quarter-turn .pswp-video-media {
   width: 100cqh;
@@ -2674,7 +2675,7 @@ body.selecting .g-check {
   max-height: 100%;
   object-fit: contain;
   background: transparent;
-  touch-action: manipulation;
+  pointer-events: none;
 }
 .pswp-video-controls {
   position: absolute;
@@ -2695,7 +2696,7 @@ body.selecting .g-check {
   background: rgba(5, 12, 22, 0.78);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(14px);
-  touch-action: manipulation;
+  touch-action: none;
 }
 .pswp-video-controls button {
   min-width: 40px;
@@ -2728,6 +2729,7 @@ body.selecting .g-check {
   width: 100%;
   min-width: 0;
   accent-color: var(--accent);
+  touch-action: none;
 }
 .pswp-video-error {
   position: absolute;
@@ -3649,6 +3651,9 @@ body.selecting .g-check {
   width: var(--strip-w, 54px);
   height: var(--strip-h, 42px);
   flex: 0 0 auto;
+  padding: 0;
+  appearance: none;
+  font: inherit;
   border-radius: 7px;
   overflow: hidden;
   position: relative;

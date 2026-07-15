@@ -10,6 +10,63 @@ function mediaPlaybackError(video) {
   return Object.assign(new Error("Video playback failed."), { kind: "playback" });
 }
 
+export function projectVideoTimeline({ currentTime, duration, ended }) {
+  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const mediaTime = Number.isFinite(currentTime) && currentTime > 0 ? currentTime : 0;
+  const safeTime = safeDuration ? (ended ? safeDuration : Math.min(mediaTime, safeDuration)) : 0;
+  return {
+    currentTime: safeTime,
+    duration: safeDuration,
+  };
+}
+
+export function createVideoWarmLease({
+  releaseDelay = 500,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+  onRelease = () => {},
+} = {}) {
+  let source = "";
+  let timer = null;
+  const owners = new Set();
+  const cancelRelease = () => {
+    if (timer == null) return;
+    clearTimer(timer);
+    timer = null;
+  };
+  const scheduleRelease = () => {
+    cancelRelease();
+    if (!source || owners.size) return;
+    timer = setTimer(() => {
+      timer = null;
+      if (owners.size || !source) return;
+      const released = source;
+      source = "";
+      onRelease(released);
+    }, releaseDelay);
+  };
+  return {
+    remember(nextSource) {
+      if (nextSource) source = String(nextSource);
+      cancelRelease();
+      return source;
+    },
+    claim(owner) {
+      owners.add(owner);
+      cancelRelease();
+      return source;
+    },
+    release(owner) {
+      owners.delete(owner);
+      scheduleRelease();
+    },
+    scheduleRelease,
+    sourceFor(isValid = () => true) {
+      return source && isValid(source) ? source : "";
+    },
+  };
+}
+
 export function createVideoSession({ video, resolveSource, onState = () => {} }) {
   let state = "idle";
   let error = null;
@@ -72,7 +129,7 @@ export function createVideoSession({ video, resolveSource, onState = () => {} })
     return epoch;
   };
 
-  const load = (operation = epoch) => {
+  const load = (operation = epoch, force = false) => {
     if (destroyed) return Promise.reject(new Error("Video session is destroyed."));
     if (hasSource() && state !== "error") return Promise.resolve(video.src);
     if (loadPromise) return loadPromise;
@@ -81,7 +138,7 @@ export function createVideoSession({ video, resolveSource, onState = () => {} })
     controller = request;
     emit("loading");
     const pending = Promise.resolve()
-      .then(() => resolveSource(request.signal))
+      .then(() => resolveSource(request.signal, { force }))
       .then((source) => {
         if (destroyed || request.signal.aborted || operation !== epoch) throw abortError();
         video.src = source;
@@ -151,7 +208,7 @@ export function createVideoSession({ video, resolveSource, onState = () => {} })
       video.load();
       error = null;
       state = "idle";
-      await load(operation);
+      await load(operation, true);
       if (resumeAt && operation === epoch) {
         try {
           video.currentTime = resumeAt;

@@ -4,6 +4,7 @@ import {
   assetProgress,
   createRapidSurfController,
   createViewerAssetEngine,
+  createViewerNavigationController,
   normalizeRotation,
   normalizeViewerMotion,
   resolvePanelReturnTarget,
@@ -13,7 +14,7 @@ import {
 import { createDragSelectionController } from "./share-selection-engine.js";
 import { computeJustifiedRows } from "./share-gallery-layout.js";
 import { createSmartHeaderState } from "./share-smart-header.js";
-import { createVideoSession } from "./share-video-session.js";
+import { createVideoSession, createVideoWarmLease, projectVideoTimeline } from "./share-video-session.js";
 import { switchGoogleAccount } from "./share-access.js";
 
 // Share gallery: Google-sign-in + PIN gate, folder navigation keyed on a
@@ -56,6 +57,7 @@ let summarySeq = 0;
 const TOKEN_REFRESH_MS = 90 * 1000;
 const canHoverPreview = fx.canHoverPreview;
 const previewVideos = new Map(); // fileId -> video
+const videoWarmLeases = new Map(); // fileId -> shared signed source ownership
 const decodedImages = new Map(); // `${fileId}:${tier}` -> decoded blob-backed image asset
 const assetControllers = new Map();
 const viewerTransforms = new Map();
@@ -962,14 +964,13 @@ async function downloadFile(file) {
 
 function installHoverPreview(fig, file) {
   if (!/^video\//.test(file.mime)) return;
-  let hoverTimer = 0;
   let scrubRaf = 0;
   let startPromise = null;
-  const state = { scrubbing: false };
+  const state = { scrubbing: false, hovering: false };
 
   const requestPreview = () => {
     if (!startPromise) {
-      startPromise = startHoverPreview(fig, file, { reset: true }).finally(() => {
+      startPromise = startHoverPreview(fig, file, { reset: true, isCurrent: () => state.hovering }).finally(() => {
         startPromise = null;
       });
     }
@@ -1024,7 +1025,8 @@ function installHoverPreview(fig, file) {
   if (canHoverPreview) {
     fig.addEventListener("pointerenter", (e) => {
       if (selected.size || e.pointerType !== "mouse") return;
-      hoverTimer = setTimeout(requestPreview, 140);
+      state.hovering = true;
+      void requestPreview();
     });
 
     // The single desktop mouse handler: Shift held -> scrub; Shift not held
@@ -1043,7 +1045,7 @@ function installHoverPreview(fig, file) {
 
     fig.addEventListener("pointerleave", (e) => {
       if (e.pointerType !== "mouse") return;
-      clearTimeout(hoverTimer);
+      state.hovering = false;
       endScrub({ resume: false });
       stopHoverPreview(fig, file);
     });
@@ -1053,9 +1055,14 @@ function installHoverPreview(fig, file) {
 
 async function startHoverPreview(fig, file, opts = {}) {
   if (!fig.isConnected || selected.size) return;
+  const lease = videoWarmLease(file);
+  lease.claim("preview");
   try {
     const video = await getPreviewVideo(file);
-    if (!fig.isConnected || selected.size) return;
+    if (!fig.isConnected || selected.size || opts.isCurrent?.() === false) {
+      lease.release("preview");
+      return;
+    }
     if (opts.reset) resetPreviewTime(video);
     const media = fig.querySelector(".g-media") || fig.querySelector(".file-ico");
     const hadThumb = !!file.thumb;
@@ -1064,6 +1071,7 @@ async function startHoverPreview(fig, file, opts = {}) {
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
+    video.preload = "auto";
     if (media && video.parentNode !== media) {
       // Keep the still thumbnail visible underneath until the video can
       // actually play, instead of a black frame while it buffers.
@@ -1076,11 +1084,13 @@ async function startHoverPreview(fig, file, opts = {}) {
     fig.classList.add("previewing");
     await video.play().catch(() => {});
   } catch {
+    lease.release("preview");
     // Some browser/codec combinations refuse hover preview; click playback still works.
   }
 }
 
 function stopHoverPreview(fig, file, opts = {}) {
+  videoWarmLease(file).release("preview");
   const video = previewVideos.get(file.id);
   if (!video) return;
   video.pause();
@@ -1254,27 +1264,54 @@ async function probeVideoMetadata(file) {
     }
   } catch {
     // Keep the stable placeholder ratio.
+  } finally {
+    videoWarmLease(file).scheduleRelease();
   }
 }
 
 async function getPreviewVideo(file) {
   let video = previewVideos.get(file.id);
-  if (video) return video;
-  await ensureFreshDownload(file);
-  video = document.createElement("video");
-  video.preload = "metadata";
-  video.muted = true;
-  video.loop = true;
-  video.playsInline = true;
-  video.src = `${file.dl}?inline=1`;
-  video.addEventListener("loadedmetadata", () => {
-    if (!file.aspect && video.videoWidth && video.videoHeight) {
-      file.aspect = video.videoWidth / video.videoHeight;
-      scheduleLayout();
-    }
-  });
-  previewVideos.set(file.id, video);
+  const lease = videoWarmLease(file);
+  let source = lease.sourceFor((candidate) => tokenFresh(file) && candidate === inlineUrl(file));
+  if (!source) {
+    await ensureFreshDownload(file);
+    source = lease.remember(inlineUrl(file));
+  }
+  if (!video) {
+    video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.addEventListener("loadedmetadata", () => {
+      if (!file.aspect && video.videoWidth && video.videoHeight) {
+        file.aspect = video.videoWidth / video.videoHeight;
+        scheduleLayout();
+      }
+    });
+    previewVideos.set(file.id, video);
+  }
+  if (video.getAttribute("src") !== source) {
+    video.src = source;
+    video.load();
+  }
   return video;
+}
+
+function videoWarmLease(file) {
+  let lease = videoWarmLeases.get(file.id);
+  if (lease) return lease;
+  lease = createVideoWarmLease({
+    onRelease: (source) => {
+      const video = previewVideos.get(file.id);
+      if (!video || video.getAttribute("src") !== source) return;
+      video.removeAttribute("src");
+      video.load();
+      video.preload = "metadata";
+    },
+  });
+  videoWarmLeases.set(file.id, lease);
+  return lease;
 }
 
 // ---- Justified layout (Google-Photos style rows, no cropping) ----
@@ -1655,34 +1692,21 @@ function bindRapidPointer(button, direction) {
 
 function installViewerNavigationTransitions(instance) {
   const goImmediately = instance.goTo.bind(instance);
-  let plannedIndex = instance.currIndex;
-  let operation = 0;
-  const navigate = (target) => {
-    plannedIndex = Math.max(0, Math.min(lightboxItems.length - 1, Number(target) || 0));
-    if (plannedIndex === instance.currIndex) return;
-    const element = instance.currSlide?.content?.element;
-    const twoPhase = element && viewerMotion.enabled && viewerMotion.mode === "blur" && !rapidSurf && !matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!twoPhase) {
-      operation += 1;
-      fx.cancelViewerTransition?.(element);
-      goImmediately(plannedIndex);
-      return;
-    }
-    const currentOperation = ++operation;
-    void fx.animateViewerExit(element, viewerMotion.speed).then((completed) => {
-      if (!completed || currentOperation !== operation || instance.isDestroying) return;
-      goImmediately(plannedIndex);
-      fx.cancelViewerTransition?.(element);
-    });
-  };
-  instance.goTo = navigate;
-  instance.next = () => navigate(plannedIndex + 1);
-  instance.prev = () => navigate(plannedIndex - 1);
-  instance.on("change", () => { plannedIndex = instance.currIndex; });
-  instance.on("destroy", () => {
-    operation += 1;
-    fx.cancelViewerTransition?.(instance.currSlide?.content?.element);
+  const navigation = createViewerNavigationController({
+    getCurrentIndex: () => instance.currIndex,
+    getCurrentElement: () => instance.currSlide?.content?.element,
+    getLength: () => lightboxItems.length,
+    navigateImmediately: goImmediately,
+    shouldTransition: (element) => Boolean(element && viewerMotion.enabled && viewerMotion.mode === "blur" && !rapidSurf && !matchMedia("(prefers-reduced-motion: reduce)").matches),
+    exit: (element) => fx.animateViewerExit(element, viewerMotion.speed),
+    cancel: (element) => fx.cancelViewerTransition?.(element),
+    isDestroying: () => instance.isDestroying,
   });
+  instance.goTo = navigation.goTo;
+  instance.next = navigation.next;
+  instance.prev = navigation.prev;
+  instance.on("change", () => navigation.changed(instance.currIndex));
+  instance.on("destroy", navigation.destroy);
 }
 
 function loadPswp() {
@@ -1711,8 +1735,17 @@ async function openViewer(index, sourceEl) {
   if (index < 0 || index >= lightboxItems.length) return;
   cancelTouchSelection();
   setGalleryToolsOpen(false);
-  const PhotoSwipe = await loadPswp();
   const file = lightboxItems[index];
+  const openingLease = /^video\//.test(file?.mime || "") ? videoWarmLease(file) : null;
+  const openingOwner = sourceEl || openViewer;
+  openingLease?.claim(openingOwner);
+  let PhotoSwipe;
+  try {
+    PhotoSwipe = await loadPswp();
+  } catch (error) {
+    openingLease?.release(openingOwner);
+    throw error;
+  }
   if (/^video\//.test(file?.mime || "") && sourceEl) {
     stopHoverPreview(sourceEl, file, { removeBar: true });
     cleanupTilePreview(file);
@@ -1851,6 +1884,7 @@ async function openViewer(index, sourceEl) {
   });
 
   pswp.init();
+  openingLease?.release(openingOwner);
   mountBottomBar(pswp);
   mobileViewerControlsCleanup = mountMobileViewerControls(pswp);
   viewerChromeMetrics = mountViewerChromeMetrics(pswp);
@@ -2024,7 +2058,7 @@ function registerVideoContent(instance) {
     controls.className = "pswp-video-controls";
     controls.setAttribute("role", "group");
     controls.setAttribute("aria-label", `Video controls for ${file.name}`);
-    controls.innerHTML = `<button type="button" data-video-play aria-label="Play">${uiIcon("play", "pswp-video-control-icon")}</button><output>0:00 / 0:00</output><input type="range" min="0" max="0" step="0.01" value="0" aria-label="Video position" disabled><button type="button" data-video-mute aria-label="Mute">Mute</button><button type="button" data-video-fullscreen aria-label="Enter video fullscreen">${uiIcon("maximize", "pswp-video-control-icon")}</button>`;
+    controls.innerHTML = `<button type="button" data-video-play aria-label="Play">${uiIcon("play", "pswp-video-control-icon")}</button><output>0:00 / 0:00</output><input type="range" min="0" max="0" step="0.01" value="0" aria-label="Video position" disabled><button type="button" data-video-mute aria-label="Mute">${uiIcon("volume-2", "pswp-video-control-icon")}</button><button type="button" data-video-fullscreen aria-label="Enter video fullscreen">${uiIcon("maximize", "pswp-video-control-icon")}</button>`;
     wrap.appendChild(controls);
     const play = controls.querySelector("[data-video-play]");
     const time = controls.querySelector("output");
@@ -2045,12 +2079,18 @@ function registerVideoContent(instance) {
     let refreshAttempted = false;
     let refreshAt = 0;
     let session;
+    const warmLease = videoWarmLease(file);
+    warmLease.claim(content);
     session = createVideoSession({
       video,
-      resolveSource: async (signal) => {
-        await ensureFreshDownload(file, true, signal);
+      resolveSource: async (signal, { force }) => {
+        let source = !force && warmLease.sourceFor((candidate) => tokenFresh(file) && candidate === inlineUrl(file));
+        if (!source) {
+          await ensureFreshDownload(file, force, signal);
+          source = warmLease.remember(inlineUrl(file));
+        }
         syncRefreshedVideoThumbnails(file, poster);
-        return inlineUrl(file);
+        return source;
       },
       onState: ({ state, error, errorKind }) => {
         if (state === "playing") hasPlayed = true;
@@ -2075,13 +2115,13 @@ function registerVideoContent(instance) {
       },
     });
     const syncTime = () => {
-      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      const { currentTime, duration } = projectVideoTimeline(video);
       seek.max = String(duration);
-      seek.value = String(Math.min(duration || 0, Number(video.currentTime) || 0));
+      seek.value = String(currentTime);
       seek.disabled = !duration;
-      time.textContent = `${formatVideoTime(video.currentTime)} / ${formatVideoTime(duration)}`;
+      time.textContent = `${formatVideoTime(currentTime)} / ${formatVideoTime(duration)}`;
       seek.setAttribute("aria-valuetext", time.textContent);
-      if (refreshAttempted && Number(video.currentTime) >= refreshAt + 2) refreshAttempted = false;
+      if (refreshAttempted && currentTime >= refreshAt + 2) refreshAttempted = false;
     };
     const playFromButton = (inputEvent) => {
       inputEvent.stopPropagation();
@@ -2094,9 +2134,33 @@ function registerVideoContent(instance) {
       void session.retry({ play: true, preserveTime: true }).catch(() => {});
     };
     const seekVideo = () => { if (Number.isFinite(video.duration)) video.currentTime = Number(seek.value) || 0; };
+    let mediaPointerStart = null;
+    let suppressMediaClick = false;
+    const noteMediaPointerStart = (inputEvent) => {
+      mediaPointerStart = { id: inputEvent.pointerId, x: inputEvent.clientX, y: inputEvent.clientY };
+      suppressMediaClick = false;
+    };
+    const noteMediaPointerEnd = (inputEvent) => {
+      if (!mediaPointerStart || mediaPointerStart.id !== inputEvent.pointerId) return;
+      suppressMediaClick = Math.hypot(inputEvent.clientX - mediaPointerStart.x, inputEvent.clientY - mediaPointerStart.y) > 8;
+      mediaPointerStart = null;
+    };
+    const cancelMediaPointer = () => {
+      suppressMediaClick = true;
+      mediaPointerStart = null;
+    };
+    const togglePlaybackFromMedia = (inputEvent) => {
+      if (suppressMediaClick || inputEvent.defaultPrevented) {
+        suppressMediaClick = false;
+        return;
+      }
+      inputEvent.stopPropagation();
+      if (video.paused) void session.playFromUser().catch(() => {});
+      else video.pause();
+    };
     const toggleMute = () => {
       video.muted = !video.muted;
-      mute.textContent = video.muted ? "Unmute" : "Mute";
+      mute.innerHTML = uiIcon(video.muted ? "volume-x" : "volume-2", "pswp-video-control-icon");
       mute.setAttribute("aria-label", video.muted ? "Unmute" : "Mute");
     };
     const enterFullscreen = () => {
@@ -2110,11 +2174,14 @@ function registerVideoContent(instance) {
     mute.addEventListener("click", toggleMute);
     fullscreen.addEventListener("click", enterFullscreen);
     downloadOriginal.addEventListener("click", downloadFromFallback);
+    media.addEventListener("pointerdown", noteMediaPointerStart);
+    media.addEventListener("pointerup", noteMediaPointerEnd);
+    media.addEventListener("pointercancel", cancelMediaPointer);
+    media.addEventListener("click", togglePlaybackFromMedia);
     for (const type of ["loadedmetadata", "durationchange", "timeupdate", "ended"]) video.addEventListener(type, syncTime);
     const stopPlayerGesture = (inputEvent) => inputEvent.stopPropagation();
-    const playerEvents = ["pointerdown", "pointermove", "pointerup", "touchstart", "touchmove", "click"];
+    const playerEvents = ["pointerdown", "pointermove", "pointerup", "pointercancel", "touchstart", "touchmove", "touchend", "click"];
     for (const type of playerEvents) {
-      video.addEventListener(type, stopPlayerGesture, { passive: true });
       controls.addEventListener(type, stopPlayerGesture, { passive: true });
       errorPanel.addEventListener(type, stopPlayerGesture, { passive: true });
     }
@@ -2128,12 +2195,16 @@ function registerVideoContent(instance) {
       mute.removeEventListener("click", toggleMute);
       fullscreen.removeEventListener("click", enterFullscreen);
       downloadOriginal.removeEventListener("click", downloadFromFallback);
+      media.removeEventListener("pointerdown", noteMediaPointerStart);
+      media.removeEventListener("pointerup", noteMediaPointerEnd);
+      media.removeEventListener("pointercancel", cancelMediaPointer);
+      media.removeEventListener("click", togglePlaybackFromMedia);
       for (const type of ["loadedmetadata", "durationchange", "timeupdate", "ended"]) video.removeEventListener(type, syncTime);
       for (const type of playerEvents) {
-        video.removeEventListener(type, stopPlayerGesture);
         controls.removeEventListener(type, stopPlayerGesture);
         errorPanel.removeEventListener(type, stopPlayerGesture);
       }
+      warmLease.release(content);
     };
     content.element = wrap;
     sessions.add(session);
@@ -2991,7 +3062,7 @@ function mountStrip(instance, bar) {
     freeMode: { enabled: true, sticky: false, momentumRatio: 0.7, momentumBounce: false },
     grabCursor: true,
     simulateTouch: true,
-    slideToClickedSlide: true,
+    slideToClickedSlide: false,
     centeredSlides: false,
     centeredSlidesBounds: false,
     watchOverflow: true,
@@ -3003,12 +3074,14 @@ function mountStrip(instance, bar) {
     mousewheel: { enabled: true, forceToAxis: false, releaseOnEdges: false, sensitivity: 0.8 },
     keyboard: false, // PhotoSwipe already owns arrow keys for the main image
     initialSlide: instance.currIndex,
-    on: {
-      click: (sw) => {
-        const idx = Number(sw.clickedSlide?.dataset?.i);
-        if (Number.isFinite(idx)) instance.goTo(idx);
-      },
-    },
+  });
+  host.addEventListener("click", (event) => {
+    const slide = event.target.closest?.(".lb-thumb");
+    if (!slide || !host.contains(slide) || strip?.allowClick === false) return;
+    const idx = Number(slide.dataset.i);
+    if (!Number.isFinite(idx)) return;
+    event.preventDefault();
+    instance.goTo(idx);
   });
   stopFilmstripPropagation(host);
   applyStripScale(instance.element, false);
@@ -3018,7 +3091,7 @@ function mountStrip(instance, bar) {
 function stopFilmstripPropagation(host) {
   // These listeners are installed after Swiper, so Swiper receives the event
   // first and PhotoSwipe's parent gesture/zoom handlers do not receive it.
-  for (const type of ["pointerdown", "mousedown", "touchstart", "touchmove", "wheel", "click"]) {
+  for (const type of ["pointerdown", "pointerup", "pointercancel", "mousedown", "touchstart", "touchmove", "touchend", "wheel", "click"]) {
     host.addEventListener(type, (event) => event.stopPropagation(), { passive: type !== "touchmove" });
   }
 }
@@ -3082,8 +3155,10 @@ function stripHeightForScale() {
 // Swiper's own 100%/100% slide defaults, which is what made one thumbnail
 // balloon to fill the whole viewer).
 function stripSlide(f, i) {
-  const el = document.createElement("div");
+  const el = document.createElement("button");
+  el.type = "button";
   el.className = "swiper-slide lb-thumb";
+  el.setAttribute("aria-label", `Open ${f.name || `item ${i + 1}`}`);
   el.dataset.i = i;
   el.dataset.fileId = f.id;
   Object.assign(el.style, { width: "var(--strip-w, 54px)", height: "var(--strip-h, 42px)", flex: "0 0 auto" });

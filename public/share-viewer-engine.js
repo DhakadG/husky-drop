@@ -56,6 +56,48 @@ export function normalizeViewerMotion(value) {
   };
 }
 
+export function createViewerNavigationController(options = {}) {
+  let plannedIndex = Number(options.getCurrentIndex?.()) || 0;
+  let operation = 0;
+  let destroyed = false;
+  const clamp = (target) => Math.max(0, Math.min(Math.max(0, (Number(options.getLength?.()) || 1) - 1), Number(target) || 0));
+  const goTo = (target) => {
+    plannedIndex = clamp(target);
+    const currentIndex = Number(options.getCurrentIndex?.()) || 0;
+    if (plannedIndex === currentIndex) {
+      operation += 1;
+      options.cancel?.(options.getCurrentElement?.());
+      return false;
+    }
+    const element = options.getCurrentElement?.();
+    if (!options.shouldTransition?.(element)) {
+      operation += 1;
+      options.cancel?.(element);
+      options.navigateImmediately?.(plannedIndex);
+      return true;
+    }
+    const targetIndex = plannedIndex;
+    const currentOperation = ++operation;
+    void Promise.resolve(options.exit?.(element)).then((completed) => {
+      if (!completed || destroyed || options.isDestroying?.() || currentOperation !== operation) return;
+      options.navigateImmediately?.(targetIndex);
+      options.cancel?.(element);
+    });
+    return true;
+  };
+  return {
+    goTo,
+    next: () => goTo(plannedIndex + 1),
+    prev: () => goTo(plannedIndex - 1),
+    changed(index) { plannedIndex = clamp(index); },
+    destroy() {
+      destroyed = true;
+      operation += 1;
+      options.cancel?.(options.getCurrentElement?.());
+    },
+  };
+}
+
 export function resolvePanelReturnTarget({ activeElement, panels = [], mobileActions, mobileMore, previousTarget } = {}) {
   if (panels.some((panel) => panel?.contains?.(activeElement))) return previousTarget || null;
   if (mobileActions?.contains?.(activeElement)) return mobileMore || null;

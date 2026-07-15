@@ -18,6 +18,7 @@ const {
   assetLampState,
   createAssetState,
   createRapidSurfController,
+  createViewerNavigationController,
   createViewerAssetEngine,
   normalizeRotation,
   normalizeViewerMotion,
@@ -25,6 +26,29 @@ const {
   restorePanelFocus,
   verifyFullAsset,
 } = viewerEngine;
+
+{
+  const pending = [];
+  const navigated = [];
+  let current = 0;
+  const controller = createViewerNavigationController({
+    getCurrentIndex: () => current,
+    getCurrentElement: () => ({ current }),
+    getLength: () => 4,
+    navigateImmediately: (index) => { current = index; navigated.push(index); },
+    shouldTransition: () => true,
+    exit: () => new Promise((resolve) => pending.push(resolve)),
+    cancel: () => {},
+  });
+  controller.goTo(1);
+  controller.goTo(2);
+  pending[0](true);
+  await Promise.resolve();
+  assert.deepEqual(navigated, [], "a stale filmstrip transition cannot navigate after a newer request");
+  pending[1](true);
+  await Promise.resolve();
+  assert.deepEqual(navigated, [2], "the latest filmstrip request wins exactly once");
+}
 
 function fakeClock() {
   let time = 0;

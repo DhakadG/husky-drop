@@ -212,7 +212,12 @@ assert.match(shareJs, /File info/);
 assert.match(shareJs, /Reading media details…/);
 assert.doesNotMatch(shareJs, /Reading image metadata…/);
 assert.match(shareJs, /megapixels/);
-assert.match(shareJs, /\?inline=1/);
+assert.match(shareJs, /function inlineUrl\(file\)[\s\S]*inline=1/);
+assert.match(shareJs, /pointerenter[\s\S]*void requestPreview\(\)/, "desktop hover starts the stream without an artificial timer");
+assert.match(shareJs, /createVideoWarmLease/, "hover and viewer video nodes share a warm signed-source lease");
+assert.match(shareFx, /"pointermove",[\s\S]*\{ passive: true, capture: true \}/, "the custom cursor observes pointer movement before media handlers");
+assert.match(shareCss, /\.pswp-video\s*\{[\s\S]*pointer-events:\s*none/, "the external media surface owns gallery gestures instead of the video element");
+assert.match(shareJs, /media\.addEventListener\("click", togglePlaybackFromMedia\)/, "a deliberate tap on the video picture toggles playback");
 assert.match(shareJs, /decodedImages/);
 assert.doesNotMatch(shareJs, /thumbUrl\(file, "mid"\)/, "the viewer must skip the redundant medium tier");
 assert.match(shareJs, /verifiedFull/);
@@ -360,10 +365,13 @@ assert.match(shareFx, /function animateViewerExit/);
 assert.match(shareFx, /onInterrupt:[^\n]+resolve\(false\)/, "interrupted outgoing blur cannot commit a stale slide change");
 assert.match(shareFx, /mode === "blur" \? duration \/ 2 : duration/, "the configured blur speed is split across outgoing and incoming phases");
 assert.match(shareJs, /function installViewerNavigationTransitions/);
-assert.match(shareJs, /fx\.animateViewerExit\(element, viewerMotion\.speed\)[\s\S]+goImmediately\(plannedIndex\)/, "blur navigation swaps slides only after the outgoing phase");
+assert.match(shareJs, /createViewerNavigationController\(\{[\s\S]+exit: \(element\) => fx\.animateViewerExit\(element, viewerMotion\.speed\)/, "blur navigation is routed through the latest-wins controller");
+assert.match(viewerEngine, /currentOperation !== operation/, "stale outgoing transitions cannot commit an old slide target");
+assert.match(shareJs, /document\.createElement\("button"\)[\s\S]+className = "swiper-slide lb-thumb"/, "filmstrip thumbnails are explicit accessible controls");
+assert.match(shareJs, /strip\?\.allowClick === false[\s\S]+instance\.goTo\(idx\)/, "filmstrip clicks navigate only when Swiper did not classify the gesture as a drag");
 assert.match(shareJs, /if \(suppressNextViewerTransition\) suppressNextViewerTransition = false;[\s\S]+else applyViewerTransition\(\);/, "rotation refresh suppresses only its synthetic incoming transition");
 assert.doesNotMatch(videoContent, /applyViewerTransition\(/, "content creation does not duplicate the central slide transition");
-for (const icon of ["file-text", "circle-help", "gallery-horizontal-end", "rotate-ccw", "rotate-cw", "rotate-ccw-square", "ellipsis", "maximize", "pin", "pin-off", "timer", "aperture", "gauge", "wand-sparkles", "chevrons-left", "chevrons-right"]) {
+for (const icon of ["file-text", "circle-help", "gallery-horizontal-end", "rotate-ccw", "rotate-cw", "rotate-ccw-square", "ellipsis", "maximize", "pin", "pin-off", "timer", "aperture", "gauge", "wand-sparkles", "chevrons-left", "chevrons-right", "volume-2", "volume-x"]) {
   assert.match(publicJs, new RegExp(`(?:"${icon}"|${icon}):`), `${icon} must exist in the shared icon catalog`);
 }
 assert.match(publicJs, /Lucide Icons/);

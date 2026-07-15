@@ -1,5 +1,45 @@
 import assert from "node:assert/strict";
-import { createVideoSession } from "../public/share-video-session.js";
+import { createVideoSession, createVideoWarmLease, projectVideoTimeline } from "../public/share-video-session.js";
+
+assert.deepEqual(
+  projectVideoTimeline({ currentTime: 15.92, duration: 16, ended: true }),
+  { currentTime: 16, duration: 16 },
+  "an ended video projects to the exact end of its timeline",
+);
+
+let scheduledRelease = null;
+let releasedSource = "";
+const warmLease = createVideoWarmLease({
+  releaseDelay: 500,
+  setTimer: (callback, delay) => {
+    assert.equal(delay, 500);
+    scheduledRelease = callback;
+    return 1;
+  },
+  clearTimer: () => { scheduledRelease = null; },
+  onRelease: (source) => { releasedSource = source; },
+});
+warmLease.remember("/api/share/file/warm?inline=1");
+warmLease.claim("preview");
+warmLease.release("preview");
+assert.equal(typeof scheduledRelease, "function", "unhover schedules a short warm-source grace period");
+warmLease.claim("viewer");
+assert.equal(scheduledRelease, null, "opening the viewer claims and preserves the warm source");
+assert.equal(warmLease.sourceFor(() => true), "/api/share/file/warm?inline=1");
+warmLease.release("viewer");
+scheduledRelease();
+assert.equal(releasedSource, "/api/share/file/warm?inline=1");
+assert.equal(warmLease.sourceFor(() => true), "", "released leases no longer advertise a stale source");
+assert.deepEqual(
+  projectVideoTimeline({ currentTime: 18, duration: 16, ended: false }),
+  { currentTime: 16, duration: 16 },
+  "timeline projection clamps imprecise media clocks",
+);
+assert.deepEqual(
+  projectVideoTimeline({ currentTime: Number.NaN, duration: Number.POSITIVE_INFINITY, ended: false }),
+  { currentTime: 0, duration: 0 },
+  "timeline projection never exposes invalid values to the range control",
+);
 
 class FakeVideo extends EventTarget {
   constructor() {
@@ -84,9 +124,11 @@ assert.equal(video.src, "");
 
 const brokenVideo = new FakeVideo();
 let attempts = 0;
+const forceFlags = [];
 const broken = createVideoSession({
   video: brokenVideo,
-  resolveSource: async () => {
+  resolveSource: async (_signal, { force }) => {
+    forceFlags.push(force);
     attempts += 1;
     if (attempts === 1) throw new Error("token refresh failed");
     return "/api/share/file/retry?inline=1";
@@ -101,6 +143,7 @@ await broken.retry({ play: true });
 assert.equal(brokenVideo.src, "/api/share/file/retry?inline=1");
 assert.equal(brokenVideo.currentTime, 19, "a refreshed signed URL preserves playback position");
 assert.equal(brokenVideo.playCalls, 1, "a retry click refreshes the tokenized source and retries playback in the same gesture");
+assert.deepEqual(forceFlags, [false, true], "ordinary loads reuse a fresh source while explicit retries force refresh");
 broken.destroy();
 
 const blockedVideo = new FakeVideo();

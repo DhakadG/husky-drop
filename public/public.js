@@ -99,6 +99,8 @@ const UI_ICONS = {
   qr: { mode: "fill", body: '<rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5" opacity="0.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5" opacity="0.5"></rect><rect x="13" y="13" width="3.5" height="3.5" rx="1"></rect><rect x="17.5" y="17.5" width="3.5" height="3.5" rx="1"></rect>' },
   pause: { mode: "fill", body: '<rect x="6" y="5" width="4.5" height="14" rx="1.5"></rect><rect x="13.5" y="5" width="4.5" height="14" rx="1.5" opacity="0.55"></rect>' },
   play: { mode: "fill", body: '<path d="m7 4 13 8-13 8Z"></path>' },
+  "volume-2": { mode: "stroke", body: '<path d="M11 5 6 9H2v6h4l5 4z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>' },
+  "volume-x": { mode: "stroke", body: '<path d="M11 5 6 9H2v6h4l5 4z"></path><path d="m22 9-6 6"></path><path d="m16 9 6 6"></path>' },
   detail: { mode: "fill", body: '<path d="M9 5l7 7-7 7-1.4-1.4L13.2 12 7.6 6.4 9 5z"></path>' },
   trash: { mode: "fill", body: '<path d="M9 4h6l1 2h4v2H4V6h4l1-2z"></path><path d="M6 9h12l-1 11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 9z" opacity="0.5"></path>' },
   share: { mode: "fill", body: '<circle cx="6" cy="12" r="2.6"></circle><circle cx="17.5" cy="6" r="2.6" opacity="0.55"></circle><circle cx="17.5" cy="18" r="2.6" opacity="0.55"></circle><path d="M8.3 10.9l6.8-3.5M8.3 13.1l6.8 3.5" stroke="currentColor" stroke-width="1.7" fill="none"></path>' },

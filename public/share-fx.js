@@ -115,7 +115,7 @@
         ring.classList.remove("cur-hidden");
         dot.classList.remove("cur-hidden");
       },
-      { passive: true }
+      { passive: true, capture: true }
     );
     window.addEventListener("pointerleave", () => {
       ring.classList.add("cur-hidden");
