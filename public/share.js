@@ -1873,9 +1873,13 @@ function applyImageTransform(wrap, file) {
 
 function refreshRotatedMedia(file) {
   const index = pswp.currIndex;
+  pswp.options.dataSource[index] = pswpItem(file);
+  if (/^video\//.test(file.mime || "")) {
+    applyImageTransform(pswp.currSlide?.content?.element, file);
+    return;
+  }
   viewerRefreshPanelException = mobileViewerActions && !mobileViewerActions.hidden ? "mobile-actions" : "";
   try {
-    pswp.options.dataSource[index] = pswpItem(file);
     pswp.refreshSlideContent(index);
   } finally {
     viewerRefreshPanelException = "";
@@ -1904,15 +1908,39 @@ function resetCurrentRotation() {
   trackEvent("media_rotation_reset", file.name, { mime: file.mime });
 }
 
+function formatVideoTime(value) {
+  const seconds = Math.max(0, Number(value) || 0);
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+function syncRefreshedVideoThumbnails(file, poster) {
+  const source = file.thumb ? thumbUrl(file, "base") : "";
+  if (poster && source) poster.src = source;
+  strip?.slides?.forEach((slide) => {
+    if (slide.dataset.fileId === file.id && source) slide.querySelector("img")?.setAttribute("src", source);
+  });
+}
+
 function registerVideoContent(instance) {
   const sessions = new Set();
   const finePointer = matchMedia("(hover: hover) and (pointer: fine)");
   const pauseHidden = () => {
     if (document.hidden) sessions.forEach((session) => session.pauseForVisibility());
   };
+  const suspendPage = () => sessions.forEach((session) => session.deactivate());
+  const resumePage = () => {
+    const content = instance.currSlide?.content;
+    if (!content?._videoSession || !content.element?.classList.contains("is-active")) return;
+    content._videoPromise = content._videoSession.activate({ autoplay: false }).catch(() => {});
+  };
   document.addEventListener("visibilitychange", pauseHidden);
+  window.addEventListener("pagehide", suspendPage);
+  window.addEventListener("pageshow", resumePage);
   instance.on("destroy", () => {
     document.removeEventListener("visibilitychange", pauseHidden);
+    window.removeEventListener("pagehide", suspendPage);
+    window.removeEventListener("pageshow", resumePage);
     sessions.forEach((session) => session.destroy());
     sessions.clear();
   });
@@ -1927,12 +1955,16 @@ function registerVideoContent(instance) {
     wrap.dataset.fileId = file.id;
     applyImageTransform(wrap, file);
 
+    const media = document.createElement("div");
+    media.className = "pswp-video-media";
+    wrap.appendChild(media);
+
     const poster = document.createElement("img");
     poster.className = "pswp-video-poster";
     poster.src = file.thumb ? thumbUrl(file, "base") : "";
     poster.alt = "";
     poster.draggable = false;
-    if (poster.src) wrap.appendChild(poster);
+    if (poster.src) media.appendChild(poster);
 
     const status = document.createElement("div");
     status.className = "pswp-video-status hidden";
@@ -1943,63 +1975,127 @@ function registerVideoContent(instance) {
 
     const video = document.createElement("video");
     video.className = "pswp-video";
-    video.controls = true;
+    video.controls = false;
     video.playsInline = true;
     video.preload = "metadata";
     video.setAttribute("aria-label", file.name);
     video.setAttribute("controlslist", "nodownload");
-    wrap.appendChild(video);
+    media.appendChild(video);
 
-    const play = document.createElement("button");
-    play.className = "pswp-video-play hidden";
-    play.type = "button";
-    play.setAttribute("aria-label", `Play ${file.name}`);
-    play.innerHTML = uiIcon("play", "pswp-video-play-icon");
-    wrap.appendChild(play);
+    const controls = document.createElement("div");
+    controls.className = "pswp-video-controls";
+    controls.setAttribute("role", "group");
+    controls.setAttribute("aria-label", `Video controls for ${file.name}`);
+    controls.innerHTML = `<button type="button" data-video-play aria-label="Play">${uiIcon("play", "pswp-video-control-icon")}</button><output>0:00 / 0:00</output><input type="range" min="0" max="0" step="0.01" value="0" aria-label="Video position" disabled><button type="button" data-video-mute aria-label="Mute">Mute</button><button type="button" data-video-fullscreen aria-label="Enter video fullscreen">${uiIcon("maximize", "pswp-video-control-icon")}</button>`;
+    wrap.appendChild(controls);
+    const play = controls.querySelector("[data-video-play]");
+    const time = controls.querySelector("output");
+    const seek = controls.querySelector("input");
+    const mute = controls.querySelector("[data-video-mute]");
+    const fullscreen = controls.querySelector("[data-video-fullscreen]");
 
-    const retry = document.createElement("button");
-    retry.className = "pswp-video-retry hidden";
-    retry.type = "button";
-    retry.textContent = "Retry video";
-    wrap.appendChild(retry);
+    const errorPanel = document.createElement("div");
+    errorPanel.className = "pswp-video-error hidden";
+    errorPanel.setAttribute("role", "alert");
+    errorPanel.innerHTML = `<p></p><div><button type="button" data-video-retry>Retry stream</button><button type="button" data-video-download>Download original</button></div>`;
+    wrap.appendChild(errorPanel);
+    const retry = errorPanel.querySelector("[data-video-retry]");
+    const downloadOriginal = errorPanel.querySelector("[data-video-download]");
 
     let hasPlayed = false;
-    const session = createVideoSession({
+    let resumeAfterRefresh = false;
+    let refreshAttempted = false;
+    let refreshAt = 0;
+    let session;
+    session = createVideoSession({
       video,
       resolveSource: async (signal) => {
         await ensureFreshDownload(file, true, signal);
+        syncRefreshedVideoThumbnails(file, poster);
         return inlineUrl(file);
       },
-      onState: ({ state, error }) => {
+      onState: ({ state, error, errorKind }) => {
         if (state === "playing") hasPlayed = true;
+        if (state === "playing") resumeAfterRefresh = true;
+        if (["paused", "ended"].includes(state)) resumeAfterRefresh = false;
         wrap.dataset.videoState = state;
         poster.classList.toggle("hidden", hasPlayed && state !== "error");
-        play.classList.toggle("hidden", ["loading", "playing", "error", "destroyed"].includes(state));
-        retry.classList.toggle("hidden", state !== "error");
-        status.classList.toggle("hidden", !["loading", "error"].includes(state));
-        status.textContent = state === "error" ? error?.message || "Video could not be loaded" : "Loading video";
+        status.classList.toggle("hidden", state !== "loading");
+        errorPanel.classList.toggle("hidden", state !== "error");
+        errorPanel.querySelector("p").textContent = errorKind === "codec"
+          ? `${error?.message || "This video is unsupported."} Download the original to open it in another app.`
+          : error?.message || "The video stream could not be loaded.";
+        const playing = state === "playing";
+        play.innerHTML = uiIcon(playing ? "pause" : "play", "pswp-video-control-icon");
+        play.setAttribute("aria-label", playing ? "Pause" : "Play");
+        if (state === "error" && errorKind === "network" && !refreshAttempted) {
+          refreshAttempted = true;
+          refreshAt = Number(video.currentTime) || 0;
+          const resume = resumeAfterRefresh;
+          queueMicrotask(() => session.retry({ play: resume, preserveTime: true }).catch(() => {}));
+        }
       },
     });
+    const syncTime = () => {
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      seek.max = String(duration);
+      seek.value = String(Math.min(duration || 0, Number(video.currentTime) || 0));
+      seek.disabled = !duration;
+      time.textContent = `${formatVideoTime(video.currentTime)} / ${formatVideoTime(duration)}`;
+      seek.setAttribute("aria-valuetext", time.textContent);
+      if (refreshAttempted && Number(video.currentTime) >= refreshAt + 2) refreshAttempted = false;
+    };
     const playFromButton = (inputEvent) => {
       inputEvent.stopPropagation();
-      void session.playFromUser().catch(() => {});
+      if (video.paused) void session.playFromUser().catch(() => {});
+      else video.pause();
     };
     const retryFromButton = (inputEvent) => {
       inputEvent.stopPropagation();
-      void session.retry().catch(() => {});
+      refreshAttempted = false;
+      void session.retry({ play: true, preserveTime: true }).catch(() => {});
     };
+    const seekVideo = () => { if (Number.isFinite(video.duration)) video.currentTime = Number(seek.value) || 0; };
+    const toggleMute = () => {
+      video.muted = !video.muted;
+      mute.textContent = video.muted ? "Unmute" : "Mute";
+      mute.setAttribute("aria-label", video.muted ? "Unmute" : "Mute");
+    };
+    const enterFullscreen = () => {
+      if (wrap.requestFullscreen) void wrap.requestFullscreen().catch(() => {});
+      else video.webkitEnterFullscreen?.();
+    };
+    const downloadFromFallback = () => void downloadFile(file);
     play.addEventListener("click", playFromButton);
     retry.addEventListener("click", retryFromButton);
+    seek.addEventListener("input", seekVideo);
+    mute.addEventListener("click", toggleMute);
+    fullscreen.addEventListener("click", enterFullscreen);
+    downloadOriginal.addEventListener("click", downloadFromFallback);
+    for (const type of ["loadedmetadata", "durationchange", "timeupdate", "ended"]) video.addEventListener(type, syncTime);
     const stopPlayerGesture = (inputEvent) => inputEvent.stopPropagation();
     const playerEvents = ["pointerdown", "pointermove", "pointerup", "touchstart", "touchmove", "click"];
-    for (const type of playerEvents) video.addEventListener(type, stopPlayerGesture, { passive: true });
+    for (const type of playerEvents) {
+      video.addEventListener(type, stopPlayerGesture, { passive: true });
+      controls.addEventListener(type, stopPlayerGesture, { passive: true });
+      errorPanel.addEventListener(type, stopPlayerGesture, { passive: true });
+    }
 
     content._video = video;
     content._videoSession = session;
     content._videoCleanup = () => {
       play.removeEventListener("click", playFromButton);
       retry.removeEventListener("click", retryFromButton);
-      for (const type of playerEvents) video.removeEventListener(type, stopPlayerGesture);
+      seek.removeEventListener("input", seekVideo);
+      mute.removeEventListener("click", toggleMute);
+      fullscreen.removeEventListener("click", enterFullscreen);
+      downloadOriginal.removeEventListener("click", downloadFromFallback);
+      for (const type of ["loadedmetadata", "durationchange", "timeupdate", "ended"]) video.removeEventListener(type, syncTime);
+      for (const type of playerEvents) {
+        video.removeEventListener(type, stopPlayerGesture);
+        controls.removeEventListener(type, stopPlayerGesture);
+        errorPanel.removeEventListener(type, stopPlayerGesture);
+      }
     };
     content.element = wrap;
     sessions.add(session);
@@ -2951,6 +3047,7 @@ function stripSlide(f, i) {
   const el = document.createElement("div");
   el.className = "swiper-slide lb-thumb";
   el.dataset.i = i;
+  el.dataset.fileId = f.id;
   Object.assign(el.style, { width: "var(--strip-w, 54px)", height: "var(--strip-h, 42px)", flex: "0 0 auto" });
   const isVideo = /^video\//.test(f.mime);
   if (f.thumb) {

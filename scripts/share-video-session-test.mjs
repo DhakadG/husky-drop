@@ -13,6 +13,9 @@ class FakeVideo extends EventTarget {
     this.playCalls = 0;
     this.pauseCalls = 0;
     this.loadCalls = 0;
+    this.readyState = 0;
+    this.currentTime = 0;
+    this.asyncPause = false;
   }
 
   load() {
@@ -29,7 +32,8 @@ class FakeVideo extends EventTarget {
   pause() {
     this.pauseCalls += 1;
     this.paused = true;
-    this.dispatchEvent(new Event("pause"));
+    if (this.asyncPause) queueMicrotask(() => this.dispatchEvent(new Event("pause")));
+    else this.dispatchEvent(new Event("pause"));
   }
 
   removeAttribute(name) {
@@ -53,7 +57,7 @@ await session.activate({ autoplay: false });
 assert.equal(sourceCalls, 1);
 assert.equal(video.src, "/api/share/file/video?inline=1");
 assert.equal(video.playCalls, 0, "mobile activation does not autoplay");
-assert.equal(video.controls, true);
+assert.equal(video.controls, false, "the viewer owns one external control bar instead of rendering native controls too");
 assert.equal(video.playsInline, true);
 
 await session.playFromUser();
@@ -65,9 +69,12 @@ await session.activate({ autoplay: true });
 assert.equal(video.playCalls, 1, "activation does not override an intentional pause");
 
 await session.playFromUser();
+video.asyncPause = true;
 session.pauseForVisibility();
+await Promise.resolve();
 assert.ok(video.pauseCalls >= 2);
 assert.equal(session.snapshot().active, true, "background pause keeps the slide active");
+assert.equal(session.snapshot().userPaused, false, "an asynchronously delivered system pause is not mistaken for user intent");
 
 session.deactivate();
 assert.equal(session.snapshot().active, false);
@@ -87,10 +94,13 @@ const broken = createVideoSession({
   onState: () => {},
 });
 
-await assert.rejects(() => broken.load(), /token refresh failed/);
+await broken.activate({ autoplay: false }).catch(() => {});
 assert.equal(broken.snapshot().state, "error");
-await broken.retry();
+brokenVideo.currentTime = 19;
+await broken.retry({ play: true });
 assert.equal(brokenVideo.src, "/api/share/file/retry?inline=1");
+assert.equal(brokenVideo.currentTime, 19, "a refreshed signed URL preserves playback position");
+assert.equal(brokenVideo.playCalls, 1, "a retry click refreshes the tokenized source and retries playback in the same gesture");
 broken.destroy();
 
 const blockedVideo = new FakeVideo();
@@ -104,6 +114,31 @@ await blocked.activate({ autoplay: false });
 await assert.rejects(() => blocked.playFromUser(), /playback blocked/);
 assert.equal(blocked.snapshot().state, "error");
 blocked.destroy();
+
+let releaseSource;
+const staleVideo = new FakeVideo();
+const stale = createVideoSession({
+  video: staleVideo,
+  resolveSource: () => new Promise((resolve) => { releaseSource = resolve; }),
+  onState: () => {},
+});
+const staleActivation = stale.activate({ autoplay: true });
+await Promise.resolve();
+stale.deactivate();
+releaseSource("/api/share/file/stale?inline=1");
+await staleActivation;
+assert.equal(staleVideo.src, "", "a deactivated slide cannot assign a late tokenized source");
+assert.equal(staleVideo.playCalls, 0, "a deactivated slide cannot autoplay after its source resolver finishes");
+stale.destroy();
+
+const readyVideo = new FakeVideo();
+const readyStates = [];
+const ready = createVideoSession({ video: readyVideo, resolveSource: async () => "/ready", onState: (state) => readyStates.push(state.state) });
+await ready.activate();
+readyVideo.readyState = 3;
+readyVideo.dispatchEvent(new Event("canplay"));
+assert.equal(ready.snapshot().state, "ready", "canplay is accepted as a usable external-player readiness signal");
+ready.destroy();
 
 assert.ok(states.some((entry) => entry.state === "loading"));
 assert.ok(states.some((entry) => entry.state === "playing"));

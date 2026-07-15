@@ -1284,83 +1284,110 @@ export async function shareDownload(request, env, token, ctx) {
   // signed in from browsing another gated share.
   const viewer = gate.viewer || (await getViewer(request, env));
 
-  // ?inline=1 serves the file for in-page viewing (lightbox images, <video>).
-  const inline = new URL(request.url).searchParams.has("inline");
-  const range = request.headers.get("range") || "";
-  const cache = inline ? caches.default : null;
-  const cacheKey = inline ? new Request(`https://media.internal.share/f-v2/${parsed.fileId}`, { headers: range ? { range } : {} }) : null;
-
-  if (cache) {
-    const hit = await cache.match(cacheKey);
-    if (hit) {
-      if (!inline && (!range || /bytes=0-/.test(range))) {
-        await bumpDownloadStats(env, share, request, cacheHitName(hit), Number(hit.headers.get("content-length")) || 0, viewer);
-      }
-      return hit;
-    }
-  }
-
   const meta = await driveFileMeta(env, parsed.fileId);
   if (!meta?.id) return json({ error: "file not found" }, 404);
+  // ?inline=1 serves the file for in-page viewing (lightbox images, <video>).
+  const inline = new URL(request.url).searchParams.get("inline") === "1";
+  const method = request.method.toUpperCase();
   const bytes = Number(meta.size) || 0;
   const safety = publicDownloadSafety(meta);
   if (!inline && safety.blocked) {
     return json({ error: safety.reason }, 451, { "x-robots-tag": "noindex, nofollow, noarchive" });
   }
-  const tok = await accessToken(env);
+  const etag = `"${(await sha256(`${meta.id}:${meta.modifiedTime || ""}:${bytes}:${meta.mimeType || ""}`)).slice(0, 32)}"`;
+  const modifiedAt = Date.parse(meta.modifiedTime || "");
+  const lastModified = Number.isFinite(modifiedAt) ? new Date(modifiedAt).toUTCString() : "";
+  // RFC range evaluation applies to GET. HEAD reports the full representation
+  // headers without opening a Drive media stream.
+  const requestedRange = method === "GET" ? request.headers.get("range") || "" : "";
+  const parsedRange = requestedRange ? parseMediaRange(requestedRange, bytes) : null;
+  if (requestedRange && !parsedRange) return mediaRangeError(meta, inline, etag, lastModified, bytes);
+  const ifRange = request.headers.get("if-range") || "";
+  const range = parsedRange && (!ifRange || ifRangeMatches(ifRange, etag, modifiedAt)) ? parsedRange : null;
+  const headers = shareMediaHeaders(meta, inline, etag, lastModified);
 
-  // First inline view of a cacheable file: always pull the FULL object from
-  // Drive (ignoring any small probe Range the browser sent) so the edge
-  // cache holds a complete, seekable copy from here on.
-  if (cache && bytes && bytes <= EDGE_CACHEABLE_BYTES) {
-    const full = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`, { headers: { authorization: `Bearer ${tok}` } });
-    if (!full.ok || !full.body) return json({ error: "Drive download failed" }, 502);
-    const headers = shareMediaHeaders(meta, true);
-    headers.set("content-length", String(bytes));
-    const [clientBody, cacheBody] = full.body.tee();
-    const putPromise = cache
-      .put(new Request(`https://media.internal.share/f-v2/${parsed.fileId}`), new Response(cacheBody, { status: 200, headers }))
-      .catch((err) => console.error("edge cache put failed", err.message));
-    if (range) {
-      await putPromise;
-      const served = await cache.match(cacheKey);
-      if (served) {
-        if (!inline && /bytes=0-/.test(range)) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
-        return served;
-      }
-    } else {
-      if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(putPromise);
-      else await putPromise;
-      if (!inline) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
-      return new Response(clientBody, { status: 200, headers });
-    }
-    // Cache write raced or was rejected (e.g. size limits) - fall through
-    // and serve this one request directly instead of failing it.
+  // Preconditions are evaluated before Range, so a matching validator stays
+  // a 304 even when a client also sent Range.
+  if (isMediaNotModified(request, etag, modifiedAt)) {
+    headers.delete("content-length");
+    return new Response(null, { status: 304, headers });
   }
+  if (range) {
+    headers.set("content-range", `bytes ${range.start}-${range.end}/${bytes}`);
+    headers.set("content-length", String(range.end - range.start + 1));
+  } else if (bytes) {
+    headers.set("content-length", String(bytes));
+  }
+  if (method === "HEAD") return new Response(null, { status: 200, headers });
 
-  const driveHeaders = { authorization: `Bearer ${tok}` };
-  if (range) driveHeaders.range = range;
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`, { headers: driveHeaders });
-  if (!(r.status === 200 || r.status === 206) || !r.body) {
-    return json({ error: "Drive download failed" }, 502);
+  // Range requests always bypass the full-object cache and stream Drive's
+  // exact 206 response immediately. Only ordinary full inline GETs may fill
+  // a versioned edge entry in the background.
+  const cache = inline && !range && bytes && bytes <= EDGE_CACHEABLE_BYTES ? caches.default : null;
+  const revision = encodeURIComponent(meta.modifiedTime || etag);
+  const cacheKey = cache ? new Request(`https://media.internal.share/f-v3/${parsed.fileId}/${revision}`) : null;
+  const hit = cache ? await cache.match(cacheKey) : null;
+  if (hit?.body) return new Response(hit.body, { status: 200, headers });
+
+  const tok = await accessToken(env);
+  const driveHeaders = new Headers({ authorization: `Bearer ${tok}` });
+  if (range) driveHeaders.set("range", `bytes=${range.start}-${range.end}`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parsed.fileId)}?alt=media&supportsAllDrives=true`, {
+    headers: driveHeaders,
+    signal: request.signal,
+  });
+  if (r.status === 416) return mediaRangeError(meta, inline, etag, lastModified, bytes);
+  if ((range && r.status !== 206) || (!range && r.status !== 200) || !r.body) return json({ error: "Drive download failed" }, 502);
+  if (range && r.headers.get("content-range") !== headers.get("content-range")) {
+    r.body.cancel().catch(() => {});
+    return json({ error: "Drive returned an invalid media range" }, 502);
   }
 
   // Count the transfer once: skip stat bumps for mid-file seeks so scrubbing
   // a video does not inflate the download counters.
-  const firstChunk = !range || /bytes=0-/.test(range);
+  const firstChunk = !range || range.start === 0;
   if (!inline && firstChunk) await bumpDownloadStats(env, share, request, meta.name, bytes, viewer);
 
-  const headers = shareMediaHeaders(meta, inline);
-  for (const h of ["content-range", "content-length"]) {
-    const v = r.headers.get(h);
-    if (v) headers.set(h, v);
+  if (cache) {
+    const [clientBody, cacheBody] = r.body.tee();
+    const write = cache.put(cacheKey, new Response(cacheBody, { status: 200, headers })).catch((cause) => console.error("edge cache put failed", cause?.message || cause));
+    if (ctx?.waitUntil) ctx.waitUntil(write);
+    return new Response(clientBody, { status: 200, headers });
   }
-  if (!headers.has("content-length") && bytes && !range) headers.set("content-length", String(bytes));
-  return new Response(r.body, { status: r.status === 206 ? 206 : 200, headers });
+  return new Response(r.body, { status: range ? 206 : 200, headers });
 }
 
-function shareMediaHeaders(meta, inline) {
-  return new Headers({
+function parseMediaRange(value, total) {
+  if (!total || !/^bytes=[^,]+$/.test(value)) return null;
+  const match = value.match(/^bytes=(\d*)-(\d*)$/);
+  if (!match || (!match[1] && !match[2])) return null;
+  if (!match[1]) {
+    const suffix = Number(match[2]);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return null;
+    return { start: Math.max(0, total - suffix), end: total - 1 };
+  }
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : total - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || start >= total || requestedEnd < start) return null;
+  return { start, end: Math.min(requestedEnd, total - 1) };
+}
+
+function isMediaNotModified(request, etag, modifiedAt) {
+  const noneMatch = request.headers.get("if-none-match");
+  if (noneMatch) return noneMatch.split(",").some((value) => [etag, `W/${etag}`, "*"].includes(value.trim()));
+  const since = Date.parse(request.headers.get("if-modified-since") || "");
+  return Number.isFinite(since) && Number.isFinite(modifiedAt) && modifiedAt <= since;
+}
+
+function ifRangeMatches(value, etag, modifiedAt) {
+  const candidate = value.trim();
+  if (candidate.startsWith('"') || candidate.startsWith("W/")) return candidate === etag;
+  const date = Date.parse(candidate);
+  return Number.isFinite(date) && Number.isFinite(modifiedAt) && modifiedAt <= date;
+}
+
+function shareMediaHeaders(meta, inline, etag, lastModified) {
+  const headers = new Headers({
     "content-type": meta.mimeType || "application/octet-stream",
     "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name || "file")}`,
     "cache-control": inline ? "public, max-age=86400" : "private, no-store",
@@ -1370,12 +1397,16 @@ function shareMediaHeaders(meta, inline) {
     "x-husky-asset-tier": inline ? "full" : "download",
     "x-husky-original-bytes": String(Math.max(0, Number(meta.size) || 0)),
   });
+  if (etag) headers.set("etag", etag);
+  if (lastModified) headers.set("last-modified", lastModified);
+  return headers;
 }
 
-function cacheHitName(response) {
-  const cd = response.headers.get("content-disposition") || "";
-  const m = cd.match(/filename\*=UTF-8''([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : "file";
+function mediaRangeError(meta, inline, etag, lastModified, bytes) {
+  const headers = shareMediaHeaders(meta, inline, etag, lastModified);
+  headers.set("content-range", `bytes */${bytes}`);
+  headers.set("content-length", "0");
+  return new Response(null, { status: 416, headers });
 }
 
 async function bumpDownloadStats(env, share, request, fileName, bytes, viewer) {

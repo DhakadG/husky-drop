@@ -167,7 +167,7 @@ async function api(request, env, url, ctx) {
     if (parts.length !== 2) return json({ error: "invalid thumbnail path" }, 400);
     return shareThumbnail(request, env, parts[0], parts[1], ctx);
   }
-  if (m === "GET" && p.startsWith("/api/share/dl/")) {
+  if ((m === "GET" || m === "HEAD") && p.startsWith("/api/share/dl/")) {
     return shareDownload(request, env, p.slice("/api/share/dl/".length), ctx);
   }
   if (m === "GET" && p.startsWith("/api/share/zip/")) {

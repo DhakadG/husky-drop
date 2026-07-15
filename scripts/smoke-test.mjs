@@ -195,15 +195,24 @@ async function withMockedGoogleDrive(fn) {
       if (url.searchParams.get("alt") === "media") {
         const id = decodeURIComponent(url.pathname.split("/").pop());
         const bytes = mediaBytes[id] || new Uint8Array();
-        const range = init.headers?.range || init.headers?.Range || "";
+        const requestHeaders = new Headers(init.headers || {});
+        const range = requestHeaders.get("range") || "";
         calls.mediaRanges.push(range);
         if (range) {
-          return new Response(bytes.slice(0, 1), {
+          const match = range.match(/^bytes=(\d+)-(\d+)$/);
+          if (!match || Number(match[1]) >= bytes.length) {
+            return new Response(null, { status: 416, headers: { "content-range": `bytes */${bytes.length}` } });
+          }
+          const start = Number(match[1]);
+          const end = Math.min(Number(match[2]), bytes.length - 1);
+          return new Response(bytes.slice(start, end + 1), {
             status: 206,
             headers: {
               "content-type": files[id]?.mimeType || "application/octet-stream",
-              "content-range": `bytes 0-0/${bytes.length}`,
-              "content-length": "1",
+              "content-range": `bytes ${start}-${end}/${bytes.length}`,
+              "content-length": String(end - start + 1),
+              etag: `"drive-${id}"`,
+              "last-modified": new Date(files[id]?.modifiedTime || 0).toUTCString(),
             },
           });
         }
@@ -211,6 +220,8 @@ async function withMockedGoogleDrive(fn) {
           headers: {
             "content-type": files[id]?.mimeType || "application/octet-stream",
             "content-length": String(bytes.length),
+            etag: `"drive-${id}"`,
+            "last-modified": new Date(files[id]?.modifiedTime || 0).toUTCString(),
           },
         });
       }
@@ -728,6 +739,7 @@ async function main() {
     assert.equal(listed.folders[0].hasMore, true, "list response reports more pages");
     assert.ok(Number.isFinite(listed.folders[0].files[0].dlExpiresAt), "list response includes download expiry");
     const firstImage = listed.folders[0].files[0];
+    const firstVideo = listed.folders[0].files.find((file) => file.name === "B Video.mp4");
     assert.deepEqual(Object.keys(firstImage.thumbs), ["base", "mid", "max"], "share list returns named thumbnail tiers");
     assert.match(firstImage.thumbs.base, /^\/api\/share\/thumb\/.+\/base$/, "base thumbnail is an app-owned signed route");
     assert.equal(firstImage.thumb, firstImage.thumbs.base, "legacy thumb field points at the Base tier");
@@ -791,6 +803,42 @@ async function main() {
     assert.equal(res.status, 200, "inline full-resolution image succeeds");
     assert.equal(res.headers.get("x-husky-asset-tier"), "full", "inline media is explicitly identified as the original file");
     assert.equal(Number(res.headers.get("x-husky-original-bytes")), Number(firstImage.size), "inline media reports the original Drive byte size");
+    const rangeCallsBefore = calls.mediaRanges.length;
+    res = await worker.fetch(request(`${firstVideo.dl}?inline=1`, { headers: { range: "bytes=1-3" } }), driveEnv);
+    assert.equal(res.status, 206, "cold inline video ranges stream immediately as partial responses");
+    assert.equal(res.headers.get("content-range"), "bytes 1-3/6");
+    assert.equal(res.headers.get("content-length"), "3");
+    assert.equal(res.headers.get("accept-ranges"), "bytes");
+    assert.equal(await res.text(), "IDE");
+    assert.equal(calls.mediaRanges.at(-1), "bytes=1-3", "the exact browser range is forwarded to Drive even for small videos");
+    assert.equal(calls.mediaRanges.length, rangeCallsBefore + 1, "a cold range performs one origin request without a whole-file cache fill");
+    const validator = res.headers.get("etag");
+    assert.ok(validator, "streaming media exposes a stable representation validator");
+
+    res = await worker.fetch(request(`${firstVideo.dl}?inline=1`, { method: "HEAD" }), driveEnv);
+    assert.equal(res.status, 200, "HEAD is supported on production media capabilities");
+    assert.equal(res.headers.get("content-length"), "6");
+    assert.equal(await res.text(), "");
+    res = await worker.fetch(request(`${firstVideo.dl}?inline=1`, { method: "HEAD", headers: { range: "bytes=2-4" } }), driveEnv);
+    assert.equal(res.status, 200, "HEAD ignores Range and reports the full representation without a media fetch");
+    assert.equal(res.headers.get("content-range"), null);
+    assert.equal(res.headers.get("content-length"), "6");
+
+    res = await worker.fetch(request(`${firstVideo.dl}?inline=1`, { headers: { range: "bytes=99-120" } }), driveEnv);
+    assert.equal(res.status, 416, "unsatisfiable ranges stay 416 instead of becoming a generic gateway error");
+    assert.equal(res.headers.get("content-range"), "bytes */6");
+    res = await worker.fetch(request(`${firstVideo.dl}?inline=1`, { headers: { range: "bytes=0-1,4-5" } }), driveEnv);
+    assert.equal(res.status, 416, "multiple ranges are rejected consistently");
+    assert.equal(res.headers.get("content-range"), "bytes */6");
+
+    res = await worker.fetch(request(`${firstVideo.dl}?inline=1`, { headers: { "if-none-match": validator } }), driveEnv);
+    assert.equal(res.status, 304, "matching validators avoid re-sending media bytes");
+    res = await worker.fetch(request(`${firstVideo.dl}?inline=1`, { headers: { range: "bytes=1-3", "if-none-match": validator } }), driveEnv);
+    assert.equal(res.status, 304, "matching validators are evaluated before Range");
+    res = await worker.fetch(request(`${firstVideo.dl}?inline=1`, { headers: { range: "bytes=1-3", "if-range": '"stale"' } }), driveEnv);
+    assert.equal(res.status, 200, "a stale If-Range falls back to the complete current representation");
+    assert.equal(await res.text(), "VIDEO!");
+    assert.equal(calls.mediaRanges.at(-1), "", "stale If-Range is not forwarded as a partial request");
     const originalNow = Date.now;
     Date.now = () => originalNow() + 16 * 60 * 1000;
     try {

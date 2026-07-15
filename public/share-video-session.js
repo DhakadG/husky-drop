@@ -1,68 +1,92 @@
+function abortError() {
+  return new DOMException("Aborted", "AbortError");
+}
+
+function mediaPlaybackError(video) {
+  const code = Number(video.error?.code) || 0;
+  if (code === 4) return Object.assign(new Error("This video format or codec is not supported by this browser."), { kind: "codec" });
+  if (code === 3) return Object.assign(new Error("This video could not be decoded by this browser."), { kind: "codec" });
+  if (code === 2) return Object.assign(new Error("The video stream was interrupted."), { kind: "network" });
+  return Object.assign(new Error("Video playback failed."), { kind: "playback" });
+}
+
 export function createVideoSession({ video, resolveSource, onState = () => {} }) {
   let state = "idle";
   let error = null;
   let active = false;
   let userPaused = false;
-  let internalPause = false;
+  let systemPausePending = false;
   let destroyed = false;
+  let epoch = 0;
   let controller = null;
   let loadPromise = null;
 
-  video.controls = true;
+  video.controls = false;
   video.playsInline = true;
   video.preload = "metadata";
 
-  const snapshot = () => ({ state, error, active, userPaused });
+  const snapshot = () => ({ state, error, errorKind: error?.kind || "", active, userPaused });
   const emit = (next, nextError = null) => {
     state = next;
     error = nextError;
     onState(snapshot());
   };
+  const hasSource = () => typeof video.getAttribute === "function" ? Boolean(video.getAttribute("src")) : Boolean(video.src);
   const onPlay = () => {
     userPaused = false;
     emit("playing");
   };
   const onPause = () => {
-    if (!internalPause && active && !video.ended) userPaused = true;
-    if (!destroyed && state !== "error") emit("paused");
+    const systemPause = systemPausePending;
+    systemPausePending = false;
+    if (!systemPause && active && !video.ended) userPaused = true;
+    if (!destroyed && state !== "error") emit(video.ended ? "ended" : "paused");
   };
-  const onLoadedData = () => {
-    if (!destroyed && state !== "playing") emit("ready");
+  const onReady = () => {
+    if (!destroyed && state !== "playing" && video.readyState >= 2) emit("ready");
   };
   const onError = () => {
-    if (!destroyed) emit("error", new Error("Video could not be played by this browser."));
+    if (!destroyed && hasSource()) emit("error", mediaPlaybackError(video));
   };
   const listeners = [
     ["play", onPlay],
     ["pause", onPause],
-    ["loadeddata", onLoadedData],
+    ["loadedmetadata", onReady],
+    ["loadeddata", onReady],
+    ["canplay", onReady],
     ["error", onError],
   ];
   for (const [name, handler] of listeners) video.addEventListener(name, handler);
 
   const pauseInternally = () => {
     if (video.paused) return;
-    internalPause = true;
+    systemPausePending = true;
     video.pause();
-    internalPause = false;
   };
 
-  const load = () => {
+  const invalidateLoad = () => {
+    epoch += 1;
+    controller?.abort();
+    controller = null;
+    loadPromise = null;
+    return epoch;
+  };
+
+  const load = (operation = epoch) => {
     if (destroyed) return Promise.reject(new Error("Video session is destroyed."));
-    if (video.src && state !== "error") return Promise.resolve(video.src);
+    if (hasSource() && state !== "error") return Promise.resolve(video.src);
     if (loadPromise) return loadPromise;
 
-    controller?.abort();
     const request = new AbortController();
     controller = request;
     emit("loading");
-
     const pending = Promise.resolve()
       .then(() => resolveSource(request.signal))
       .then((source) => {
-        if (destroyed || request.signal.aborted) throw new DOMException("Aborted", "AbortError");
+        if (destroyed || request.signal.aborted || operation !== epoch) throw abortError();
         video.src = source;
         video.load();
+        if (video.readyState >= 2) emit("ready");
         return source;
       })
       .catch((cause) => {
@@ -79,13 +103,14 @@ export function createVideoSession({ video, resolveSource, onState = () => {} })
     return pending;
   };
 
-  const playFromUser = async () => {
-    userPaused = false;
-    await load();
+  const playCurrent = async (operation) => {
+    if (destroyed || !active || operation !== epoch) return;
     try {
-      return await video.play();
+      await video.play();
     } catch (cause) {
+      if (operation !== epoch || !active) return;
       const playbackError = cause instanceof Error ? cause : new Error(String(cause));
+      playbackError.kind ||= "policy";
       emit("error", playbackError);
       throw playbackError;
     }
@@ -95,35 +120,54 @@ export function createVideoSession({ video, resolveSource, onState = () => {} })
     load,
     async activate({ autoplay = false } = {}) {
       active = true;
-      await load();
-      if (autoplay && !userPaused) await video.play().catch(() => {});
+      const operation = invalidateLoad();
+      try {
+        await load(operation);
+      } catch (cause) {
+        if (cause?.name === "AbortError") return;
+        throw cause;
+      }
+      if (autoplay && !userPaused) await playCurrent(operation).catch(() => {});
     },
-    playFromUser,
+    async playFromUser() {
+      userPaused = false;
+      const operation = epoch;
+      await load(operation);
+      return playCurrent(operation);
+    },
     deactivate() {
       active = false;
+      invalidateLoad();
       pauseInternally();
     },
     pauseForVisibility() {
       pauseInternally();
     },
-    retry() {
-      if (destroyed) return Promise.reject(new Error("Video session is destroyed."));
-      controller?.abort();
-      controller = null;
-      loadPromise = null;
+    async retry({ play = false, preserveTime = true } = {}) {
+      if (destroyed) throw new Error("Video session is destroyed.");
+      const resumeAt = preserveTime ? Math.max(0, Number(video.currentTime) || 0) : 0;
+      const operation = invalidateLoad();
       video.removeAttribute("src");
       video.load();
       error = null;
       state = "idle";
-      return load();
+      await load(operation);
+      if (resumeAt && operation === epoch) {
+        try {
+          video.currentTime = resumeAt;
+        } catch {
+          video.addEventListener("loadedmetadata", () => {
+            if (!destroyed && operation === epoch) video.currentTime = resumeAt;
+          }, { once: true });
+        }
+      }
+      if (play) await playCurrent(operation);
     },
     destroy() {
       if (destroyed) return;
       destroyed = true;
       active = false;
-      controller?.abort();
-      controller = null;
-      loadPromise = null;
+      invalidateLoad();
       pauseInternally();
       for (const [name, handler] of listeners) video.removeEventListener(name, handler);
       video.removeAttribute("src");
