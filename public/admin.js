@@ -452,7 +452,8 @@ function renderMetrics(sessions) {
   const element = $("live-metrics");
   if (!element) return;
   const throughput = sessions.reduce((sum, session) => sum + (session.speed || 0), 0);
-  upsertCards(element, [["Active sessions", sessions.length], ["Combined throughput", throughput ? `${fmtBytes(throughput)}/s` : "—"], ["Drive write rate", throughput ? `${fmtBytes(throughput)}/s` : "—"]], "live-metric");
+  const remaining = sessions.reduce((sum, session) => sum + Math.max(0, (session.count || 0) - (session.done || 0)), 0);
+  upsertCards(element, [["Active sessions", sessions.length], ["Combined throughput", throughput ? `${fmtBytes(throughput)}/s` : "—"], ["Files remaining", remaining]], "live-metric");
   for (const [, card] of element._rows) card.classList.toggle("hot", sessions.length > 0);
 }
 

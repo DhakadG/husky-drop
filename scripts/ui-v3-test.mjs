@@ -18,10 +18,6 @@ const workerSource = await read("src/worker.js");
 const liveSource = await read("src/live.js");
 const shareSource = await read("src/share.js");
 const storeSource = await read("src/store.js");
-const inventoryPlan = await read("docs/plans/ui-redesign-v3/INVENTORY.md");
-const adminUnlockPlan = await read("docs/plans/ui-redesign-v3/plans/02-admin-unlock.md");
-const adminOverviewPlan = await read("docs/plans/ui-redesign-v3/plans/03-admin-overview.md");
-const backendPlan = await read("docs/plans/ui-redesign-v3/plans/09-backend.md");
 assert.match(workerSource, /\/api\/admin\/events/, "plan 09 registers activity pagination");
 assert.match(workerSource, /\/api\/admin\/drive\/folders/, "plan 09 registers Drive folder browsing");
 assert.match(workerSource, /ownerName:\s*cleanText\(env\.OWNER_DISPLAY_NAME/, "plan 09 returns a configured collector name");
@@ -51,12 +47,11 @@ assert.match(adminHtml, /class="auth-note"/, "plan 02 provides the rate-limit re
 assert.match(adminJs, /tok-eye/, "plan 02 wires the password visibility control");
 assert.match(adminJs, /setAttribute\("aria-pressed",\s*String\(visible\)\)/, "token visibility exposes its current pressed state");
 assert.match(adminJs, /setAttribute\("aria-label",\s*action\)/, "token visibility exposes its current action");
-assert.match(adminUnlockPlan, /id="tok-eye"[^>]*aria-pressed="false"/, "plan 02 documents the initial token visibility state");
-assert.match(adminUnlockPlan, /setAttribute\("aria-pressed",\s*String\(visible\)\)/, "plan 02 documents the accessible token toggle behavior");
-
-assert.match(inventoryPlan, /#tok-go[\s\S]*#tok-err/, "Inventory lists the current Admin unlock bindings");
-assert.doesNotMatch(inventoryPlan, /#login|#auth-err/, "Inventory does not list retired Admin unlock bindings");
-assert.doesNotMatch(`${inventoryPlan}\n${adminOverviewPlan}\n${backendPlan}`, /Drive write rate/i, "UI plans do not label upload throughput as an unmeasured Drive write rate");
+assert.match(adminHtml, /id="tok-go"/, "admin unlock keeps the submit binding");
+assert.match(adminHtml, /id="tok-err"/, "admin unlock keeps the error binding");
+assert.doesNotMatch(adminHtml, /id="(?:login|auth-err)"/, "retired Admin unlock bindings stay removed");
+assert.doesNotMatch(`${adminHtml}\n${adminJs}`, /Drive write rate/i, "live UI does not label upload throughput as an unmeasured Drive write rate");
+assert.match(adminJs, /\["Files remaining", remaining\]/, "live metrics report a directly measured file count");
 
 assert.match(adminHtml, /class="brand side-brand"/, "plan 03 installs the shared admin sidebar brand");
 assert.match(adminHtml, /class="tab tab-create" data-tab="create"/, "plan 03 keeps the create view inside the shared admin page");
