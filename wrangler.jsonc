@@ -29,9 +29,10 @@
     }
   ],
   "vars": {
+    // DRIVE_PARENT_ID is a secret, not a var — set it with:
+    //   wrangler secret put DRIVE_PARENT_ID
     // Optional: Drive folder ID that new per-link folders are created inside.
-    // Leave empty to create them in My Drive root.
-    "DRIVE_PARENT_ID": "REDACTED_DRIVE_PARENT_ID",
+    // Unset means folders are created in My Drive root.
     "LINK_SLUGS": "kareri-lake-trek",
     // Cloudflare Web Analytics beacon token; the Worker injects the snippet
     // into every HTML page when set. Public by design, not a secret.
