@@ -23,7 +23,7 @@ import {
   sanitizeFolderName,
 } from "./util.js";
 import { ensureLinkFolderDirect, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
-import { bumpShareStats, bumpStats, mergeEventsKV, sendNotify } from "./store.js";
+import { bumpShareStats, bumpStats, mergeEventsKV, notifyEmail, sendNotify } from "./store.js";
 
 // ponytail: digest candidates live in DO memory; a DO restart mid-transfer drops that one email.
 const DIGEST_SETTLE_MS = 8_000;
@@ -374,7 +374,7 @@ export class LiveTracker {
       if (!slug || !body.meta) {
         return new Response(JSON.stringify({ ok: false }), { headers: JSON_HEADERS });
       }
-      await this.accumulateCompletion(slug, cleanText(body.label || "", 100), body.meta);
+      await this.accumulateCompletion(slug, cleanText(body.label || "", 100), body.meta, { origin: cleanText(body.origin || "", 200), client: body.client || null });
       return new Response(JSON.stringify({ ok: true, queued: true }), { headers: JSON_HEADERS });
     }
 
@@ -631,7 +631,7 @@ export class LiveTracker {
   // same completions, so the email matches what actually landed in Drive.
   noteDigest(sessionId, patch) {
     if (!sessionId) return;
-    const cur = this.digests.get(sessionId) || { slug: "", label: "", uploader: "", seen: new Set(), files: 0, bytes: 0, expected: 0, done: false, lastAt: 0 };
+    const cur = this.digests.get(sessionId) || { slug: "", label: "", uploader: "", seen: new Set(), names: [], files: 0, bytes: 0, expected: 0, done: false, startedAt: Date.now(), lastAt: 0 };
     const { file, verifiedUploader, uploader, done, ...rest } = patch;
     Object.assign(cur, rest, { lastAt: Date.now() });
     // "done" is sticky, retried completions count once, and the
@@ -641,6 +641,7 @@ export class LiveTracker {
     if (file && !cur.seen.has(file.id)) {
       cur.seen.add(file.id);
       cur.files++;
+      if (cur.names.length < 10) cur.names.push({ n: file.name || "", s: file.bytes });
       cur.bytes += file.bytes;
     }
     this.digests.set(sessionId, cur);
@@ -668,11 +669,25 @@ export class LiveTracker {
         const notify = normalizeNotify(link?.notify);
         if (link && notify.enabled && notify.complete) {
           const files = `${d.files} file${d.files === 1 ? "" : "s"}`;
+          // Freeze the end time so a retried send renders byte-identical.
+          d.endedAt ||= d.lastAt;
+          const mins = Math.max(1, Math.round((d.endedAt - d.startedAt) / 60000));
           const sent = await sendNotify(this.env, {
-            subject: `${APP_NAME}: ${d.uploader} finished uploading`,
-            html: `<p><b>${escapeHtml(d.uploader)}</b> finished uploading to <b>${escapeHtml(link.label)}</b>.</p><p>${files} - ${escapeHtml(fmtBytesServer(d.bytes))}</p>`,
-            text: `${d.uploader} finished uploading ${files} (${fmtBytesServer(d.bytes)}) to ${link.label}.`,
+            ...notifyEmail({
+              subject: `${d.uploader} sent ${files} (${fmtBytesServer(d.bytes)}) to ${link.label}`,
+              headline: `<b>${escapeHtml(d.uploader)}</b> finished uploading to <b>${escapeHtml(link.label)}</b>.`,
+              facts: [
+                ["Received", `${files}, ${fmtBytesServer(d.bytes)}`],
+                ["Took", `about ${mins} minute${mins === 1 ? "" : "s"}`],
+                ["Device", [d.client?.o, d.client?.l].filter(Boolean).join(" · ")],
+                ["Saved to", link.folderName ? `Drive folder "${link.folderName}"` : ""],
+              ],
+              files: d.names,
+              total: d.files,
+              cta: d.origin ? { href: `${d.origin}/admin/links/${encodeURIComponent(d.slug)}`, label: "Open in dashboard" } : null,
+            }),
             category: "upload-completed",
+            idempotencyKey: `upload-completed/${id}`,
           });
           if (sent === null) throw new Error("Resend rejected digest");
         }
@@ -692,7 +707,7 @@ export class LiveTracker {
   // flush, instead of writing stats/recent/event KV keys per file. Completions
   // are de-duped by file id within the batch so a retried completion never
   // gets queued twice.
-  async accumulateCompletion(slug, label, rawMeta) {
+  async accumulateCompletion(slug, label, rawMeta, ctx = {}) {
     const meta = normalizeUploadMeta(rawMeta);
     let pend = this.pending.get(slug);
     if (!pend) {
@@ -709,7 +724,7 @@ export class LiveTracker {
     pend.lastUploader = meta.u || pend.lastUploader;
     pend.lastFile = meta.n || pend.lastFile;
     pend.lastSessionId = meta.si || pend.lastSessionId;
-    if (meta.si) this.noteDigest(meta.si, { slug, label, verifiedUploader: meta.u, file: { id, bytes: meta.s } });
+    if (meta.si) this.noteDigest(meta.si, { slug, label, verifiedUploader: meta.u, origin: ctx.origin, client: ctx.client, file: { id, bytes: meta.s, name: meta.n } });
     await this.armAlarm();
   }
 
