@@ -259,10 +259,10 @@ function connectLive() {
     liveSocket = new WebSocket(`${protocol}//${location.host}/api/admin/live`);
     liveSocket.onopen = () => {
       liveReconnectDelay = 1000;
-      $("live-state").textContent = "live";
+      $("live-state").textContent = "live updates on";
     };
     liveSocket.onclose = () => {
-      $("live-state").textContent = "offline";
+      $("live-state").textContent = "live updates off";
       setTimeout(connectLive, liveReconnectDelay);
       liveReconnectDelay = Math.min(15000, liveReconnectDelay * 2);
     };
@@ -286,7 +286,7 @@ function connectLive() {
       }
     };
   } catch {
-    $("live-state").textContent = "offline";
+    $("live-state").textContent = "live updates off";
   }
 }
 
@@ -318,8 +318,8 @@ function upsertCards(container, pairs, cls) {
       el._value = el.querySelector("b");
       return el;
     },
-    (el, [label, value]) => {
-      if (el._label.textContent !== label) el._label.textContent = label;
+    (el, [, value, title]) => {
+      if (el._label.textContent !== title) el._label.textContent = title;
       const text = String(value);
       if (el._value.textContent !== text) el._value.textContent = text;
     },
@@ -339,13 +339,13 @@ function renderStats() {
   const t = overview?.totals || {};
   const q = overview?.quota;
   const cards = [
-    ["links", t.links || 0],
-    ["opens", t.opens || 0],
-    ["sessions", t.sessions || 0],
-    ["files", (t.files || 0).toLocaleString()],
-    ["received", fmtBytes(t.bytes || 0)],
+    ["links", t.links || 0, "Drop links"],
+    ["opens", t.opens || 0, "Link opens"],
+    ["sessions", t.sessions || 0, "Upload visits"],
+    ["files", (t.files || 0).toLocaleString(), "Files received"],
+    ["received", fmtBytes(t.bytes || 0), "Data received"],
   ];
-  if (q && q.free != null) cards.push(["drive free", fmtBytes(q.free)]);
+  if (q && q.free != null) cards.push(["drive free", fmtBytes(q.free), "Drive space left"]);
   reconcile(
     $("stats"),
     cards,
@@ -699,15 +699,19 @@ function groupActivityDays(events) {
     if (!days.has(dayKey)) days.set(dayKey, []);
     days.get(dayKey).push(event);
   }
-  return [...days.entries()].map(([key, dayEvents]) => ({ key, sessions: groupActivitySessions(dayEvents) }));
+  return [...days.entries()].map(([key, dayEvents]) => ({ key, sessions: groupActivitySessions(dayEvents, key) }));
 }
 
-function groupActivitySessions(events) {
+function groupActivitySessions(events, day = "") {
   const sessions = new Map();
   for (const event of events) {
-    const tenMinuteWindow = Math.floor((event.at || 0) / 600000);
-    const key = event.si || `${event.u || "anonymous"}:${event.s || event.l || "system"}:${tenMinuteWindow}`;
-    if (!sessions.has(key)) sessions.set(key, { key, events: [] });
+    // One card per person per day: a named or signed-in visitor keeps one
+    // timeline across drop uploads and share browsing instead of a card per
+    // ten-minute burst. Anonymous traffic still falls back to bursts.
+    const person = String(event.u || "").trim().toLowerCase();
+    const key = person ? `person:${person}` : event.si || `anon:${event.s || event.l || "system"}:${Math.floor((event.at || 0) / 600000)}`;
+
+    if (!sessions.has(key)) sessions.set(key, { key: `${day}:${key}`, events: [] });
     sessions.get(key).events.push(event);
   }
   return [...sessions.values()]
@@ -731,7 +735,7 @@ function updateActivityDay(section, day) {
   const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
   const prefix = day.key === today ? "Today" : day.key === yesterday ? "Yesterday" : "Activity";
   section._label.textContent = `${prefix} · ${fmtDateDMY(date)}`;
-  section._count.textContent = `${day.sessions.length} session${day.sessions.length === 1 ? "" : "s"}`;
+  section._count.textContent = `${day.sessions.length} visitor${day.sessions.length === 1 ? "" : "s"}`;
   reconcile(section._list, day.sessions, (session) => session.key, makeActivitySession, updateActivitySession);
 }
 
@@ -789,8 +793,8 @@ function activityFileCount(events) {
 
 function activityTimelineRow(event) {
   const count = Number(event.n) || 0;
-  const label = event.t === "file" && count > 1 ? `${count} files uploaded` : event.f || event.m || activityTypeLabel(event.t);
-  const meta = [event.t, event.s ? `/d/${event.s}` : "", event.m === "first open" ? "first open of this share" : ""].filter(Boolean).join(" · ");
+  const label = event.t === "file" && count > 1 ? `${count} files uploaded` : event.f || (event.m !== "first open" && event.m) || activityTypeLabel(event.t);
+  const meta = [activityTypeLabel(event.t), event.l || (event.s ? `link ${event.s}` : ""), event.m === "first open" ? "first time on this share" : ""].filter(Boolean).join(" · ");
   return `<div class="activity-timeline-row ${escAttr(event.t || "event")}"><span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(label)}</b><small>${esc(meta)}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>`;
 }
 
