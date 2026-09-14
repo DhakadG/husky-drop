@@ -21,6 +21,8 @@ import {
   clientIp,
   dayKey,
   escapeHtml,
+  fmtBytesServer,
+  extractClientInfo,
   getCookie,
   json,
   linkState,
@@ -39,7 +41,7 @@ import {
   timingSafeEqual,
 } from "./util.js";
 import { accessToken, driveBrowseFolders, driveCreateFolder, driveFileMeta, driveQuota, ensureLinkFolderDirect, quotaFree, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
-import { bumpStats, gatePin, getUploads, liveProgress, liveShareStats, liveSnapshot, liveStub, logEvent, mergeEventsKV, rateLimitRemote, recentEvents, recordCompletion, sendNotify, storeTelemetry } from "./store.js";
+import { bumpStats, gatePin, getUploads, liveProgress, liveShareStats, liveSnapshot, liveStub, logEvent, mergeEventsKV, notifyEmail, rateLimitRemote, recentEvents, recordCompletion, sendNotify, storeTelemetry } from "./store.js";
 import {
   adminShare,
   createShareZipTicket,
@@ -593,11 +595,11 @@ async function createSession(request, env) {
   const sessionUri = r.headers.get("location");
   if (!sessionUri) return json({ error: "Drive returned no session URI" }, 502);
 
-  await recordSessionStart(env, link, uploader, sessionId, request);
+  await recordSessionStart(env, link, uploader, sessionId, request, { name: safeName, size });
   return json({ sessionUri });
 }
 
-async function recordSessionStart(env, link, uploader, sessionId, request) {
+async function recordSessionStart(env, link, uploader, sessionId, request, firstFile) {
   const id = cleanText(sessionId || "", 80) || `${Date.now()}-${randomSlug(5)}`;
   const guardKey = `started:${link.slug}:${id}`;
   if (await env.KV.get(guardKey)) return;
@@ -616,10 +618,20 @@ async function recordSessionStart(env, link, uploader, sessionId, request) {
   await logEvent(env, { type: "start", slug: link.slug, label: link.label, uploader, sessionId: id }, request);
   const notify = normalizeNotify(link.notify);
   if (notify.enabled && notify.start) {
+    const client = extractClientInfo(request) || {};
+    const origin = new URL(request.url).origin;
     await sendNotify(env, {
-      subject: `${APP_NAME}: ${uploader} started uploading`,
-      html: `<p><b>${escapeHtml(uploader)}</b> started uploading to <b>${escapeHtml(link.label)}</b>.</p>`,
-      text: `${uploader} started uploading to ${link.label}.`,
+      ...notifyEmail({
+        subject: `${uploader} is sending files to ${link.label}`,
+        headline: `<b>${escapeHtml(uploader)}</b> just started uploading to <b>${escapeHtml(link.label)}</b>.`,
+        facts: [
+          ["Link", `${origin}/d/${link.slug}`],
+          ["Device", [client.o, client.l].filter(Boolean).join(" · ")],
+          ["First file", firstFile ? `${firstFile.name} (${fmtBytesServer(firstFile.size)})` : ""],
+          ["Started", new Date().toUTCString()],
+        ],
+        cta: { href: `${origin}/admin/live`, label: "Watch it live" },
+      }),
       category: "upload-started",
     });
   }

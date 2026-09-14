@@ -14,6 +14,9 @@ import {
   cleanText,
   clientIp,
   dayKey,
+  escapeHtml,
+  extractClientInfo,
+  fmtBytesServer,
   json,
   makePinFields,
   normalizeEvent,
@@ -333,6 +336,36 @@ export async function gatePin(request, env, link, pin, keyPrefix = "link:", brut
 
 // ---- Notifications ----
 
+// One layout for every notification: headline, a facts table, an optional
+// file list and a button into the dashboard. Real content matters for
+// deliverability too - Gmail flagged the old two-line bodies as unsolicited.
+// Returns { subject, html, text } ready for sendNotify.
+export function notifyEmail({ subject, headline, facts = [], files = [], cta }) {
+  const rows = facts
+    .filter(([, v]) => v)
+    .map(([k, v]) => `<tr><td style="padding:6px 12px 6px 0;color:#5b6b7f;white-space:nowrap;vertical-align:top;">${escapeHtml(k)}</td><td style="padding:6px 0;">${escapeHtml(String(v))}</td></tr>`)
+    .join("");
+  const shown = files.slice(0, 10);
+  const more = files.length - shown.length;
+  const list = shown.length
+    ? `<p style="margin:18px 0 6px;font-weight:600;">Files</p><ul style="margin:0;padding-left:18px;color:#0c1a2b;">${shown
+        .map((f) => `<li>${escapeHtml(f.n)} <span style="color:#9aa8b8;">${escapeHtml(fmtBytesServer(f.s))}</span></li>`)
+        .join("")}${more > 0 ? `<li style="color:#9aa8b8;">and ${more} more</li>` : ""}</ul>`
+    : "";
+  const button = cta
+    ? `<p style="margin:22px 0 0;"><a href="${escapeHtml(cta.href)}" style="display:inline-block;background:#2f6bff;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:600;">${escapeHtml(cta.label)}</a></p>`
+    : "";
+  const html = `<p style="margin:0 0 14px;font-size:16px;">${headline}</p><table style="border-collapse:collapse;font-size:14px;">${rows}</table>${list}${button}`;
+  const text = [
+    headline.replace(/<[^>]+>/g, "").replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: "&", lt: "<", gt: ">", quot: "\"", "#39": "'" })[e]),
+    "",
+    ...facts.filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`),
+    ...(shown.length ? ["", "Files:", ...shown.map((f) => `- ${f.n} (${fmtBytesServer(f.s)})`), ...(more > 0 ? [`- and ${more} more`] : [])] : []),
+    ...(cta ? ["", `${cta.label}: ${cta.href}`] : []),
+  ].join("\n");
+  return { subject, html, text };
+}
+
 // Branded wrapper applied to every outgoing email so notifications match the
 // blue dashboard theme. Body HTML is produced by trusted call sites only.
 function emailTemplate(bodyHtml) {
@@ -347,7 +380,7 @@ function emailTemplate(bodyHtml) {
       ${bodyHtml}
     </div>
     <p style="color:#9aa8b8;font-size:11.5px;text-align:center;margin:14px 0 0;">
-      Automated notification from LostHusky's DropBox
+      Sent by LostHusky Drop because a link you created was used.
     </p>
   </div>
 </body>
@@ -393,7 +426,7 @@ export async function recordCompletion(env, link, meta, request) {
       .fetch("https://live.internal/complete", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ slug: link.slug, label: link.label, meta }),
+        body: JSON.stringify({ slug: link.slug, label: link.label, meta, origin: request ? new URL(request.url).origin : "", client: extractClientInfo(request) }),
       })
       .catch((err) => console.error("completion relay failed", err.message));
     return;

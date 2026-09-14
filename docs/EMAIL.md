@@ -8,8 +8,8 @@ Two emails exist today, both wrapped in the branded blue template in `src/store.
 
 | Email | Trigger | Toggle |
 |---|---|---|
-| "X started uploading" | first session start on a link | per-link **Notifications → On upload start** |
-| "X finished uploading (N files, Y GB)" | session digest when a transfer completes | per-link **Notifications → Session digest** |
+| "X is sending files to L" — device, location, first file, link to live view | first session start on a link | per-link **Notifications → On upload start** |
+| "X sent N files (Y GB) to L" — duration, device, file list, link to detail | decided server-side from Drive-verified completions once the session is done or idle 90 s | per-link **Notifications → Session digest** |
 
 Both toggles live in the admin dashboard: **Link detail → Edit settings → Notifications**
 (and on the create-link form). The master switch is **Email enabled**.
@@ -54,6 +54,14 @@ This bit us once already — always resolve the final record with
 the Resend dashboard's "pending" status.
 
 Also:
+- Add a DMARC record too — Resend does not ask for it, Gmail wants it. Gmail
+  soft-bounced 5 of the first 8 notifications with `550-5.7.1 likely
+  unsolicited mail` before this and the richer email body were in place:
+
+  | Type | Name | Content |
+  |---|---|---|
+  | TXT | `_dmarc` (→ `_dmarc.losthusky.qzz.io`) | `v=DMARC1; p=none; rua=mailto:ghanisht.kumawat@gmail.com` |
+
 - Set the records to **DNS only** (grey cloud). Email DNS records must never be proxied.
 - Back in Resend, click **Verify DNS Records**. Propagation is usually < 15 minutes
   on Cloudflare. Status must read **Verified** before sending works.
