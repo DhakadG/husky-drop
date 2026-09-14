@@ -654,7 +654,6 @@ export class LiveTracker {
   }
 
   digestReady(d, now) {
-    if (!d.files) return false;
     const finished = d.done || (d.expected && d.files >= d.expected);
     // Short grace so completions racing the client's "done" still count;
     // long grace covers a tab closed mid-transfer with nothing else coming.
@@ -665,21 +664,32 @@ export class LiveTracker {
     const now = Date.now();
     for (const [id, d] of this.digests) {
       if (!this.digestReady(d, now)) continue;
-      this.digests.delete(id);
+      // Nothing landed in Drive (all canceled/failed): forget it, no email.
+      if (!d.files) {
+        this.digests.delete(id);
+        continue;
+      }
       try {
         const link = await this.env.KV.get(`link:${d.slug}`, "json");
-        if (!link) continue;
-        const notify = normalizeNotify(link.notify);
-        if (!notify.enabled || !notify.complete) continue;
-        const files = `${d.files} file${d.files === 1 ? "" : "s"}`;
-        await sendNotify(this.env, {
-          subject: `${APP_NAME}: ${d.uploader} finished uploading`,
-          html: `<p><b>${escapeHtml(d.uploader)}</b> finished uploading to <b>${escapeHtml(link.label)}</b>.</p><p>${files} - ${escapeHtml(fmtBytesServer(d.bytes))}</p>`,
-          text: `${d.uploader} finished uploading ${files} (${fmtBytesServer(d.bytes)}) to ${link.label}.`,
-          category: "upload-completed",
-        });
+        const notify = normalizeNotify(link?.notify);
+        if (link && notify.enabled && notify.complete) {
+          const files = `${d.files} file${d.files === 1 ? "" : "s"}`;
+          const sent = await sendNotify(this.env, {
+            subject: `${APP_NAME}: ${d.uploader} finished uploading`,
+            html: `<p><b>${escapeHtml(d.uploader)}</b> finished uploading to <b>${escapeHtml(link.label)}</b>.</p><p>${files} - ${escapeHtml(fmtBytesServer(d.bytes))}</p>`,
+            text: `${d.uploader} finished uploading ${files} (${fmtBytesServer(d.bytes)}) to ${link.label}.`,
+            category: "upload-completed",
+          });
+          if (sent === null) throw new Error("Resend rejected digest");
+        }
+        this.digests.delete(id);
       } catch (err) {
-        console.error("digest failed", err.message);
+        // Keep the candidate for the next alarm; give up after a few tries so
+        // a dead link or dead Resend cannot pin it in memory forever.
+        d.tries = (d.tries || 0) + 1;
+        d.lastAt = now;
+        console.error("digest failed", err.message, `try ${d.tries}`);
+        if (d.tries >= 3) this.digests.delete(id);
       }
     }
   }
