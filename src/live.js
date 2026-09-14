@@ -669,7 +669,9 @@ export class LiveTracker {
         const notify = normalizeNotify(link?.notify);
         if (link && notify.enabled && notify.complete) {
           const files = `${d.files} file${d.files === 1 ? "" : "s"}`;
-          const mins = Math.max(1, Math.round((d.lastAt - d.startedAt) / 60000));
+          // Freeze the end time so a retried send renders byte-identical.
+          d.endedAt ||= d.lastAt;
+          const mins = Math.max(1, Math.round((d.endedAt - d.startedAt) / 60000));
           const sent = await sendNotify(this.env, {
             ...notifyEmail({
               subject: `${d.uploader} sent ${files} (${fmtBytesServer(d.bytes)}) to ${link.label}`,
@@ -681,9 +683,11 @@ export class LiveTracker {
                 ["Saved to", link.folderName ? `Drive folder "${link.folderName}"` : ""],
               ],
               files: d.names,
+              total: d.files,
               cta: d.origin ? { href: `${d.origin}/admin/links/${encodeURIComponent(d.slug)}`, label: "Open in dashboard" } : null,
             }),
             category: "upload-completed",
+            idempotencyKey: `upload-completed/${id}`,
           });
           if (sent === null) throw new Error("Resend rejected digest");
         }

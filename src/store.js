@@ -340,13 +340,13 @@ export async function gatePin(request, env, link, pin, keyPrefix = "link:", brut
 // file list and a button into the dashboard. Real content matters for
 // deliverability too - Gmail flagged the old two-line bodies as unsolicited.
 // Returns { subject, html, text } ready for sendNotify.
-export function notifyEmail({ subject, headline, facts = [], files = [], cta }) {
+export function notifyEmail({ subject, headline, facts = [], files = [], total = files.length, cta }) {
   const rows = facts
     .filter(([, v]) => v)
     .map(([k, v]) => `<tr><td style="padding:6px 12px 6px 0;color:#5b6b7f;white-space:nowrap;vertical-align:top;">${escapeHtml(k)}</td><td style="padding:6px 0;">${escapeHtml(String(v))}</td></tr>`)
     .join("");
   const shown = files.slice(0, 10);
-  const more = files.length - shown.length;
+  const more = total - shown.length;
   const list = shown.length
     ? `<p style="margin:18px 0 6px;font-weight:600;">Files</p><ul style="margin:0;padding-left:18px;color:#0c1a2b;">${shown
         .map((f) => `<li>${escapeHtml(f.n)} <span style="color:#9aa8b8;">${escapeHtml(fmtBytesServer(f.s))}</span></li>`)
@@ -395,6 +395,7 @@ export async function sendNotify(env, msg) {
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,
         "content-type": "application/json",
+        ...(msg.idempotencyKey ? { "idempotency-key": msg.idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from: env.NOTIFY_FROM,
