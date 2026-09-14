@@ -77,7 +77,7 @@ export default {
       if (p === "/terms") return servePage(env, url, "/terms.html");
       if (p.startsWith("/d/")) return servePage(env, url, "/drop.html");
       if (p.startsWith("/s/")) return servePage(env, url, "/share.html");
-      if (p === "/admin") return servePage(env, url, "/admin.html");
+      if (p === "/admin" || p.startsWith("/admin/")) return servePage(env, url, "/admin.html");
       return secureAsset(await env.ASSETS.fetch(request));
     } catch (err) {
       console.error(err.stack || err.message);
@@ -187,6 +187,7 @@ async function api(request, env, url, ctx) {
   if (p.startsWith("/api/admin/")) {
     if (!(await isAdmin(request, env))) return json({ error: "unauthorized" }, 401);
     if (!sameOriginOk(request, url)) return json({ error: "bad origin" }, 403);
+    if (m === "GET" && p === "/api/admin/me") return json({ ok: true });
     if (m === "GET" && p === "/api/admin/overview") return adminOverview(env);
     if (m === "POST" && p === "/api/admin/maintenance/cleanup") return cleanupInactiveRecords(request, env);
     if (m === "GET" && p === "/api/admin/timeseries") return adminTimeseries(env, url);
@@ -868,8 +869,9 @@ async function adminOverview(env) {
   const links = await getAllLinks(env);
   const rows = [];
   const totals = { links: links.length, opens: 0, sessions: 0, files: 0, bytes: 0 };
-  for (const link of links) {
-    const stats = normalizeStats(await env.KV.get(`stats:${link.slug}`, "json"));
+  const allStats = await Promise.all(links.map((link) => env.KV.get(`stats:${link.slug}`, "json")));
+  for (const [i, link] of links.entries()) {
+    const stats = normalizeStats(allStats[i]);
     totals.opens += stats.opens;
     totals.sessions += stats.sessions;
     totals.files += stats.files;
@@ -880,8 +882,9 @@ async function adminOverview(env) {
   const shares = await getAllShares(env);
   const shareStatDeltas = await liveShareStats(env);
   const shareRows = [];
-  for (const share of shares) {
-    const base = (await env.KV.get(`sstats:${share.slug}`, "json")) || {};
+  const allShareStats = await Promise.all(shares.map((share) => env.KV.get(`sstats:${share.slug}`, "json")));
+  for (const [i, share] of shares.entries()) {
+    const base = allShareStats[i] || {};
     const delta = shareStatDeltas.get(share.slug) || {};
     shareRows.push(adminShare(share, {
       opens: (Number(base.opens) || 0) + (Number(delta.opens) || 0),
@@ -944,12 +947,8 @@ async function driveThumbMeta(env, fileId) {
 async function getAllLinks(env) {
   const slugs = await getLinkIndex(env);
   if (slugs.length) {
-    const links = [];
-    for (const slug of slugs) {
-      const link = await env.KV.get(`link:${slug}`, "json");
-      if (link) links.push(link);
-    }
-    return links;
+    const links = await Promise.all(slugs.map((slug) => env.KV.get(`link:${slug}`, "json")));
+    return links.filter(Boolean);
   }
 
   const links = [];
