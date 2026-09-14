@@ -102,7 +102,7 @@
         <button class="tab hidden" data-tab="detail" id="detail-tab" type="button">Link detail</button>
       </nav>
       <div class="side-foot">
-        <div class="status-pill" id="live-state">offline</div>
+        <div class="status-pill" id="live-state">live updates off</div>
         <button class="mini logout" id="logout" type="button">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.3"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6z"></path></svg>
           lock
@@ -113,17 +113,17 @@
     <div class="admin-content">
       <!-- OVERVIEW: the at-a-glance page -->
       <section id="tab-overview" class="tab-pane">
-        <div class="pane-head"><h1 class="pane-title grad-text">Overview</h1><span class="muted">totals, trends and what is happening right now</span></div>
+        <div class="pane-head"><h1 class="pane-title grad-text">Overview</h1><span class="muted">What people sent, what they looked at, and who is uploading right now</span></div>
         <div class="stat-grid" id="stats"></div>
         <section class="panel">
           <div class="section-title">
             <h2>Last 30 days</h2>
             <div class="section-tools">
-              <button class="chip-filter active" data-metric="bytes" type="button">bytes</button>
-              <button class="chip-filter" data-metric="files" type="button">files</button>
-              <button class="chip-filter" data-metric="opens" type="button">opens</button>
-              <button class="chip-filter" data-metric="sessions" type="button">sessions</button>
-              <button class="chip-filter" data-metric="downloads" type="button">downloads</button>
+              <button class="chip-filter active" data-metric="bytes" type="button">Data received</button>
+              <button class="chip-filter" data-metric="files" type="button">Files</button>
+              <button class="chip-filter" data-metric="opens" type="button">Link opens</button>
+              <button class="chip-filter" data-metric="sessions" type="button">People uploading</button>
+              <button class="chip-filter" data-metric="downloads" type="button">Downloads</button>
             </div>
           </div>
           <div id="chart" class="chart-host"></div>
@@ -152,7 +152,7 @@
 
       <!-- LIVE: still one pane in the shared /admin document -->
       <section id="tab-live" class="tab-pane hidden">
-        <div class="pane-head"><div><p class="eyebrow">real-time relay</p><h1 class="pane-title grad-text">Live transfers</h1><span class="muted">Every active uploader and file, streamed from the Durable Object.</span></div><button class="mini" id="live-refresh" type="button">Refresh snapshot</button></div>
+        <div class="pane-head"><div><p class="eyebrow">right now</p><h1 class="pane-title grad-text">Uploads in progress</h1><span class="muted">Everyone currently sending files, updated as it happens.</span></div><button class="mini" id="live-refresh" type="button">Refresh snapshot</button></div>
         <div id="live-metrics" class="live-metrics live-summary-strip"></div>
         <div id="live-list" class="live-list tall"></div>
         <section id="live-empty" class="panel live-empty hidden"><span class="live-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16c2-2 4-3 8-3s6 1 8 3" fill="none" stroke="currentColor" stroke-width="2"></path><circle cx="12" cy="8" r="3" fill="currentColor" opacity=".18"></circle><path d="M8 20h8" fill="none" stroke="currentColor" stroke-width="2"></path></svg></span><h2>No transfers right now</h2><p class="muted">This view updates automatically when somebody starts an upload.</p><div id="live-last-completed"></div></section>
