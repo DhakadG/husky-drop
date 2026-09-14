@@ -1229,7 +1229,9 @@ async function createLink() {
     navigator.clipboard?.writeText(url).catch(() => {});
     refreshAll();
   } catch (error) {
-    $("create-err").textContent = error.message;
+    // The form (and its error slot) is hidden by now; say it on the button.
+    button.textContent = error.message;
+    setTimeout(() => (button.textContent = "Share this drop's folder"), 4000);
   } finally {
     document.querySelectorAll('#drop-create-form button[type="submit"]').forEach((button) => (button.disabled = false));
   }
@@ -1718,7 +1720,9 @@ async function shareCreatedDrop() {
     if ($("s-label") && !$("s-label").value) $("s-label").value = data.folderName;
     showTab("create-share");
   } catch (error) {
-    $("create-err").textContent = error.message;
+    // The form (and its error slot) is hidden by now; say it on the button.
+    button.textContent = error.message;
+    setTimeout(() => (button.textContent = "Share this drop's folder"), 4000);
   } finally {
     button.disabled = false;
   }
