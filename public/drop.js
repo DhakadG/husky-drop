@@ -27,7 +27,7 @@ const MAX_ACTIVE = 8; // hard cap on parallel files
 const MAX_CHUNK = 128 * 1024 * 1024; // adaptive chunk ceiling
 const MIN_CHUNK = 8 * 1024 * 1024;
 const STALL_MS = 60000; // abort a chunk when no progress for this long
-const FAST_CHUNK_MS = 3000; // chunk finished quicker than this -> grow chunk
+const FAST_CHUNK_MS = 8000; // chunk finished quicker than this -> grow chunk (32 MB in 8 s = 4 MB/s, anything faster deserves bigger PUTs)
 const ATTENTION_STATES = new Set(["error", "warning", "canceled"]);
 
 const totals = {
@@ -584,7 +584,9 @@ function prefetchNextSessions() {
   for (const q of queue) {
     if (q.state === "queued" && q.uri) spare++;
   }
-  let want = 2 - spare;
+  // Keep a Drive session ready for every slot that could open next, so a
+  // small file never sits in an active slot waiting on the Worker round-trip.
+  let want = MAX_ACTIVE - spare;
   if (want <= 0) return;
   for (const next of queue) {
     if (want <= 0) break;
@@ -610,8 +612,11 @@ function prefetchNextSessions() {
   }
 }
 
-function finalizeComplete(item) {
-  fetch("/api/complete", {
+// The bytes are already in Drive by now; this only files the record. Retry
+// transient failures so one flaky moment does not park the file in "warning"
+// and leave the whole queue reading "Uploading" forever.
+async function finalizeComplete(item, attempt = 0) {
+  const r = await fetch("/api/complete", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -623,25 +628,25 @@ function finalizeComplete(item) {
       fileId: item.fileId || "",
       sessionId,
     }),
-  })
-    .then((r) => {
-      if (r.ok) {
-        window.dropTrekker?.track("upload_complete", item.file.name, { size: item.file.size, mime: item.file.type || "", fileId: item.fileId || "", uploadSessionId: sessionId });
-        item.stat = "";
-        if (item.state !== "done") {
-          setState(item, "done");
-          sendLive(true);
-        } else schedulePaint();
-        deleteResumeRecord(item);
-      } else {
-        item.stat = "Drive saved - log delayed";
-        setState(item, "warning");
-      }
-    })
-    .catch(() => {
-      item.stat = "Drive saved - log delayed";
-      setState(item, "warning");
-    });
+  }).catch(() => null);
+  if (r?.ok) {
+    window.dropTrekker?.track("upload_complete", item.file.name, { size: item.file.size, mime: item.file.type || "", fileId: item.fileId || "", uploadSessionId: sessionId });
+    item.stat = "";
+    if (item.state !== "done") {
+      setState(item, "done");
+      sendLive(true);
+    } else schedulePaint();
+    deleteResumeRecord(item);
+    return;
+  }
+  // 4xx means the record itself is wrong (size mismatch, wrong link); only
+  // network failures and 5xx are worth another go.
+  if ((!r || r.status >= 500) && attempt < 4) {
+    await sleep(1000 * 2 ** attempt);
+    return finalizeComplete(item, attempt + 1);
+  }
+  item.stat = "Drive saved - log delayed";
+  setState(item, "warning");
 }
 
 function retryItem(item) {
@@ -1016,7 +1021,11 @@ function renderSummary() {
   $("totalbar").style.width = `${pct}%`;
   $("progress-ring-value").style.strokeDashoffset = String(163.36 * (1 - pct / 100));
   $("detail").textContent = queuePaused ? `Paused · ${detailText()}` : detailText();
-  $("queue-title").textContent = totals.done === totals.count && totals.count ? `Delivered ${totals.done} of ${totals.count} files` : queuePaused ? `Paused — ${totals.done} of ${totals.count} files delivered` : `Uploading — ${totals.done} of ${totals.count} files`;
+  // "warning" files are in Drive too (only the dashboard record lagged), so
+  // the queue is finished once nothing is queued or uploading.
+  const landed = totals.done + totals.warning;
+  const inFlight = totals.queued + totals.uploading;
+  $("queue-title").textContent = !inFlight && totals.count ? `Delivered ${landed} of ${totals.count} files` : queuePaused ? `Paused — ${landed} of ${totals.count} files delivered` : `Uploading — ${landed} of ${totals.count} files`;
   const completed = totals.count > 0 && totals.done === totals.count;
   $("done-card").classList.toggle("hidden", !completed);
   if (completed) {
@@ -1116,7 +1125,7 @@ function sendLive(force) {
       error: totals.error + totals.canceled,
       speed: Math.round(speedBps),
       paused: queuePaused,
-      state: totals.count && totals.done === totals.count ? "done" : "uploading",
+      state: totals.count && !(totals.queued + totals.uploading) ? "done" : "uploading",
       files: sample,
     })
   );
