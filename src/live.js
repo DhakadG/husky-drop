@@ -35,7 +35,8 @@ export class LiveTracker {
     this.env = env;
     this.sessions = new Map();
     this.adminSockets = new Set();
-    this.folderLocks = new Map();
+    this.folderLocks = new Map(); // key -> in-flight resolve promise
+    this.folderIds = new Map(); // key -> resolved Drive folder id (KV is eventually consistent; this is not)
     this.started = new Set();
     this.digests = new Map(); // sessionId -> finished-session email candidate
     this.pending = new Map(); // slug -> pending completions
@@ -288,16 +289,8 @@ export class LiveTracker {
           headers: JSON_HEADERS,
         });
       }
-      const key = `${link.slug}:${sanitizeFolderName(uploader).toLowerCase()}`;
-      if (!this.folderLocks.has(key)) {
-        this.folderLocks.set(
-          key,
-          resolveUploaderFolderDirect(this.env, link, uploader).finally(() =>
-            this.folderLocks.delete(key)
-          )
-        );
-      }
-      const folderId = await this.folderLocks.get(key);
+      const key = `${link.slug}:${link.folderId}:${sanitizeFolderName(uploader).toLowerCase()}`;
+      const folderId = await this.resolveFolderOnce(key, () => resolveUploaderFolderDirect(this.env, link, uploader));
       return new Response(JSON.stringify({ folderId }), { headers: JSON_HEADERS });
     }
 
@@ -316,17 +309,9 @@ export class LiveTracker {
           headers: JSON_HEADERS,
         });
       }
-      const key = `path:${link.slug}:${sanitizeFolderName(uploader).toLowerCase()}:${segments.join("/").toLowerCase()}`;
-      if (!this.folderLocks.has(key)) {
-        this.folderLocks.set(
-          key,
-          resolvePathFolderDirect(this.env, link, uploader, segments).finally(() =>
-            this.folderLocks.delete(key)
-          )
-        );
-      }
+      const key = `path:${link.slug}:${link.folderId}:${sanitizeFolderName(uploader).toLowerCase()}:${segments.join("/").toLowerCase()}`;
       try {
-        const folderId = await this.folderLocks.get(key);
+        const folderId = await this.resolveFolderOnce(key, () => resolvePathFolderDirect(this.env, link, uploader, segments));
         return new Response(JSON.stringify({ folderId }), { headers: JSON_HEADERS });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), {
@@ -346,15 +331,8 @@ export class LiveTracker {
           headers: JSON_HEADERS,
         });
       }
-      const key = `__link__:${slug}`;
-      if (!this.folderLocks.has(key)) {
-        this.folderLocks.set(
-          key,
-          ensureLinkFolderDirect(this.env, slug).finally(() => this.folderLocks.delete(key))
-        );
-      }
       try {
-        const folderId = await this.folderLocks.get(key);
+        const folderId = await this.resolveFolderOnce(`__link__:${slug}`, () => ensureLinkFolderDirect(this.env, slug));
         return new Response(JSON.stringify({ folderId }), { headers: JSON_HEADERS });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), {
@@ -443,6 +421,22 @@ export class LiveTracker {
     }
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // Resolve a Drive folder once per DO lifetime. Parallel files from one
+  // uploader used to queue on the in-flight lock and then each re-read a KV
+  // cache that had not propagated yet, so every file paid a Drive lookup in
+  // series - about one file per second no matter how fast the network was.
+  async resolveFolderOnce(key, resolve) {
+    const known = this.folderIds.get(key);
+    if (known) return known;
+    if (!this.folderLocks.has(key)) {
+      this.folderLocks.set(key, resolve().finally(() => this.folderLocks.delete(key)));
+    }
+    const id = await this.folderLocks.get(key);
+    // ponytail: never evicted; a folder deleted in Drive stays cached until the DO restarts.
+    if (id) this.folderIds.set(key, id);
+    return id;
   }
 
   rateLimit(key, max, windowSec) {
