@@ -65,7 +65,13 @@ async function init() {
     tokenEye.setAttribute("aria-pressed", String(visible));
   });
   $("refresh").addEventListener("click", refreshAll);
-  $("live-refresh")?.addEventListener("click", refreshAll);
+  $("live-refresh")?.addEventListener("click", () => {
+    // Re-arm the live socket too; a dead socket looked like a stale snapshot.
+    try { liveSocket?.close(); } catch {}
+    liveSocket = null;
+    connectLive();
+    refreshAll();
+  });
   $("drop-create-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     createLink();
@@ -275,22 +281,24 @@ function connectLive() {
   try {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     // Auth rides on the HttpOnly session cookie - no token in the URL.
-    liveSocket = new WebSocket(`${protocol}//${location.host}/api/admin/live`);
-    liveSocket.onopen = () => {
+    const socket = new WebSocket(`${protocol}//${location.host}/api/admin/live`);
+    liveSocket = socket;
+    socket.onopen = () => {
       liveReconnectDelay = 1000;
       $("live-state").textContent = "live updates on";
     };
-    liveSocket.onclose = () => {
+    socket.onclose = () => {
+      if (liveSocket !== socket) return; // replaced by a manual refresh
       $("live-state").textContent = "live updates off";
       setTimeout(connectLive, liveReconnectDelay);
       liveReconnectDelay = Math.min(15000, liveReconnectDelay * 2);
     };
-    liveSocket.onerror = () => {
+    socket.onerror = () => {
       try {
-        liveSocket.close();
+        socket.close();
       } catch {}
     };
-    liveSocket.onmessage = (event) => {
+    socket.onmessage = (event) => {
       let msg;
       try {
         msg = JSON.parse(event.data);

@@ -7459,3 +7459,11 @@ table.uploads .empty-cell {
 /* Drop/share codes are not account passwords: type="text" keeps password
    managers out of the way, this keeps the digits masked on screen. */
 .code-input { -webkit-text-security: disc; }
+
+/* Transfer queue rows: one line (name · size · action), finished rows fade in
+   place for a beat before sliding down to the done tail. */
+.file-top .file-actions { margin-top: 0; }
+.file-row.has-actions .file-actions { display: flex; }
+.file-row .row-btn { padding: 4px 10px; font-size: 12px; }
+.file-row { transition: border-color 0.2s ease, background 0.2s ease, opacity 0.6s ease, transform 0.6s ease; }
+.file-row.leaving { opacity: 0.45; transform: translateX(6px); }

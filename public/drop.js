@@ -23,8 +23,12 @@ let showAllFiles = false;
 
 const queue = [];
 const MAX_RETRIES = 8;
-const MAX_ACTIVE = 8; // hard cap on parallel files
-const MAX_CHUNK = 128 * 1024 * 1024; // adaptive chunk ceiling
+const IS_MOBILE = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+const MAX_ACTIVE = IS_MOBILE ? 8 : 12; // hard cap on parallel files
+// Bytes allowed in flight at once - a memory cap, not a speed knob. Phones
+// cannot hold twelve 128 MB chunks; desktops on gigabit can.
+const MEM_WINDOW = IS_MOBILE ? 256 * 1024 * 1024 : 2 * 1024 ** 3;
+const MAX_CHUNK = (IS_MOBILE ? 64 : 256) * 1024 * 1024; // adaptive chunk ceiling
 const MIN_CHUNK = 8 * 1024 * 1024;
 const STALL_MS = 60000; // abort a chunk when no progress for this long
 const FAST_CHUNK_MS = 8000; // chunk finished quicker than this -> grow chunk (32 MB in 8 s = 4 MB/s, anything faster deserves bigger PUTs)
@@ -48,6 +52,7 @@ const MAX_VISIBLE = 60;
 const uploadingList = [];
 const attention = [];
 const doneRecent = [];
+const leaving = []; // just-finished rows that fade in place before dropping to the done tail
 let tailNote = null;
 let paintScheduled = false;
 
@@ -110,10 +115,10 @@ function showGone(eyebrow = "closed", title = "This link is not available.", sub
 }
 
 function applySettings(settings) {
-  concurrency = clamp(Number(settings.concurrency) || 4, 1, 8);
+  concurrency = clamp(Number(settings.concurrency) || 4, 1, MAX_ACTIVE);
   chunkSize = clamp((Number(settings.chunkMB) || 32) * 1024 * 1024, MIN_CHUNK, MAX_CHUNK);
   adaptiveController = settings.adaptiveConcurrency && typeof createAdaptiveConcurrency === "function"
-    ? createAdaptiveConcurrency({ min: 2, max: 8, initial: concurrency })
+    ? createAdaptiveConcurrency({ min: 2, max: MAX_ACTIVE, initial: Math.max(concurrency, IS_MOBILE ? 4 : 6) })
     : null;
   if (adaptiveController) concurrency = adaptiveController.seed(navigator.connection || {});
 }
@@ -176,7 +181,7 @@ function showMain() {
   meta.append(chip(link.requiresPin ? "password protected" : "open link", "", link.requiresPin ? "lock-small" : "gallery"));
   if (link.requiresAuth && link.viewer) meta.append(chip(`signed in as ${link.viewer.name || link.viewer.email}`, "", "user"));
   meta.append(chip(`up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`, "", "image"));
-  if (link.settings?.adaptiveConcurrency) meta.append(chip("smart 2–8× parallel", "", "sliders"));
+  if (link.settings?.adaptiveConcurrency) meta.append(chip("smart parallel uploads", "", "sliders"));
   if (link.settings?.perUploaderFolders) meta.append(chip("your own subfolder", "", "folder-add"));
   if (link.driveFreeGB != null) {
     meta.append(chip(`~${link.driveFreeGB} GB free in Drive`, link.driveFreeGB < 30 ? "warn" : "", "folder"));
@@ -371,6 +376,13 @@ function addFiles(files) {
     totals.queued++;
     totals.bytes += file.size || 0;
   }
+  // Upload in the order a person would expect - folder by folder, files in
+  // natural name order - so Drive fills up predictably and IMG_2 never lands
+  // before IMG_1. Only files still waiting move; active ones keep their slot.
+  const waiting = queue.filter((q) => q.state === "queued");
+  waiting.sort((a, b) => (a.relativePath || a.file.name).localeCompare(b.relativePath || b.file.name, undefined, { numeric: true, sensitivity: "base" }));
+  let w = 0;
+  for (let i = 0; i < queue.length; i++) if (queue[i].state === "queued") queue[i] = waiting[w++];
   lastQueueNotice = "";
   $("transfer-panel").classList.remove("hidden");
   connectLive();
@@ -416,6 +428,11 @@ function setState(item, next) {
     item.stat = "";
     doneRecent.push(item);
     if (doneRecent.length > DONE_TAIL) doneRecent.shift();
+    leaving.push(item);
+    setTimeout(() => {
+      removeFrom(leaving, item);
+      schedulePaint();
+    }, 1400);
   }
   schedulePaint();
 }
@@ -446,12 +463,14 @@ function pump() {
     schedulePaint();
     return;
   }
-  const windowBytes = concurrency * chunkSize;
-  while (active < MAX_ACTIVE) {
+  // Parallelism is a file count (the adaptive controller tunes it). The old
+  // byte window was concurrency x chunk, so once chunks grew to 128 MB only
+  // two files could run at once and a gigabit link sat half idle.
+  while (active < Math.min(concurrency, MAX_ACTIVE)) {
     const next = queue.find((q) => q.state === "queued");
     if (!next) break;
     const w = Math.min(next.file.size, next.chunk || chunkSize);
-    if (active > 0 && activeWeight() + w > windowBytes) break;
+    if (active > 0 && activeWeight() + w > MEM_WINDOW) break;
     active++;
     uploadFile(next).finally(() => {
       active--;
@@ -507,7 +526,8 @@ async function uploadFile(item) {
         item.retries = 0;
         const took = Date.now() - chunkStarted;
         if (took < FAST_CHUNK_MS && item.chunk < MAX_CHUNK) {
-          item.chunk = Math.min(MAX_CHUNK, item.chunk * 2);
+          // Grow, but never let all active chunks together outrun the memory window.
+          item.chunk = Math.min(MAX_CHUNK, item.chunk * 2, Math.max(MIN_CHUNK, Math.floor(MEM_WINDOW / Math.max(1, active))));
         }
       } catch (err) {
         if (item.canceled) return;
@@ -561,6 +581,8 @@ function sessionBody(item) {
     uploaderName: $("who").value.trim(),
     sessionId,
     relativePath: link.settings?.perUploaderFolders ? "" : item.relativePath || "",
+    queueCount: totals.count,
+    queueBytes: totals.bytes,
   });
 }
 
@@ -950,7 +972,7 @@ function visibleItems() {
       if (queued.length >= room) break;
     }
   }
-  return [...uploadingList, ...att, ...queued, ...doneRecent];
+  return [...uploadingList, ...leaving, ...att, ...queued, ...doneRecent.filter((it) => !leaving.includes(it))];
 }
 
 function renderVisible() {
@@ -975,12 +997,12 @@ function makeRow(item) {
     <div class="file-top">
       <div class="file-name"></div>
       <div class="file-stat"></div>
+      <div class="file-actions">
+        <button class="row-btn" data-act="retry" type="button">retry</button>
+        <button class="row-btn danger" data-act="cancel" type="button">cancel</button>
+      </div>
     </div>
-    <div class="trail"><i></i></div>
-    <div class="file-actions">
-      <button class="row-btn" data-act="retry" type="button">retry</button>
-      <button class="row-btn danger" data-act="cancel" type="button">cancel</button>
-    </div>`;
+    <div class="trail"><i></i></div>`;
   row.querySelector(".file-name").textContent = item.relativePath || item.file.name;
   row._item = item;
   row._bar = row.querySelector(".trail > i");
@@ -995,7 +1017,7 @@ function updateRow(el, item) {
   el._bar.style.width = `${pct}%`;
   el._stat.textContent = rowStat(item);
   el._stat.className = `file-stat ${statClass(item.state)}`;
-  el.className = `file-row ${item.state}`;
+  el.className = `file-row ${item.state}${leaving.includes(item) ? " leaving" : ""}`;
   const canRetry = ATTENTION_STATES.has(item.state);
   const canCancel = item.state === "queued" || item.state === "uploading";
   el._retry.classList.toggle("hidden", !canRetry);
@@ -1031,6 +1053,10 @@ function renderSummary() {
   const inFlight = totals.queued + totals.uploading;
   $("queue-title").textContent = !inFlight && totals.count ? `Delivered ${landed} of ${totals.count} files` : queuePaused ? `Paused — ${landed} of ${totals.count} files delivered` : `Uploading — ${landed} of ${totals.count} files`;
   const completed = totals.count > 0 && totals.done === totals.count;
+  // Nothing left to protect once everything landed: drop the "keep this page
+  // open" banner and the pause button instead of nagging under a green tick.
+  document.querySelector(".keep-open")?.classList.toggle("hidden", !inFlight);
+  $("pause-all").classList.toggle("hidden", !inFlight);
   $("done-card").classList.toggle("hidden", !completed);
   if (completed) {
     $("done-title").textContent = `All ${totals.done} files delivered ✓`;

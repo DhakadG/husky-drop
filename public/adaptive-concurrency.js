@@ -4,8 +4,8 @@
   }
 
   root.createAdaptiveConcurrency = function createAdaptiveConcurrency(options = {}) {
-    const min = clampNumber(options.min ?? 2, 1, 8);
-    const max = clampNumber(options.max ?? 8, min, 8);
+    const min = clampNumber(options.min ?? 2, 1, 16);
+    const max = clampNumber(options.max ?? 8, min, 16);
     const cooldownSamples = Math.max(2, Number(options.cooldownSamples) || 3);
     let limit = clampNumber(options.initial ?? 4, min, max);
     let healthySamples = 0;
