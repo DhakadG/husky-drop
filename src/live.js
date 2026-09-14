@@ -284,7 +284,7 @@ export class LiveTracker {
           headers: JSON_HEADERS,
         });
       }
-      const key = `${link.slug}:${sanitizeFolderName(uploader).toLowerCase()}`;
+      const key = `${link.slug}:${link.folderId}:${sanitizeFolderName(uploader).toLowerCase()}`;
       const folderId = await this.resolveFolderOnce(key, () => resolveUploaderFolderDirect(this.env, link, uploader));
       return new Response(JSON.stringify({ folderId }), { headers: JSON_HEADERS });
     }
@@ -304,7 +304,7 @@ export class LiveTracker {
           headers: JSON_HEADERS,
         });
       }
-      const key = `path:${link.slug}:${sanitizeFolderName(uploader).toLowerCase()}:${segments.join("/").toLowerCase()}`;
+      const key = `path:${link.slug}:${link.folderId}:${sanitizeFolderName(uploader).toLowerCase()}:${segments.join("/").toLowerCase()}`;
       try {
         const folderId = await this.resolveFolderOnce(key, () => resolvePathFolderDirect(this.env, link, uploader, segments));
         return new Response(JSON.stringify({ folderId }), { headers: JSON_HEADERS });

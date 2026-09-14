@@ -1121,11 +1121,11 @@ function sendLive(force) {
       sent: totals.sent,
       total: totals.bytes,
       count: totals.count,
-      done: totals.done,
+      done: totals.done + totals.warning,
       error: totals.error + totals.canceled,
       speed: Math.round(speedBps),
       paused: queuePaused,
-      state: totals.count && !(totals.queued + totals.uploading) ? "done" : "uploading",
+      state: totals.count && totals.done + totals.warning === totals.count ? "done" : "uploading",
       files: sample,
     })
   );
