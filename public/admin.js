@@ -232,7 +232,11 @@ function showTab(name, { push = true } = {}) {
 
 function routeFromUrl() {
   const [, , tab = "overview", slug = ""] = location.pathname.split("/");
-  if (tab === "links" && slug) return refreshDetail(decodeURIComponent(slug), true, false, { push: false });
+  if (tab === "links" && slug) {
+    try {
+      return refreshDetail(decodeURIComponent(slug), true, false, { push: false });
+    } catch {} // malformed %-escape: fall through to the links list
+  }
   showTab(tab, { push: false });
 }
 
