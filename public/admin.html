@@ -327,7 +327,7 @@
               <span class="success-check"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg></span>
               <p class="eyebrow">ready to share</p><h2>Your drop link is live</h2>
               <code id="create-success-url"></code>
-              <div><button class="btn" id="create-copy" type="button">Copy URL</button><button class="btn ghost" id="create-qr" type="button">Show QR</button><button class="mini" id="create-another" type="button">Create another</button></div>
+              <div><button class="btn" id="create-copy" type="button">Copy URL</button><button class="btn ghost" id="create-qr" type="button">Show QR</button><button class="btn ghost" id="create-share-of-drop" type="button">Share this drop's folder</button><button class="mini" id="create-another" type="button">Create another</button></div>
             </div>
           </section>
         </div>
@@ -371,7 +371,7 @@
 </dialog>
 <dialog id="drive-picker-dialog" class="drive-picker-dialog">
   <section id="folder-picker-panel" class="folder-picker-panel">
-    <div class="folder-dialog-title"><div><p class="eyebrow">Google Drive</p><h2 id="folder-picker-title">Choose a destination</h2></div><button class="dialog-close" id="folder-close" type="button" aria-label="Close Drive browser">×</button></div>
+    <div class="folder-dialog-title"><div><p class="eyebrow"><svg class="drive-glyph" viewBox="0 0 87.3 78" aria-hidden="true"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0-1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.5l5.85 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg> Google Drive</p><h2 id="folder-picker-title">Choose a destination</h2></div><button class="dialog-close" id="folder-close" type="button" aria-label="Close Drive browser">×</button></div>
     <div class="folder-picker-head">
       <button class="mini" id="folder-up" type="button">← Parent</button>
       <nav id="folder-breadcrumbs" class="folder-breadcrumbs" aria-label="Drive folder path"></nav>
@@ -379,6 +379,7 @@
     </div>
     <p class="folder-picker-hint">Open a folder by clicking its name. Selection only changes when you use a Select button.</p>
     <div class="folder-create-row"><input id="folder-new-name" type="text" maxlength="120" placeholder="New folder name" /><button class="mini" id="folder-create" type="button">Create folder here</button></div>
+    <div id="folder-recent" class="folder-recent hidden"></div>
     <div id="folder-list" class="folder-list"></div>
     <div class="msg-err" id="folder-err"></div>
   </section>

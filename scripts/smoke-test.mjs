@@ -133,6 +133,7 @@ async function withMockedGoogleDrive(fn) {
       id: "nested-folder",
       name: "Nested",
       mimeType: "application/vnd.google-apps.folder",
+      parents: ["root"], // real Drive folders always carry a parent; only My Drive itself has none
     },
     "file-nested": {
       id: "file-nested",

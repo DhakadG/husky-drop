@@ -7467,3 +7467,12 @@ table.uploads .empty-cell {
 .file-row .row-btn { padding: 4px 10px; font-size: 12px; }
 .file-row { transition: border-color 0.2s ease, background 0.2s ease, opacity 0.6s ease, transform 0.6s ease; }
 .file-row.leaving { opacity: 0.45; transform: translateX(6px); }
+
+/* Drive picker: the path wraps onto its own line so the current folder is
+   never scrolled out of view; recent folders sit above the listing. */
+.folder-picker-head { flex-wrap: wrap; }
+.folder-breadcrumbs { flex-basis: 100%; order: 2; flex-wrap: wrap; white-space: normal; overflow: visible; row-gap: 2px; }
+.folder-picker-head .folder-select-current { margin-left: auto; }
+.folder-recent { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.folder-recent .mini { display: inline-flex; align-items: center; gap: 6px; }
+.drive-glyph { width: 14px; height: 14px; flex: 0 0 auto; }

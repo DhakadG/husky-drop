@@ -208,6 +208,9 @@ async function api(request, env, url, ctx) {
     if (m === "GET" && p.startsWith("/api/admin/link/")) {
       return linkDetail(env, p.slice("/api/admin/link/".length), url);
     }
+    if (m === "POST" && p.startsWith("/api/admin/links/") && p.endsWith("/folder")) {
+      return linkFolder(env, p.slice("/api/admin/links/".length, -"/folder".length));
+    }
     if (m === "PATCH" && p.startsWith("/api/admin/links/")) {
       return patchLink(request, env, p.slice("/api/admin/links/".length));
     }
@@ -1066,4 +1069,19 @@ async function cleanupInactiveRecords(request, env) {
   }
   await compactIndex("shares:index", storedShares, keptShares);
   return json({ ok: true, complete: report.operationsDeferred === 0 && report.indexUpdatesDeferred === 0, ...report });
+}
+
+// Resolves (creating if still pending) the Drive folder behind a drop link so
+// the dashboard can offer "share this drop" right after creating it.
+async function linkFolder(env, slug) {
+  const link = await env.KV.get(`link:${cleanText(slug, 60)}`, "json");
+  if (!link) return json({ error: "link not found" }, 404);
+  if (!link.folderId) {
+    try {
+      link.folderId = await ensureLinkFolder(env, link);
+    } catch (err) {
+      return json({ error: "Drive folder is not ready yet: " + err.message }, 503);
+    }
+  }
+  return json({ folderId: link.folderId, folderName: link.folderName || link.label });
 }
