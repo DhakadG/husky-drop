@@ -425,6 +425,13 @@ async function requireDropViewer(request, env, link) {
   return json({ error: "sign-in required", authRequired: true }, 401);
 }
 
+// When the link demands Google sign-in, the verified account name beats
+// whatever the uploader typed into the "what should we call you" box.
+async function resolveUploader(request, env, link, typed) {
+  const viewer = link.requireAuth && env.GOOGLE_CLIENT_ID ? await getViewer(request, env) : null;
+  return cleanText(viewer?.name || typed || "anonymous", 60) || "anonymous";
+}
+
 async function verifyPin(request, env) {
   const b = await request.json().catch(() => ({}));
   const link = await env.KV.get(`link:${b.linkId}`, "json");
@@ -536,7 +543,7 @@ async function createSession(request, env) {
   }
 
   const safeName = sanitizeFilename(filename);
-  const uploader = cleanText(uploaderName || "anonymous", 60) || "anonymous";
+  const uploader = await resolveUploader(request, env, link, uploaderName);
   if (!link.folderId) {
     try {
       link.folderId = await ensureLinkFolder(env, link);
@@ -640,14 +647,14 @@ async function logComplete(request, env) {
     n: cleanText(filename, 160),
     s: Number(size) || 0,
     m: cleanText(mimeType || "", 80),
-    u: cleanText(uploader || "anonymous", 60),
+    u: await resolveUploader(request, env, link, uploader),
     f: cleanText(fileId || "", 120),
     si: cleanText(sessionId || "", 80),
     at: Date.now(),
   };
   await recordCompletion(env, link, meta, request);
   // Per-file "complete" emails were replaced by the per-session digest sent
-  // from the Durable Object (maybeSendDigest) to respect Resend's free tier.
+  // from the Durable Object (flushDigests) to respect Resend's free tier.
   return json({ ok: true });
 }
 

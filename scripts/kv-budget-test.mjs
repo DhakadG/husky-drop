@@ -182,3 +182,25 @@ const listed = await (await listShares({ KV: listKv, LIVE_TRACKER: listLive })).
 assert.deepEqual(listed.shares[0].stats, { opens: 5, downloads: 2, bytes: 150, views: 9 }, "share list must merge historical KV totals with new SQLite deltas");
 
 console.log("KV budget regression tests passed");
+
+// Digest email is decided server-side from Drive-verified completions, so a
+// tab closed before the browser reports "done" still produces exactly one
+// email with the real file count.
+const digestTracker = new LiveTracker(state, { KV: new ReadOnlyKV({ "link:inbox": { slug: "inbox", label: "Inbox", notify: { enabled: true, complete: true } } }) });
+await state.ready;
+const meta = (f, at) => ({ n: `${f}.jpg`, s: 1000, m: "image/jpeg", u: "Priya", f, si: "sess-1", at });
+for (const [f, at] of [["a", 1], ["b", 2], ["a", 1]]) {
+  await digestTracker.fetch(new Request("https://live.internal/complete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ slug: "inbox", label: "Inbox", meta: meta(f, at) }),
+  }));
+}
+const digest = digestTracker.digests.get("sess-1");
+assert.deepEqual([digest.files, digest.bytes, digest.uploader], [2, 2000, "Priya"], "retried completions must count once in the digest");
+assert.equal(digestTracker.digestReady(digest, Date.now() + 10_000), false, "an active session with no done signal waits for the idle window");
+assert.equal(digestTracker.digestReady(digest, Date.now() + 100_000), true, "an idle session still gets its digest without the browser saying done");
+digestTracker.noteDigest("sess-1", { done: true, uploader: "typed name" });
+assert.equal(digestTracker.digests.get("sess-1").uploader, "Priya", "verified uploader name beats the browser's progress frame");
+assert.equal(digestTracker.digestReady(digestTracker.digests.get("sess-1"), Date.now() + 9_000), true, "a done session sends after the short settle window");
+console.log("digest decision checks passed");

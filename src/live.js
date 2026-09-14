@@ -25,6 +25,10 @@ import {
 import { ensureLinkFolderDirect, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
 import { bumpShareStats, bumpStats, mergeEventsKV, sendNotify } from "./store.js";
 
+// ponytail: digest candidates live in DO memory; a DO restart mid-transfer drops that one email.
+const DIGEST_SETTLE_MS = 8_000;
+const DIGEST_IDLE_MS = 90_000;
+
 export class LiveTracker {
   constructor(state, env) {
     this.state = state;
@@ -33,6 +37,7 @@ export class LiveTracker {
     this.adminSockets = new Set();
     this.folderLocks = new Map();
     this.started = new Set();
+    this.digests = new Map(); // sessionId -> finished-session email candidate
     this.pending = new Map(); // slug -> pending completions
     this.pendingEvents = [];
     this.pendingOpens = new Map(); // slug -> count
@@ -380,7 +385,7 @@ export class LiveTracker {
     if (request.method === "POST" && url.pathname === "/progress") {
       const body = await request.json().catch(() => ({}));
       const session = this.recordSession(body);
-      this.maybeSendDigest(session).catch(() => {});
+      this.noteDigest(session.id, { slug: session.slug, label: session.label, uploader: session.uploader, expected: session.count, done: session.state === "done" });
       this.broadcast();
       return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
     }
@@ -421,7 +426,7 @@ export class LiveTracker {
         if (msg.type !== "progress") return;
         const session = this.recordSession({ ...msg, slug });
         server.sessionId = session.id;
-        this.maybeSendDigest(session).catch(() => {});
+        this.noteDigest(session.id, { slug: session.slug, label: session.label, uploader: session.uploader, expected: session.count, done: session.state === "done" });
         this.broadcast();
       });
       server.addEventListener("close", () => {
@@ -570,7 +575,6 @@ export class LiveTracker {
     session.startedAt = prev?.startedAt || Date.now();
     session.speedHist = prev?.speedHist || [];
     if (prev) {
-      session.digestSent = prev.digestSent || false;
       session.prevState = prev.state;
       if (session.lastSeen > prev.lastSeen && session.sent >= prev.sent) {
         const dt = (session.lastSeen - prev.lastSeen) / 1000;
@@ -625,32 +629,68 @@ export class LiveTracker {
     this.recentDone = this.recentDone.filter((s) => s.endedAt >= cutoff).slice(0, 20);
   }
 
-  // One digest email per finished session ("Priya uploaded 214 files, 18 GB")
-  // instead of one email per completed file. Uses the link's notify.complete
-  // toggle. Sent at most once per session id.
-  async maybeSendDigest(session) {
-    if (!session || session.state !== "done" || session.digestSent) return;
-    if (session.prevState === "done") return;
-    if (!session.slug || !session.done) return;
-    session.digestSent = true;
-    this.sessions.set(session.id, session);
-    try {
-      const link = await this.env.KV.get(`link:${session.slug}`, "json");
-      if (!link) return;
-      const notify = normalizeNotify(link.notify);
-      if (!notify.enabled || !notify.complete) return;
-      await sendNotify(this.env, {
-        subject: `${APP_NAME}: ${session.uploader} finished uploading`,
-        html: `<p><b>${escapeHtml(session.uploader)}</b> finished uploading to <b>${escapeHtml(
-          link.label
-        )}</b>.</p><p>${session.done} file${session.done === 1 ? "" : "s"} - ${escapeHtml(
-          fmtBytesServer(session.sent)
-        )}</p>`,
-        text: `${session.uploader} finished uploading ${session.done} file${session.done === 1 ? "" : "s"} (${fmtBytesServer(session.sent)}) to ${link.label}.`,
-        category: "upload-completed",
-      });
-    } catch (err) {
-      console.error("digest failed", err.message);
+  // One digest email per finished session ("Priya uploaded 214 files, 18 GB").
+  // The server decides when a session is finished from the Drive-verified
+  // completions it received, never from the uploader's browser: a closed tab,
+  // a dropped WebSocket or a failed /api/complete used to leave the session
+  // "uploading" forever and the email never went out. Counts come from the
+  // same completions, so the email matches what actually landed in Drive.
+  noteDigest(sessionId, patch) {
+    if (!sessionId) return;
+    const cur = this.digests.get(sessionId) || { slug: "", label: "", uploader: "", seen: new Set(), files: 0, bytes: 0, expected: 0, done: false, lastAt: 0 };
+    const { file, verifiedUploader, uploader, done, ...rest } = patch;
+    Object.assign(cur, rest, { lastAt: Date.now() });
+    // "done" is sticky, retried completions count once, and the
+    // Drive-verified uploader name beats what the browser typed.
+    cur.done = cur.done || !!done;
+    cur.uploader = verifiedUploader || cur.uploader || uploader || "";
+    if (file && !cur.seen.has(file.id)) {
+      cur.seen.add(file.id);
+      cur.files++;
+      cur.bytes += file.bytes;
+    }
+    this.digests.set(sessionId, cur);
+    this.armAlarm().catch(() => {});
+  }
+
+  digestReady(d, now) {
+    const finished = d.done || (d.expected && d.files >= d.expected);
+    // Short grace so completions racing the client's "done" still count;
+    // long grace covers a tab closed mid-transfer with nothing else coming.
+    return now - d.lastAt >= (finished ? DIGEST_SETTLE_MS : DIGEST_IDLE_MS);
+  }
+
+  async flushDigests() {
+    const now = Date.now();
+    for (const [id, d] of this.digests) {
+      if (!this.digestReady(d, now)) continue;
+      // Nothing landed in Drive (all canceled/failed): forget it, no email.
+      if (!d.files) {
+        this.digests.delete(id);
+        continue;
+      }
+      try {
+        const link = await this.env.KV.get(`link:${d.slug}`, "json");
+        const notify = normalizeNotify(link?.notify);
+        if (link && notify.enabled && notify.complete) {
+          const files = `${d.files} file${d.files === 1 ? "" : "s"}`;
+          const sent = await sendNotify(this.env, {
+            subject: `${APP_NAME}: ${d.uploader} finished uploading`,
+            html: `<p><b>${escapeHtml(d.uploader)}</b> finished uploading to <b>${escapeHtml(link.label)}</b>.</p><p>${files} - ${escapeHtml(fmtBytesServer(d.bytes))}</p>`,
+            text: `${d.uploader} finished uploading ${files} (${fmtBytesServer(d.bytes)}) to ${link.label}.`,
+            category: "upload-completed",
+          });
+          if (sent === null) throw new Error("Resend rejected digest");
+        }
+        this.digests.delete(id);
+      } catch (err) {
+        // Keep the candidate for the next alarm; give up after a few tries so
+        // a dead link or dead Resend cannot pin it in memory forever.
+        d.tries = (d.tries || 0) + 1;
+        d.lastAt = now;
+        console.error("digest failed", err.message, `try ${d.tries}`);
+        if (d.tries >= 3) this.digests.delete(id);
+      }
     }
   }
 
@@ -675,6 +715,7 @@ export class LiveTracker {
     pend.lastUploader = meta.u || pend.lastUploader;
     pend.lastFile = meta.n || pend.lastFile;
     pend.lastSessionId = meta.si || pend.lastSessionId;
+    if (meta.si) this.noteDigest(meta.si, { slug, label, verifiedUploader: meta.u, file: { id, bytes: meta.s } });
     await this.armAlarm();
   }
 
@@ -754,7 +795,11 @@ export class LiveTracker {
     // 5) day rollups -> DO SQLite (cheap, not KV)
     this.flushDays();
 
+    // 6) finished-session digest emails
+    await this.flushDigests();
+
     if (
+      this.digests.size ||
       this.pending.size ||
       this.pendingOpens.size ||
       this.pendingShareStats.size ||
