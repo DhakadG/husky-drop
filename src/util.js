@@ -210,7 +210,8 @@ export async function pinHashPbkdf2(pin, saltHex) {
 
 export async function makePinFields(pin) {
   const salt = randomHex();
-  return { pinSalt: salt, pinHash: await pinHashPbkdf2(pin, salt), pinAlgo: "pbkdf2" };
+  // pinDigits lets the gate ask phones for a number pad instead of a full keyboard.
+  return { pinSalt: salt, pinHash: await pinHashPbkdf2(pin, salt), pinAlgo: "pbkdf2", pinDigits: /^[0-9]+$/.test(pin) };
 }
 
 export async function pinMatches(link, pin) {

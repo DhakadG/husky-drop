@@ -7455,3 +7455,7 @@ table.uploads .empty-cell {
     justify-content: flex-start;
   }
 }
+
+/* Drop/share codes are not account passwords: type="text" keeps password
+   managers out of the way, this keeps the digits masked on screen. */
+.code-input { -webkit-text-security: disc; }

@@ -335,6 +335,7 @@ export async function getShareMeta(request, env, slug) {
     label: raw.label,
     mode: raw.mode,
     requiresPin: !!raw.pinHash,
+    pinDigits: raw.pinDigits !== false,
     requiresAuth,
     viewer,
     allowZip: raw.allowZip !== false,
