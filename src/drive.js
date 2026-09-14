@@ -159,7 +159,9 @@ export async function driveBrowseFolders(env, parentId) {
   for (let depth = 0; cursor !== "root" && depth < 24 && !seen.has(cursor); depth++) {
     seen.add(cursor);
     const meta = await driveFileMeta(env, cursor);
-    if (!meta?.id) break;
+    // The real "My Drive" folder has no parents; the synthetic root crumb
+    // below already stands for it, so stop here instead of listing it twice.
+    if (!meta?.id || !meta.parents?.length) break;
     ancestors.unshift({ id: meta.id, name: cleanText(meta.name || "Folder", 120) });
     cursor = meta.parents?.[0] || "root";
   }

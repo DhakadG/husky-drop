@@ -6,6 +6,7 @@ let liveRecent = [];
 let liveSocket = null;
 let liveReconnectDelay = 1000;
 let currentDetailSlug = "";
+let createdDropSlug = "";
 let seriesMetric = "bytes";
 let seriesRows = [];
 let detailData = null;
@@ -104,6 +105,7 @@ async function init() {
   document.querySelectorAll('[name="transfer-preset"]').forEach((radio) => radio.addEventListener("change", applyTransferPreset));
   $("create-copy")?.addEventListener("click", () => copyCreatedLink());
   $("create-qr")?.addEventListener("click", () => showQr($("create-success-url").textContent, "New drop link"));
+  $("create-share-of-drop")?.addEventListener("click", shareCreatedDrop);
   $("qr-close")?.addEventListener("click", () => $("qr-modal").close());
   $("qr-copy")?.addEventListener("click", async (event) => {
     await navigator.clipboard?.writeText(currentQrUrl);
@@ -1025,6 +1027,7 @@ async function openFolderPicker(parentId, mode = folderPickerMode) {
     folderParentId = current?.id || folderParentId;
     folderParentLabel = current?.name || "My Drive";
     renderFolderBreadcrumbs();
+    renderRecentFolders();
     $("folder-up").disabled = folderBreadcrumbs.length <= 1;
     $("folder-select-current").disabled = shareMode && folderParentId === "root";
     $("folder-list").innerHTML = (data.folders || []).length
@@ -1058,6 +1061,7 @@ function openParentFolder() {
 }
 
 function selectDriveFolder(id, name) {
+  rememberFolder(id, name);
   if (folderPickerMode.startsWith("share")) {
     const pathParts = folderBreadcrumbs.map((crumb) => crumb.name);
     if (folderBreadcrumbs.at(-1)?.id !== id) pathParts.push(name || "Folder");
@@ -1219,6 +1223,7 @@ async function createLink() {
     if (!response.ok) throw new Error(data.error || "Could not create link.");
     const url = `${location.origin}/d/${data.slug}`;
     $("create-success-url").textContent = url;
+    createdDropSlug = data.slug;
     $("drop-create-form").classList.add("hidden");
     $("create-success").classList.remove("hidden");
     navigator.clipboard?.writeText(url).catch(() => {});
@@ -1664,3 +1669,57 @@ function value(id) {
 }
 
 // fmtBytes/fmtTime/esc/escAttr live in public.js (shared with drop.js/share.js).
+
+// ---- Recently used Drive folders (per browser, newest first, six kept) ----
+// Drops and shares usually point at the same handful of folders, so the
+// picker offers the last few as one-click chips above the listing.
+
+function recentFolders() {
+  try {
+    return JSON.parse(localStorage.getItem("lhdb_recent_folders") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function rememberFolder(id, name) {
+  if (!id || id === "root") return;
+  const path = folderBreadcrumbs.map((crumb) => crumb.name).concat(folderBreadcrumbs.at(-1)?.id === id ? [] : [name]).join(" / ");
+  const next = [{ id, name: name || "Folder", path }, ...recentFolders().filter((f) => f.id !== id)].slice(0, 6);
+  try {
+    localStorage.setItem("lhdb_recent_folders", JSON.stringify(next));
+  } catch {}
+}
+
+function renderRecentFolders() {
+  const box = $("folder-recent");
+  if (!box) return;
+  const recent = recentFolders();
+  box.classList.toggle("hidden", !recent.length);
+  box.innerHTML = recent
+    .map((f) => `<button class="mini" type="button" data-recent-folder="${escAttr(f.id)}" data-folder-name="${escAttr(f.name)}" title="${escAttr(f.path)}">${icon("folder")}${esc(f.name)}</button>`)
+    .join("");
+  box.querySelectorAll("[data-recent-folder]").forEach((button) => button.addEventListener("click", () => selectDriveFolder(button.dataset.recentFolder, button.dataset.folderName)));
+}
+
+// "Share this drop's folder": resolve the new drop's Drive folder (created in
+// the background) and open the share form with it pre-selected.
+async function shareCreatedDrop() {
+  if (!createdDropSlug) return;
+  const button = $("create-share-of-drop");
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/admin/links/${encodeURIComponent(createdDropSlug)}/folder`, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.folderId) throw new Error(data.error || "Drive folder is not ready yet - try again in a moment.");
+    shareSelectedFolders.clear();
+    shareSelectedFolders.set(data.folderId, { id: data.folderId, name: data.folderName, path: data.folderName });
+    renderShareFolderSelection();
+    if ($("s-label") && !$("s-label").value) $("s-label").value = data.folderName;
+    showTab("create-share");
+  } catch (error) {
+    $("create-err").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
