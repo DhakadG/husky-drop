@@ -65,7 +65,13 @@ async function init() {
     tokenEye.setAttribute("aria-pressed", String(visible));
   });
   $("refresh").addEventListener("click", refreshAll);
-  $("live-refresh")?.addEventListener("click", refreshAll);
+  $("live-refresh")?.addEventListener("click", () => {
+    // Re-arm the live socket too; a dead socket looked like a stale snapshot.
+    try { liveSocket?.close(); } catch {}
+    liveSocket = null;
+    connectLive();
+    refreshAll();
+  });
   $("drop-create-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     createLink();

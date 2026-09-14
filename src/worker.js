@@ -498,7 +498,7 @@ async function logProgress(request, env) {
 
 async function createSession(request, env) {
   const b = await request.json().catch(() => ({}));
-  const { linkId, pin, filename, size, mimeType, uploaderName, sessionId, relativePath } = b;
+  const { linkId, pin, filename, size, mimeType, uploaderName, sessionId, relativePath, queueCount, queueBytes } = b;
 
   if (!linkId || !filename || !Number.isFinite(size) || size <= 0) {
     return json({ error: "linkId, filename and size are required" }, 400);
@@ -595,7 +595,7 @@ async function createSession(request, env) {
   const sessionUri = r.headers.get("location");
   if (!sessionUri) return json({ error: "Drive returned no session URI" }, 502);
 
-  await recordSessionStart(env, link, uploader, sessionId, request, { name: safeName, size });
+  await recordSessionStart(env, link, uploader, sessionId, request, { name: safeName, size, queueCount: Number(queueCount) || 0, queueBytes: Number(queueBytes) || 0 });
   return json({ sessionUri });
 }
 
@@ -627,6 +627,7 @@ async function recordSessionStart(env, link, uploader, sessionId, request, first
         facts: [
           ["Link", `${origin}/d/${link.slug}`],
           ["Device", [client.o, client.l].filter(Boolean).join(" · ")],
+          ["Queued", firstFile?.queueCount ? `${firstFile.queueCount} file${firstFile.queueCount === 1 ? "" : "s"}, ${fmtBytesServer(firstFile.queueBytes)}` : ""],
           ["First file", firstFile ? `${firstFile.name} (${fmtBytesServer(firstFile.size)})` : ""],
           ["Started", new Date().toUTCString()],
         ],
