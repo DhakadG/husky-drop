@@ -318,8 +318,8 @@ function upsertCards(container, pairs, cls) {
       el._value = el.querySelector("b");
       return el;
     },
-    (el, [, value, title]) => {
-      if (el._label.textContent !== title) el._label.textContent = title;
+    (el, [label, value]) => {
+      if (el._label.textContent !== label) el._label.textContent = label;
       const text = String(value);
       if (el._value.textContent !== text) el._value.textContent = text;
     },
@@ -359,8 +359,8 @@ function renderStats() {
       el._label = el.querySelector(".stat-label");
       return el;
     },
-    (el, [label, value]) => {
-      if (el._label.textContent !== label) el._label.textContent = label;
+    (el, [, value, title]) => {
+      if (el._label.textContent !== title) el._label.textContent = title;
       const text = String(value);
       if (el._value.textContent !== text) el._value.textContent = text;
     },
