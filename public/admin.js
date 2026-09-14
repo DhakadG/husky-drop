@@ -146,6 +146,7 @@ async function init() {
     renderEvents();
   });
   $("activity-more")?.addEventListener("click", loadEarlierActivity);
+  window.addEventListener("popstate", routeFromUrl);
   if (await ping()) unlock();
 }
 
@@ -158,7 +159,9 @@ function handleAdminSigninError() {
 
 async function ping() {
   try {
-    const r = await fetch("/api/admin/overview");
+    // Cookie check only - the overview walks every link in KV and made the
+    // sign-in screen linger for seconds on an already signed-in admin.
+    const r = await fetch("/api/admin/me");
     return r.ok;
   } catch {
     return false;
@@ -189,6 +192,7 @@ async function logout() {
 function unlock() {
   $("auth").classList.add("hidden");
   $("panel").classList.remove("hidden");
+  routeFromUrl();
   connectLive();
   refreshAll();
   refreshChart();
@@ -213,12 +217,27 @@ function setAdminMobileMoreOpen(open, restoreFocus = true) {
   else if (wasOpen && restoreFocus) adminMoreToggle.focus({ preventScroll: true });
 }
 
-function showTab(name) {
+// Every tab is a real URL (/admin/links, /admin/links/<slug> for detail) so
+// refresh and back/forward land where the admin was instead of on Overview.
+function showTab(name, { push = true } = {}) {
+  if (!$(`tab-${name}`)) name = "overview";
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll(".tab-pane").forEach((p) => p.classList.add("hidden"));
   $(`tab-${name}`).classList.remove("hidden");
   adminMoreToggle?.classList.toggle("active", adminSecondaryTabs.has(name));
   setAdminMobileMoreOpen(false, false);
+  const path = name === "detail" && currentDetailSlug ? `/admin/links/${encodeURIComponent(currentDetailSlug)}` : name === "overview" ? "/admin" : `/admin/${name}`;
+  if (push && location.pathname !== path) history.pushState({ tab: name }, "", path);
+}
+
+function routeFromUrl() {
+  const [, , tab = "overview", slug = ""] = location.pathname.split("/");
+  if (tab === "links" && slug) {
+    try {
+      return refreshDetail(decodeURIComponent(slug), true, false, { push: false });
+    } catch {} // malformed %-escape: fall through to the links list
+  }
+  showTab(tab, { push: false });
 }
 
 async function refreshAll() {
@@ -1370,7 +1389,7 @@ async function saveShareEditor(event) {
 
 // ---- Link detail ----
 
-async function refreshDetail(slug, switchTab, fresh = false) {
+async function refreshDetail(slug, switchTab, fresh = false, nav = {}) {
   currentDetailSlug = slug;
   const url = `/api/admin/link/${encodeURIComponent(slug)}${fresh ? "?fresh=1" : ""}`;
   const r = await fetch(url);
@@ -1380,7 +1399,7 @@ async function refreshDetail(slug, switchTab, fresh = false) {
   const tab = $("detail-tab");
   tab.classList.remove("hidden");
   tab.textContent = `Detail: ${d.link.label}`;
-  if (switchTab) showTab("detail");
+  if (switchTab) showTab("detail", nav);
 }
 
 function renderDetail(d) {
