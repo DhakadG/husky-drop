@@ -281,22 +281,24 @@ function connectLive() {
   try {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     // Auth rides on the HttpOnly session cookie - no token in the URL.
-    liveSocket = new WebSocket(`${protocol}//${location.host}/api/admin/live`);
-    liveSocket.onopen = () => {
+    const socket = new WebSocket(`${protocol}//${location.host}/api/admin/live`);
+    liveSocket = socket;
+    socket.onopen = () => {
       liveReconnectDelay = 1000;
       $("live-state").textContent = "live updates on";
     };
-    liveSocket.onclose = () => {
+    socket.onclose = () => {
+      if (liveSocket !== socket) return; // replaced by a manual refresh
       $("live-state").textContent = "live updates off";
       setTimeout(connectLive, liveReconnectDelay);
       liveReconnectDelay = Math.min(15000, liveReconnectDelay * 2);
     };
-    liveSocket.onerror = () => {
+    socket.onerror = () => {
       try {
-        liveSocket.close();
+        socket.close();
       } catch {}
     };
-    liveSocket.onmessage = (event) => {
+    socket.onmessage = (event) => {
       let msg;
       try {
         msg = JSON.parse(event.data);

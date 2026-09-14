@@ -526,7 +526,8 @@ async function uploadFile(item) {
         item.retries = 0;
         const took = Date.now() - chunkStarted;
         if (took < FAST_CHUNK_MS && item.chunk < MAX_CHUNK) {
-          item.chunk = Math.min(MAX_CHUNK, item.chunk * 2);
+          // Grow, but never let all active chunks together outrun the memory window.
+          item.chunk = Math.min(MAX_CHUNK, item.chunk * 2, Math.max(MIN_CHUNK, Math.floor(MEM_WINDOW / Math.max(1, active))));
         }
       } catch (err) {
         if (item.canceled) return;
