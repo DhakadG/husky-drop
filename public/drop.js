@@ -92,6 +92,7 @@ async function init() {
   if (link.requiresPin) {
     if (pin && (await verifyPinValue(pin))) return showMain();
     $("pin-label").textContent = link.label;
+    $("pin").inputMode = link.pinDigits === false ? "text" : "numeric";
     $("pin-gate").classList.remove("hidden");
     $("pin-go").addEventListener("click", tryPin);
     $("pin").addEventListener("keydown", (e) => e.key === "Enter" && tryPin());
@@ -215,7 +216,10 @@ function showMain() {
 
   const folderPicker = $("folderpicker");
   const folderBtn = $("folder-btn");
-  if (folderBtn && folderPicker && "webkitdirectory" in folderPicker && !/android|iphone|ipad|ipod/i.test(navigator.userAgent)) {
+  // The admin already chose the folder layout when per-uploader folders are
+  // on, so the uploader gets no folder picker (and dropped trees flatten).
+  const keepTree = !link.settings?.perUploaderFolders;
+  if (keepTree && folderBtn && folderPicker && "webkitdirectory" in folderPicker && !/android|iphone|ipad|ipod/i.test(navigator.userAgent)) {
     folderBtn.classList.remove("hidden");
     folderBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -556,7 +560,7 @@ function sessionBody(item) {
     mimeType: item.file.type || "application/octet-stream",
     uploaderName: $("who").value.trim(),
     sessionId,
-    relativePath: item.relativePath || "",
+    relativePath: link.settings?.perUploaderFolders ? "" : item.relativePath || "",
   });
 }
 

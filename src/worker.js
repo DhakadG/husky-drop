@@ -376,6 +376,7 @@ function publicLink(link, quota, env) {
     label: link.label,
     ownerName: cleanText(env.OWNER_DISPLAY_NAME || "", 60),
     requiresPin: !!link.pinHash,
+    pinDigits: link.pinDigits !== false,
     requiresAuth: !!link.requireAuth && !!env.GOOGLE_CLIENT_ID,
     expiresAt: link.expiresAt || null,
     expired: state === "expired",

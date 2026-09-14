@@ -181,6 +181,7 @@ function showGate(needsAuth, needsPin) {
     $("viewer-email").textContent = viewer.email || "";
   }
   $("gate-pin").classList.toggle("hidden", !needsPin);
+  $("pin").inputMode = meta?.pinDigits === false ? "text" : "numeric";
   $("pin-go").classList.toggle("hidden", !needsPin || needsAuth);
   const startGoogleSignIn = () => {
     location.href = `/api/auth/login?slug=${encodeURIComponent(slug)}`;
