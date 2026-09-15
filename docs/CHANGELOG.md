@@ -4,6 +4,18 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Image archive: size target, sturdier runner (PR #46)
+
+- Optional **size target per photo** (Advanced): the runner re-encodes at
+  a nudged quality (up to 4 passes) until the file lands within ±30% of
+  it - the first test run showed dark/smooth 24 MP frames compressing to
+  0.2 MB at q82 while busy ones hit 1.5 MB.
+- Runner: a failed batch report keeps its batch and retries (results were
+  silently lost before); Drive-hop 502s on PUT retry once with `x-retry`,
+  and the worker trashes any copy the first attempt stored, so no
+  duplicates. ETA per file now reflects the measured ~6 s.
+- Job file list shows in → out sizes.
+
 ## 2026-09-16 — Image archive v2 (PR #45)
 
 - Tab rebuilt: three numbered steps on the left (folders, encoding,
