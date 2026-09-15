@@ -17,10 +17,22 @@ const VIEWER_COOKIE = "hd_viewer";
 const VIEWER_TTL = 30 * 86400; // seconds a signed-in viewer session lives
 const STATE_TTL = 10 * 60; // seconds an OAuth state token is valid
 
-async function authSigningKey(env) {
-  const secret = env.SHARE_SIGNING_KEY || `${env.ADMIN_TOKEN || "dev"}:hd-viewer-v1`;
-  const seed = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+// Every HMAC key derives from a deployment secret. A guessable fallback
+// ("dev", "undefined") would let anyone who has read this file mint viewer
+// and admin cookies, so a missing secret fails loud instead of degrading.
+function requireSecret(env, name) {
+  if (!env[name]) throw new Error(`${name} must be set - refusing to sign with a default key`);
+  return env[name];
+}
+
+async function hmacKey(material) {
+  const seed = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
   return crypto.subtle.importKey("raw", seed, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+
+// Same derivation as before so existing viewer cookies keep verifying.
+function authSigningKey(env) {
+  return hmacKey(env.SHARE_SIGNING_KEY || `${requireSecret(env, "ADMIN_TOKEN")}:hd-viewer-v1`);
 }
 
 async function signPayload(env, obj) {
@@ -62,33 +74,46 @@ async function exchangeGoogleCode(env, code, redirectUri) {
       grant_type: "authorization_code",
     }),
   });
-  if (!tokenRes.ok) return null;
+  if (!tokenRes.ok) {
+    console.error("google token exchange failed", tokenRes.status, (await tokenRes.text()).slice(0, 200));
+    return null;
+  }
   const tokenData = await tokenRes.json();
   if (!tokenData.id_token) return null;
 
+  // ponytail: tokeninfo is rate-limited and meant for low volume; swap for
+  // local JWKS verification if sign-ins ever exceed a handful a day.
   const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tokenData.id_token)}`);
-  if (!infoRes.ok) return null;
+  if (!infoRes.ok) {
+    console.error("google tokeninfo failed", infoRes.status, (await infoRes.text()).slice(0, 200));
+    return null;
+  }
   const info = await infoRes.json();
-  if (info.aud !== env.GOOGLE_CLIENT_ID || !info.email) return null;
+  // tokeninfo returns email_verified as the string "true"; the email is the
+  // whole admin allow-list, so an unverified address is never trusted.
+  if (info.aud !== env.GOOGLE_CLIENT_ID || !info.email || String(info.email_verified) !== "true") return null;
   return info;
 }
 
-export function authLogin(request, env, url) {
+function googleAuthRedirect(env, redirectUri, state) {
+  const p = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+    prompt: "select_account",
+    access_type: "online",
+    state,
+  });
+  return Response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`, 302);
+}
+
+export async function authLogin(request, env, url) {
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Google sign-in is not configured" }, 503);
   const slug = cleanText(url.searchParams.get("slug") || "", 60);
   const kind = url.searchParams.get("kind") === "drop" ? "drop" : "share";
-  return signPayload(env, { slug, kind, exp: Math.floor(Date.now() / 1000) + STATE_TTL }).then((state) => {
-    const p = new URLSearchParams({
-      client_id: env.GOOGLE_CLIENT_ID,
-      redirect_uri: `${url.origin}/api/auth/callback`,
-      response_type: "code",
-      scope: "openid email profile",
-      prompt: "select_account",
-      access_type: "online",
-      state,
-    });
-    return Response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`, 302);
-  });
+  const state = await signPayload(env, { slug, kind, exp: Math.floor(Date.now() / 1000) + STATE_TTL });
+  return googleAuthRedirect(env, `${url.origin}/api/auth/callback`, state);
 }
 
 export async function authCallback(request, env, url) {
@@ -142,9 +167,14 @@ export function authLogout() {
 
 // ---- Admin session + Google OAuth ----
 
-async function adminSessionKey(env) {
-  const seed = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${env.ADMIN_TOKEN}:hd-admin-session-v1`));
-  return crypto.subtle.importKey("raw", seed, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+function adminSessionKey(env) {
+  return hmacKey(`${requireSecret(env, "ADMIN_TOKEN")}:hd-admin-session-v1`);
+}
+
+function adminGoogleConfigured(env) {
+  // ADMIN_TOKEN is the admin session signing secret, so Google-only admin
+  // sign-in still depends on it.
+  return !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.ADMIN_EMAIL && env.ADMIN_TOKEN);
 }
 
 export async function mintAdminSession(env) {
@@ -164,22 +194,10 @@ export async function verifyAdminSession(env, value) {
   return timingSafeEqual(value.slice(dot + 1), b64url(new Uint8Array(mac)));
 }
 
-export function adminAuthLogin(request, env, url) {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.ADMIN_EMAIL) {
-    return json({ error: "Admin Google sign-in is not configured" }, 503);
-  }
-  return signPayload(env, { purpose: "admin", exp: Math.floor(Date.now() / 1000) + STATE_TTL }).then((state) => {
-    const p = new URLSearchParams({
-      client_id: env.GOOGLE_CLIENT_ID,
-      redirect_uri: `${url.origin}/api/admin/auth/callback`,
-      response_type: "code",
-      scope: "openid email profile",
-      prompt: "select_account",
-      access_type: "online",
-      state,
-    });
-    return Response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`, 302);
-  });
+export async function adminAuthLogin(request, env, url) {
+  if (!adminGoogleConfigured(env)) return json({ error: "Admin Google sign-in is not configured" }, 503);
+  const state = await signPayload(env, { purpose: "admin", exp: Math.floor(Date.now() / 1000) + STATE_TTL });
+  return googleAuthRedirect(env, `${url.origin}/api/admin/auth/callback`, state);
 }
 
 export async function adminAuthCallback(request, env, url) {
@@ -190,9 +208,7 @@ export async function adminAuthCallback(request, env, url) {
     return redirectAdminWithError(url, "sign-in expired, please try again");
   }
   if (!code) return redirectAdminWithError(url, "sign-in was cancelled");
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.ADMIN_EMAIL) {
-    return redirectAdminWithError(url, "admin sign-in is not configured");
-  }
+  if (!adminGoogleConfigured(env)) return redirectAdminWithError(url, "admin sign-in is not configured");
 
   try {
     const info = await exchangeGoogleCode(env, code, `${url.origin}/api/admin/auth/callback`);

@@ -167,6 +167,7 @@ async function withMockedGoogleDrive(fn) {
           JSON.stringify({
             aud: "google-client",
             email: "viewer@example.com",
+            email_verified: "true",
             name: "Viewer Example",
             picture: "https://lh3.googleusercontent.com/a/pic",
           }),
