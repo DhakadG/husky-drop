@@ -10,7 +10,7 @@ try {
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const [shareJs, shareHtml, shareCss, shareFx, publicJs, viewerEngine, shareBackend, worker, drive, pkg] = await Promise.all([
-  Promise.all(["share", "share-state", "share-utils", "share-beacon", "share-download", "share-preview", "share-viewer", "share-select"].map((n) => read(`public/${n}.js`))).then((parts) => parts.join("\n")),
+  Promise.all(["share", "share-state", "share-utils", "share-beacon", "share-download", "share-preview", "share-viewer", "share-viewer-state", "share-viewer-assets", "share-viewer-video", "share-viewer-panels", "share-viewer-info", "share-viewer-strip", "share-select"].map((n) => read(`public/${n}.js`))).then((parts) => parts.join("\n").replace(/\bvs\./g, "")),
   read("public/share.html"),
   read("public/style.css"),
   read("public/share-fx.js"),
@@ -121,7 +121,7 @@ assert.match(shareJs, /video\.controls = false/);
 assert.match(shareJs, /window\.addEventListener\("pagehide", suspendPage\)/);
 assert.match(shareJs, /errorKind === "network"[\s\S]+session\.retry\(\{ play: resume, preserveTime: true \}\)/, "expired or interrupted video capabilities refresh once without losing playback state");
 const videoStart = shareJs.indexOf("function registerVideoContent(instance)");
-const videoEnd = shareJs.indexOf("\nfunction cleanupTilePreview", videoStart);
+const videoEnd = shareJs.indexOf("function cleanupTilePreview", videoStart);
 const videoContent = shareJs.slice(videoStart, videoEnd);
 assert.doesNotMatch(videoContent, /getPreviewVideo\(/, "viewer video must not reuse gallery preview nodes");
 assert.doesNotMatch(videoContent, /className = "g-video-preview"/);
@@ -151,7 +151,7 @@ assert.match(shareJs, /closeViewerPanels\("mobile-actions"\)/, "rotation preserv
 assert.match(shareJs, /function syncMobileViewerActions\(\)/, "More action labels and availability are synchronized from viewer state");
 const mobileActionSync = shareJs.slice(
   shareJs.indexOf("function syncMobileViewerActions()"),
-  shareJs.indexOf("\nfunction mountMobileViewerControls", shareJs.indexOf("function syncMobileViewerActions()")),
+  shareJs.indexOf("function mountMobileViewerControls", shareJs.indexOf("function syncMobileViewerActions()")),
 );
 const mobileActionBuilder = shareJs.slice(
   shareJs.indexOf("const sheetActions ="),
