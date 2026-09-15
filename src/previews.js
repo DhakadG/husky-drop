@@ -160,6 +160,16 @@ export async function previewsOverview(request, env) {
 export async function listPendingPreviews(request, env) {
   const limit = Math.max(1, Math.min(300, Number(new URL(request.url).searchParams.get("limit")) || 20));
   const index = await previewIndex(env);
+  // Trust the folder over the index: a preview that exists in Drive but was
+  // never reported (run killed before its batch) must not be made twice.
+  const inDrive = await previewsInFolder(env);
+  let repaired = 0;
+  for (const [of, entry] of Object.entries(inDrive)) {
+    if (index.files[of]) continue;
+    index.files[of] = entry;
+    repaired += 1;
+  }
+  if (repaired) await saveIndex(env, index);
   const tree = await scanShares(env, true);
   const byId = new Map(tree.flatMap((node) => node.videos.map((v) => [v.id, v])));
   const eligible = (id) => !index.files[id] && (index.failed[id]?.tries || 0) < MAX_TRIES;
@@ -303,12 +313,11 @@ export async function forgetPreview(env, fileId) {
   await saveIndex(env, index);
 }
 
-// Rebuild the file map from the _previews folder (recovery after a KV wipe).
-export async function reindexPreviews(request, env) {
+// previewOf -> {id, size, at} for everything in the _previews folder.
+async function previewsInFolder(env) {
   const folderId = await previewFolderId(env);
   const tok = await accessToken(env);
-  const index = await previewIndex(env);
-  index.files = {};
+  const files = {};
   let pageToken = "";
   do {
     const params = new URLSearchParams({
@@ -320,14 +329,25 @@ export async function reindexPreviews(request, env) {
     });
     if (pageToken) params.set("pageToken", pageToken);
     const r = await fetch("https://www.googleapis.com/drive/v3/files?" + params, { headers: { authorization: `Bearer ${tok}` } });
-    if (!r.ok) return json({ error: "Drive list failed" }, 502);
+    if (!r.ok) throw new Error("Drive list failed");
     const page = await r.json();
     for (const f of page.files || []) {
       const of = f.appProperties?.previewOf;
-      if (of) index.files[of] = { id: f.id, size: Number(f.size) || 0, at: Date.parse(f.createdTime) || Date.now() };
+      if (of) files[of] = { id: f.id, size: Number(f.size) || 0, at: Date.parse(f.createdTime) || Date.now() };
     }
     pageToken = page.nextPageToken || "";
   } while (pageToken);
+  return files;
+}
+
+// Rebuild the file map from the _previews folder (recovery after a KV wipe).
+export async function reindexPreviews(request, env) {
+  const index = await previewIndex(env);
+  try {
+    index.files = await previewsInFolder(env);
+  } catch {
+    return json({ error: "Drive list failed" }, 502);
+  }
   await saveIndex(env, index);
   return json({ ok: true, indexed: Object.keys(index.files).length });
 }

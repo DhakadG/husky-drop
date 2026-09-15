@@ -63,6 +63,7 @@ import {
 import { previewFile, refreshDetail, renderDetailLive } from "./admin-detail.js";
 import { shareCreatedDrop } from "./admin-folders.js";
 import { refreshPreviews, stopPreviewsPolling } from "./admin-previews.js";
+import { refreshImages, stopImagesPolling } from "./admin-images.js";
 
 // Admin dashboard: boot, auth gate, tabs/routing, live socket, overview
 // stats, event delegation and QR. Feature areas live in admin-*.js.
@@ -277,6 +278,8 @@ export function showTab(name, { push = true } = {}) {
   $(`tab-${name}`).classList.remove("hidden");
   if (name === "previews") refreshPreviews();
   else stopPreviewsPolling();
+  if (name === "images") refreshImages();
+  else stopImagesPolling();
   adminMoreToggle?.classList.toggle("active", adminSecondaryTabs.has(name));
   setAdminMobileMoreOpen(false, false);
   const path = name === "detail" && currentDetailSlug ? `/admin/links/${encodeURIComponent(currentDetailSlug)}` : name === "overview" ? "/admin" : `/admin/${name}`;

@@ -25,7 +25,7 @@ export const openActivitySessions = new Set();
 export let currentQrUrl = "";
 export let adminMobileMore = null;
 export let adminMoreToggle = null;
-export const adminSecondaryTabs = new Set(["activity", "previews", "create", "create-share"]);
+export const adminSecondaryTabs = new Set(["activity", "previews", "images", "create", "create-share"]);
 
 export function setOverview(v) { overview = v; }
 export function setLiveActive(v) { liveActive = v; }

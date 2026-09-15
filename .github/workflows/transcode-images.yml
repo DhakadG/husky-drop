@@ -1,0 +1,33 @@
+name: transcode-images
+
+# Runs one image archive job planned in the admin (Video previews / Image
+# archive tab). Same single secret as the video transcoder: HUSKY_ADMIN_TOKEN.
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Job id (img-…) from the admin"
+        required: true
+
+concurrency:
+  group: transcode-images
+  cancel-in-progress: false
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libraw-bin libheif-examples libimage-exiftool-perl
+      - run: npm install --no-save --no-audit --no-fund sharp
+      - run: node scripts/transcode-images.mjs
+        env:
+          HUSKY_ORIGIN: https://dropbox.losthusky.qzz.io
+          HUSKY_ADMIN_TOKEN: ${{ secrets.HUSKY_ADMIN_TOKEN }}
+          JOB_ID: ${{ inputs.job }}
+          TIME_BUDGET_MIN: "270"
