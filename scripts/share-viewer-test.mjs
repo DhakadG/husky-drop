@@ -372,7 +372,7 @@ assert.match(shareJs, /strip\?\.allowClick === false[\s\S]+instance\.goTo\(idx\)
 assert.match(shareJs, /if \(suppressNextViewerTransition\) suppressNextViewerTransition = false;[\s\S]+else applyViewerTransition\(\);/, "rotation refresh suppresses only its synthetic incoming transition");
 assert.doesNotMatch(videoContent, /applyViewerTransition\(/, "content creation does not duplicate the central slide transition");
 for (const icon of ["file-text", "circle-help", "gallery-horizontal-end", "rotate-ccw", "rotate-cw", "rotate-ccw-square", "ellipsis", "maximize", "pin", "pin-off", "timer", "aperture", "gauge", "wand-sparkles", "chevrons-left", "chevrons-right", "volume-2", "volume-x"]) {
-  assert.match(publicJs, new RegExp(`(?:"${icon}"|${icon}):`), `${icon} must exist in the shared icon catalog`);
+  assert.match(publicJs, new RegExp(`"${icon}"`), `${icon} must exist in the shared icon catalog`);
 }
 assert.match(publicJs, /Lucide Icons/);
 assert.match(viewerEngine, /INTENT_STEPS\s*=\s*6/);

@@ -7,9 +7,11 @@
     "test:fixtures": "node scripts/dev-fixture-server-test.mjs",
     "dev": "wrangler dev",
     "dev:fixtures": "node scripts/dev-fixture-server.mjs",
+    "icons": "node scripts/build-icons.mjs",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
+    "lucide-static": "^1.46.0",
     "wrangler": "^4.100.0"
   },
   "dependencies": {
