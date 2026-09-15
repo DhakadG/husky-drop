@@ -31,7 +31,7 @@ for (const name of files) {
     if (!/\b(?:chip|uiIcon|icon)\(/.test(line)) continue;
     for (const m of line.matchAll(/"([a-z0-9-]+)"/g)) if (RETIRED.has(m[1])) offenders.push(`${name}: retired icon name "${m[1]}" in: ${line.trim().slice(0, 80)}`);
   }
-  for (const m of source.matchAll(/return "([a-z0-9-]+)";/g)) if (name === "admin.js" && catalog.has(m[1])) used.set(m[1], name);
+  for (const m of source.matchAll(/return "([a-z0-9-]+)";/g)) if (name.startsWith("admin") && catalog.has(m[1])) used.set(m[1], name);
   // Hand-drawn glyphs are what let the icon set drift; only data
   // visualisations (rings, sparklines, charts) may still carry <path>.
   const svgs = [...source.matchAll(/<svg\b[^>]*>[\s\S]*?<\/svg>/g)].map((m) => m[0]);
@@ -45,7 +45,7 @@ assert.equal(offenders.length, 0, `inline glyphs bypass the icon catalog:\n${off
 const unknown = [...used].filter(([n]) => !catalog.has(n));
 assert.equal(unknown.length, 0, `icons referenced but not in UI_ICON_NAMES: ${unknown.map(([n, f]) => `${n} (${f})`).join(", ")}`);
 
-const adminSource = await read("admin.js");
+const adminSource = (await Promise.all(["admin.js", "admin-live.js"].map(read))).join("\n");
 const css = await read("style.css");
 assert.match(adminSource, /class="stat-label"/, "Overview stat cards use an explicit label hook");
 assert.doesNotMatch(adminSource, /querySelector\(["']div > span["']\)/, "stat labels never target the icon span structurally");

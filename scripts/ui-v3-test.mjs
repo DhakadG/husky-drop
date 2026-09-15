@@ -38,7 +38,7 @@ assert.match(home, /class="[^"]*\bstrip-v3\b[^"]*"/, "plan 01 installs the featu
 assert.match(home, /class="bg-fx"/, "plan 01 mounts the ambient background layer");
 
 const adminHtml = await read("public/admin.html");
-const adminJs = await read("public/admin.js");
+const adminJs = (await Promise.all(["admin", "admin-state", "admin-chart", "admin-live", "admin-activity", "admin-links", "admin-shares", "admin-detail", "admin-folders"].map((n) => read(`public/${n}.js`)))).join("\n");
 assert.match(adminHtml, /id="auth" class="auth-wrap"/, "plan 02 installs the v3 authentication wrapper");
 assert.match(adminHtml, /class="grad-border auth-card"/, "plan 02 wraps admin unlock in the gradient card");
 assert.match(adminHtml, /id="tok-eye"/, "plan 02 provides the password visibility control");

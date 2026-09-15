@@ -4,6 +4,15 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — admin.js client split (PR #29)
+
+- `public/admin.js` (1.7k, classic script) → ES modules: `admin.js` (boot,
+  auth, tabs, live socket, stats, event delegation, QR; 570) +
+  `admin-state.js` + `admin-chart.js` + `admin-live.js` + `admin-activity.js`
+  + `admin-links.js` + `admin-shares.js` + `admin-detail.js` +
+  `admin-folders.js`. Same lint contract as the share modules. Dead:
+  `staticCard`, an unused `settingsOpen`.
+
 ## 2026-09-15 — share.js client split (PR #28)
 
 - `public/share.js` (3.5k lines) → `share.js` (gate, navigation, rendering,
