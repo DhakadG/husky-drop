@@ -30,7 +30,7 @@ import {
 import { toast, fmtDur } from "./share-utils.js";
 import { trackEvent, installTracking } from "./share-beacon.js";
 import { downloadFile } from "./share-download.js";
-import { installHoverPreview, probeVideoMetadata, warmVideoTile } from "./share-preview.js";
+import { heatVideoTile, installHoverPreview, probeVideoMetadata, warmVideoTile } from "./share-preview.js";
 import { openViewer } from "./share-viewer.js";
 import {
   cancelTouchSelection,
@@ -69,6 +69,13 @@ const cardObserver =
         },
         { rootMargin: "700px" },
       )
+    : null;
+// Second, margin-less observer: only tiles really in view buffer ahead.
+const hotObserver =
+  "IntersectionObserver" in window
+    ? new IntersectionObserver((entries) => {
+        for (const entry of entries) if (entry.target._file) heatVideoTile(entry.target._file, entry.isIntersecting);
+      })
     : null;
 const moreObserver =
   "IntersectionObserver" in window
@@ -863,6 +870,7 @@ export function card(file) {
   installHoverPreview(fig, file);
   fx.tileDepth(fig);
   if (cardObserver) cardObserver.observe(fig);
+  if (hotObserver && /^video\//.test(file.mime)) hotObserver.observe(fig);
   fig.classList.toggle("selected", selected.has(file.id));
   return fig;
 }

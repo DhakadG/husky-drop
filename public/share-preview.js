@@ -390,3 +390,29 @@ export function warmVideoTile(file, visible) {
   lease.claim("visible");
   getPreviewVideo(file).catch(() => {});
 }
+
+// Tiles actually on screen go one step further and buffer their opening
+// seconds (preload=auto), so hover playback of a big original starts from
+// local data instead of waiting on a Drive round trip. Tight cap: a 4K clip
+// buffers tens of MB. Off under Save-Data.
+const hotTiles = new Set();
+const HOT_LIMIT = 4;
+export function heatVideoTile(file, hot) {
+  if (!canHoverPreview || navigator.connection?.saveData || !/^video\//.test(file.mime)) return;
+  const lease = videoWarmLease(file);
+  if (!hot) {
+    hotTiles.delete(file.id);
+    lease.release("hot");
+    const video = previewVideos.get(file.id);
+    if (video && !video.closest("figure.previewing")) video.preload = "metadata";
+    return;
+  }
+  if (hotTiles.has(file.id) || hotTiles.size >= HOT_LIMIT) return;
+  hotTiles.add(file.id);
+  lease.claim("hot");
+  getPreviewVideo(file)
+    .then((video) => {
+      if (hotTiles.has(file.id)) video.preload = "auto";
+    })
+    .catch(() => {});
+}
