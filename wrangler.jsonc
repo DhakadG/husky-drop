@@ -33,7 +33,6 @@
     //   wrangler secret put DRIVE_PARENT_ID
     // Optional: Drive folder ID that new per-link folders are created inside.
     // Unset means folders are created in My Drive root.
-    "LINK_SLUGS": "kareri-lake-trek",
     // Cloudflare Web Analytics beacon token; the Worker injects the snippet
     // into every HTML page when set. Public by design, not a secret.
     "CF_BEACON_TOKEN": "5e7e086782714160804ea9afc63dedc8",
