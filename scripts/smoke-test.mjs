@@ -511,6 +511,22 @@ async function main() {
   );
   assert.equal(res.status, 200, "duplicate completion is accepted");
 
+  // Admin can trash a delivered file: it leaves the history and the counters.
+  // (Completions flush to KV on the Durable Object alarm; the test double
+  // has no alarm, so seed the recent list directly.)
+  await env.KV.put("recent:inbox", JSON.stringify([{ n: "IMG.HEIC", s: 200, m: "image/heic", u: "Riya", f: "drive-file-1", si: "session-1", at: Date.now() }]));
+  await env.KV.put("stats:inbox", JSON.stringify({ opens: 1, sessions: 1, files: 1, bytes: 200 }));
+  res = await worker.fetch(request("/api/admin/uploads/inbox/drive-file-1", { method: "DELETE", headers: { authorization: "Bearer test-admin" } }), env);
+  assert.equal(res.status, 200, "admin can trash a delivered upload");
+  assert.equal((await res.json()).removed, true);
+  assert.equal(((await env.KV.get("recent:inbox", "json")) || []).length, 0, "trashed upload leaves the recent list");
+  assert.equal((await env.KV.get("stats:inbox", "json")).files, 0, "trashed upload leaves the file counter");
+  res = await worker.fetch(request("/api/admin/uploads/inbox/drive-file-1", { method: "DELETE" }), env);
+  assert.equal(res.status, 401, "trashing requires admin");
+  // Put the delivered file back so the rest of the run sees the same totals.
+  await env.KV.put("recent:inbox", JSON.stringify([{ n: "IMG.HEIC", s: 200, m: "image/heic", u: "Riya", f: "drive-file-1", si: "session-1", at: Date.now() }]));
+  await env.KV.put("stats:inbox", JSON.stringify({ opens: 1, sessions: 1, files: 1, bytes: 200 }));
+
   // Client error reporting.
   res = await worker.fetch(
     request("/api/client-error", {

@@ -233,6 +233,12 @@ Deletes the link record. Drive files remain.
 
 Returns `{uploads, count, totalBytes}`.
 
+### `DELETE /api/admin/uploads/:slug/:fileId`
+
+Moves the file to Drive's trash (recoverable for 30 days), drops it from the
+link's recent list and counters, and logs a `filedel` event. The file must
+carry this link's `dropLink` property (403 otherwise). Returns `{ok, removed}`.
+
 ### `GET /api/admin/thumb/:fileId`
 
 Returns Drive file preview metadata for admin-side preview/open actions.

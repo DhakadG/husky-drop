@@ -19,7 +19,7 @@ import {
   sanitizeFolderName,
   slugify,
 } from "./util.js";
-import { driveBrowseFolders, driveCreateFolder, driveFileMeta, driveQuota, quotaFree } from "./drive.js";
+import { driveBrowseFolders, driveCreateFolder, driveFileMeta, driveQuota, driveTrashFile, quotaFree } from "./drive.js";
 import {
   getUploads,
   liveShareStats,
@@ -391,4 +391,31 @@ export async function linkFolder(env, slug) {
     }
   }
   return json({ folderId: link.folderId, folderName: link.folderName || link.label });
+}
+
+// Trash one delivered file: Drive trash (recoverable), drop it from the
+// recent list, and take it out of the link's counters. The file must carry
+// this link's dropLink property so an admin cannot trash arbitrary Drive ids.
+export async function trashUpload(request, env, slug, fileId) {
+  slug = cleanText(slug, 60);
+  const id = cleanText(fileId, 120);
+  const link = await env.KV.get(`link:${slug}`, "json");
+  if (!link) return json({ error: "link not found" }, 404);
+  const rows = (await env.KV.get(`recent:${slug}`, "json")) || [];
+  const row = rows.find((u) => u.f === id);
+  if (env.GOOGLE_CLIENT_ID) {
+    const meta = await driveFileMeta(env, id);
+    if (!meta?.id) return json({ error: "Drive file not found" }, 404);
+    if (meta.appProperties?.dropLink !== slug) return json({ error: "file does not belong to this link" }, 403);
+    if (!(await driveTrashFile(env, id))) return json({ error: "Drive refused to trash the file" }, 502);
+  }
+  if (row) {
+    await env.KV.put(`recent:${slug}`, JSON.stringify(rows.filter((u) => u.f !== id)));
+    const stats = normalizeStats(await env.KV.get(`stats:${slug}`, "json"));
+    stats.files = Math.max(0, stats.files - 1);
+    stats.bytes = Math.max(0, stats.bytes - (Number(row.s) || 0));
+    await env.KV.put(`stats:${slug}`, JSON.stringify(stats));
+  }
+  await logEvent(env, { type: "filedel", slug, label: link.label, file: row?.n || id, message: "trashed by admin" }, request);
+  return json({ ok: true, removed: !!row });
 }

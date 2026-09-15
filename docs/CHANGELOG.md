@@ -4,6 +4,13 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Trash a delivered upload (PR #35)
+
+- Link detail → upload history → **remove**: moves the file to Drive trash,
+  removes it from the history and counters (`DELETE
+  /api/admin/uploads/:slug/:fileId`, confirm dialog). Used first to clean the
+  verification files the September session uploaded into `temp`.
+
 ## 2026-09-15 — share-viewer.js split (PR #34)
 
 - `share-viewer.js` (1.9k) → `share-viewer.js` (open, slide items,
