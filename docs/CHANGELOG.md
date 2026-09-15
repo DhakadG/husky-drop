@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — share-viewer.js split (PR #34)
+
+- `share-viewer.js` (1.9k) → `share-viewer.js` (open, slide items,
+  progressive image, rotation; 343) + `share-viewer-state.js` (`vs` for the
+  viewer's reassigned scalars, `viewerChrome`) + `share-viewer-assets.js` +
+  `share-viewer-video.js` + `share-viewer-panels.js` + `share-viewer-info.js`
+  + `share-viewer-strip.js`. Every `public/` file is now under 500 lines.
+  Verified on the fixture gallery: open/nav, video slide, motion + guide
+  panels, rotate, asset ladder, strip, mobile dock + More sheet.
+
 ## 2026-09-15 — drop.js client split (PR #33)
 
 - `public/drop.js` (1.36k, classic script) → ES modules: `drop.js` (boot,
