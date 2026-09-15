@@ -2273,6 +2273,7 @@ body.has-fx-cursor .mobile-select-bar * {
 
 .g-card {
   position: relative;
+  container-type: inline-size;
   margin: 0;
   flex: 0 0 auto;
   overflow: hidden;
@@ -2616,8 +2617,9 @@ body.selecting .g-check {
   pointer-events: none;
 }
 .g-play svg {
-  width: 40px;
-  height: 40px;
+  /* scales with the tile: dense grids get a small glyph, big tiles a big one */
+  width: clamp(18px, 20cqw, 44px);
+  height: clamp(18px, 20cqw, 44px);
   fill: rgba(255, 255, 255, 0.92);
   stroke: rgba(255, 255, 255, 0.92);
   filter: drop-shadow(0 4px 12px rgba(8, 16, 28, 0.55));
@@ -6366,6 +6368,10 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   opacity: 0;
   pointer-events: none;
   transition: opacity 150ms ease;
+}
+.tile-size-control input[type="range"]:focus {
+  border: 0;
+  box-shadow: none;
 }
 .tile-size-control:hover .size-control-value,
 .tile-size-control:focus-within .size-control-value {

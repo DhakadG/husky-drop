@@ -285,8 +285,23 @@ function attachBufferBar(host, video, fig) {
     played.style.width = d ? `${Math.min(100, (video.currentTime / d) * 100)}%` : "0%";
     updateScrubBadge(fig, video);
   };
-  for (const ev of ["progress", "timeupdate", "loadedmetadata", "seeking"]) video.addEventListener(ev, paint);
-  fig?.addEventListener("pointerleave", () => bar.remove(), { once: true });
+  for (const ev of ["progress", "loadedmetadata", "seeking", "seeked", "pause"]) video.addEventListener(ev, paint);
+  // timeupdate only fires ~4x/s; drive the played bar from rAF while playing.
+  let raf = 0;
+  const tick = () => {
+    paint();
+    raf = video.paused || !bar.isConnected ? 0 : requestAnimationFrame(tick);
+  };
+  const start = () => { if (!raf) raf = requestAnimationFrame(tick); };
+  video.addEventListener("play", start);
+  if (!video.paused) start();
+  fig?.addEventListener("pointerleave", () => {
+    bar.remove();
+    cancelAnimationFrame(raf);
+    raf = 0;
+    video.removeEventListener("play", start);
+    for (const ev of ["progress", "loadedmetadata", "seeking", "seeked", "pause"]) video.removeEventListener(ev, paint);
+  }, { once: true });
 }
 
 function updateScrubBadge(fig, video, time = video.currentTime) {

@@ -11,7 +11,6 @@ import {
   listingCache,
   meta,
   pin,
-  readScale,
   selected,
   setAllowZip,
   setCurrent,
@@ -49,7 +48,12 @@ import {
 // batched browsing-analytics beacon.
 
 
-let tileScale = readScale("lhdb_gallery_scale", localStorage.getItem("lhdb_tile_size") === "compact" ? 3 : localStorage.getItem("lhdb_tile_size") === "large" ? 7 : 5);
+// Gallery density runs 1-9 in quarter steps; the strip slider stays integer.
+const clampTileScale = (value) => {
+  const n = Number(value);
+  return Math.max(1, Math.min(9, Number.isFinite(n) ? Math.round(n * 4) / 4 : 5));
+};
+let tileScale = clampTileScale(localStorage.getItem("lhdb_gallery_scale") ?? (localStorage.getItem("lhdb_tile_size") === "compact" ? 3 : localStorage.getItem("lhdb_tile_size") === "large" ? 7 : 5));
 let summarySeq = 0;
 
 const cardObserver =
@@ -651,7 +655,7 @@ function installTileSizeControl() {
   const range = $("tile-size-range");
   if (!control || !range) return;
   const apply = (next, report = false) => {
-    tileScale = readScale("", next);
+    tileScale = clampTileScale(next);
     range.value = String(tileScale);
     const label = sizeDescription(tileScale);
     range.setAttribute("aria-valuetext", label);
@@ -660,9 +664,15 @@ function installTileSizeControl() {
     control.style.setProperty("--size-frac", String((tileScale - 1) / 8));
     localStorage.setItem("lhdb_gallery_scale", String(tileScale));
     scheduleLayout();
-    if (report) trackEvent("layout", sizeDescription(tileScale), { control: "tile-size", step: tileScale });
+    if (report) trackEvent("layout", label, { control: "tile-size", step: tileScale });
   };
   range.addEventListener("input", () => apply(range.value, true));
+  // Wheel over the slider nudges a quarter step; double-click resets.
+  control.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    apply(tileScale + (e.deltaY < 0 ? 0.25 : -0.25), true);
+  }, { passive: false });
+  control.addEventListener("dblclick", () => apply(5, true));
   apply(tileScale);
 }
 
@@ -765,7 +775,7 @@ function installGalleryTools() {
 
 
 function sizeDescription(step) {
-  return ["Maximum density", "High density", "Dense", "Compact", "Balanced", "Spacious", "Large tiles", "Detail view", "Maximum detail"][step - 1];
+  return ["Maximum density", "High density", "Dense", "Compact", "Balanced", "Spacious", "Large tiles", "Detail view", "Maximum detail"][Math.round(step) - 1];
 }
 
 export function stripSizeDescription(step) {
@@ -921,7 +931,9 @@ function layoutGallery(grid) {
   const files = grid._files || [];
   const W = Math.floor(grid.getBoundingClientRect().width);
   if (!W || !files.length) return;
-  const base = [0.52, 0.62, 0.72, 0.84, 1, 1.18, 1.36, 1.58, 1.82][tileScale - 1];
+  const stops = [0.52, 0.62, 0.72, 0.84, 1, 1.18, 1.36, 1.58, 1.82];
+  const lo = Math.min(8, Math.floor(tileScale) - 1);
+  const base = stops[lo] + (stops[Math.min(8, lo + 1)] - stops[lo]) * (tileScale - 1 - lo);
   const target = Math.round((W < 640 ? 148 : W < 1280 ? 210 : 250) * base);
   const planned = computeJustifiedRows(
     files.map((file) => ({ id: file.id, aspect: aspectOf(file) })),

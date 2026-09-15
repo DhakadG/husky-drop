@@ -193,6 +193,13 @@ export function registerVideoContent(instance) {
     media.addEventListener("pointercancel", cancelMediaPointer);
     media.addEventListener("click", togglePlaybackFromMedia);
     for (const type of ["loadedmetadata", "durationchange", "timeupdate", "ended"]) video.addEventListener(type, syncTime);
+    let timeRaf = 0;
+    const tickTime = () => {
+      syncTime();
+      timeRaf = video.paused ? 0 : requestAnimationFrame(tickTime);
+    };
+    const startTimeRaf = () => { if (!timeRaf) timeRaf = requestAnimationFrame(tickTime); };
+    video.addEventListener("play", startTimeRaf);
     const stopPlayerGesture = (inputEvent) => inputEvent.stopPropagation();
     const playerEvents = ["pointerdown", "pointermove", "pointerup", "pointercancel", "touchstart", "touchmove", "touchend", "click"];
     for (const type of playerEvents) {
@@ -214,6 +221,9 @@ export function registerVideoContent(instance) {
       media.removeEventListener("pointercancel", cancelMediaPointer);
       media.removeEventListener("click", togglePlaybackFromMedia);
       for (const type of ["loadedmetadata", "durationchange", "timeupdate", "ended"]) video.removeEventListener(type, syncTime);
+      video.removeEventListener("play", startTimeRaf);
+      cancelAnimationFrame(timeRaf);
+      timeRaf = 0;
       for (const type of playerEvents) {
         controls.removeEventListener(type, stopPlayerGesture);
         errorPanel.removeEventListener(type, stopPlayerGesture);
