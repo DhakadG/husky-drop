@@ -114,6 +114,7 @@ async function walk(env, folderId, options, out, path, depth, seen) {
       else if (file.size < options.minBytes) skip = "already small";
       else if (options.excludeRe && new RegExp(options.excludeRe, "i").test(file.name)) skip = "name excluded";
       else if (file.size > MAX_UPLOAD * 3) skip = "over 270 MB";
+      else if (out.doneBefore.has(file.id)) skip = "done in an earlier job";
       const est = estimate(file, options);
       if (options.targetBytes) est.bytes = Math.min(Math.round(file.size * 0.9), options.targetBytes);
       if (!skip && options.onlyIfSmaller && est.bytes >= file.size * 0.9) skip = "no worthwhile saving";
@@ -131,7 +132,10 @@ async function walk(env, folderId, options, out, path, depth, seen) {
 export async function planImageJob(request, env) {
   const options = normalizeOptions(await request.json().catch(() => ({})));
   if (!options.folderIds.length) return json({ error: "pick at least one folder" }, 400);
-  const out = { files: [], scanned: 0, scannedBytes: 0, byType: {}, skipped: {} };
+  const jobs = await loadJobs(env);
+  // Files a previous job (any mode) already turned into a smaller copy.
+  const doneBefore = new Set(jobs.flatMap((j) => j.items.filter((i) => i.ok).map((i) => i.id)));
+  const out = { files: [], scanned: 0, scannedBytes: 0, byType: {}, skipped: {}, doneBefore };
   const seen = new Set();
   const roots = [];
   for (const id of options.folderIds) {
@@ -155,7 +159,6 @@ export async function planImageJob(request, env) {
     items: [],
     files: out.files,
   };
-  const jobs = await loadJobs(env);
   // A new plan replaces any older un-started plan; running jobs are kept.
   await saveJobs(env, [job, ...jobs.filter((j) => j.status !== "planned")]);
   return json({ job: publicJob(job) }, 201);
