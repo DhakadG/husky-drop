@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Hot video tiles (PR #38)
+
+- Video tiles actually inside the viewport (second, margin-less
+  IntersectionObserver) switch their warm element to `preload="auto"` so the
+  opening seconds are buffered before the pointer arrives; capped at 4, off
+  under Save-Data, back to `metadata` when scrolled away. The remaining
+  hover delay on 4K originals is Drive's ~0.7-1.3 s Range TTFB.
+
 ## 2026-09-16 — Media metadata memo (PR #37)
 
 - `driveFileMetaCached`: share media routes (thumbnails, inline/Range
