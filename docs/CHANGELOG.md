@@ -4,6 +4,12 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Live tab + link detail (PR #31)
+
+- Live metric labels and the upload-history table header use the body face
+  at 12px (no more 10–11px uppercase mono). Detail page: Copy is the filled
+  head action; QR / Drive / Pause stay quiet.
+
 ## 2026-09-15 — Home polish (PR #30)
 
 - Headline no longer hyphen-breaks ("original‑quality" is one word; `text-wrap:

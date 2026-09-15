@@ -1309,15 +1309,12 @@ input.invalid {
 .live-metric span {
   display: block;
   color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 7px;
+  font: 500 12px var(--font-body);
+  margin-bottom: 6px;
 }
 .live-metric b {
-  font: 700 19px var(--font-display);
-  letter-spacing: -0.01em;
+  font: 700 20px var(--font-display);
+  letter-spacing: -0.02em;
 }
 .live-metric.hot {
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
@@ -3948,11 +3945,7 @@ table.uploads th {
   z-index: 2;
   text-align: left;
   color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-weight: 500;
+  font: 600 12px var(--font-body);
   padding: 11px 12px;
   background: rgba(245, 248, 253, 0.96);
   backdrop-filter: blur(8px);
@@ -6631,7 +6624,15 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .detail-actions {
   justify-content: flex-end;
   margin: 0;
+  padding: 0;
+  border: 0;
 }
+.detail-actions .link-action[data-copy-link] {
+  color: #fff;
+  border-color: transparent;
+  background: var(--grad);
+}
+.detail-actions .link-action[data-copy-link]:hover { color: #fff; filter: brightness(1.05); }
 .detail-stats {
   margin: 0 0 14px;
 }
