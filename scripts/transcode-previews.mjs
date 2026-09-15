@@ -2,7 +2,8 @@
 // Transcode share videos to 720p previews through the worker's admin API.
 //   GET  /api/admin/previews/pending?limit=N   -> videos without a preview
 //   GET  /api/admin/previews/source/:id        -> original bytes
-//   PUT  /api/admin/previews/:id               -> store the preview
+//   PUT  /api/admin/previews/:id               -> store the preview (Drive only)
+//   POST /api/admin/previews/report            -> record results (one KV write per batch)
 // Runs in GitHub Actions (see .github/workflows/transcode-previews.yml) or
 // anywhere with ffmpeg: HUSKY_ORIGIN=... HUSKY_ADMIN_TOKEN=... node scripts/transcode-previews.mjs
 
@@ -57,7 +58,21 @@ async function transcodeOne(file, dir) {
     body: await readFile(output),
   });
   if (!put.ok) throw new Error(`put ${put.status}: ${(await put.text()).slice(0, 200)}`);
-  return size;
+  const { previewId } = await put.json();
+  return { previewId, size };
+}
+
+// Results go back in batches so a crash mid-run loses at most REPORT_EVERY files.
+const REPORT_EVERY = 8;
+const runId = process.env.GITHUB_RUN_ID || `local-${Date.now()}`;
+const trigger = process.env.GITHUB_EVENT_NAME === "workflow_dispatch" ? "manual" : process.env.GITHUB_EVENT_NAME ? "schedule" : "local";
+let batch = { done: [], skipped: [] };
+async function report(extra = {}) {
+  if (!batch.done.length && !batch.skipped.length && !extra.finishedAt) return;
+  const body = JSON.stringify({ runId, trigger, startedAt: started, ...batch, ...extra });
+  batch = { done: [], skipped: [] };
+  const r = await api("/api/admin/previews/report", { method: "POST", headers: { "content-type": "application/json" }, body });
+  if (!r.ok) console.log(`report failed: ${r.status}`);
 }
 
 const started = Date.now();
@@ -75,16 +90,20 @@ try {
     }
     const t0 = Date.now();
     try {
-      const size = await transcodeOne(file, dir);
+      const { previewId, size } = await transcodeOne(file, dir);
       done += 1;
+      batch.done.push({ id: file.id, name: file.name, size: file.size, previewId, previewSize: size, ms: Date.now() - t0 });
       console.log(`ok   ${file.name} ${(file.size / 1e6).toFixed(0)} MB -> ${(size / 1e6).toFixed(1)} MB in ${Math.round((Date.now() - t0) / 1000)}s`);
     } catch (error) {
+      batch.skipped.push({ id: file.id, name: file.name, error: error.message });
       console.log(`skip ${file.name}: ${error.message}`);
     } finally {
+      if (batch.done.length + batch.skipped.length >= REPORT_EVERY) await report();
       await rm(join(dir, `${file.id}.src`), { force: true });
       await rm(join(dir, `${file.id}.mp4`), { force: true });
     }
   }
+  await report({ finishedAt: Date.now(), pendingLeft: Math.max(0, pending.length - done) });
   console.log(`done: ${done}/${pending.length}`);
 } finally {
   await rm(dir, { recursive: true, force: true });

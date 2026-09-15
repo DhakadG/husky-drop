@@ -20,6 +20,7 @@ import {
   slugify,
 } from "./util.js";
 import { driveBrowseFolders, driveCreateFolder, driveFileMeta, driveQuota, driveTrashFile, quotaFree } from "./drive.js";
+import { forgetPreview } from "./previews.js";
 import {
   getUploads,
   liveShareStats,
@@ -408,6 +409,7 @@ export async function trashUpload(request, env, slug, fileId) {
     if (!meta?.id) return json({ error: "Drive file not found" }, 404);
     if (meta.appProperties?.dropLink !== slug) return json({ error: "file does not belong to this link" }, 403);
     if (!(await driveTrashFile(env, id))) return json({ error: "Drive refused to trash the file" }, 502);
+    await forgetPreview(env, id);
   }
   if (row) {
     await env.KV.put(`recent:${slug}`, JSON.stringify(rows.filter((u) => u.f !== id)));

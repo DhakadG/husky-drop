@@ -29,6 +29,9 @@
     }
   ],
   "vars": {
+    // GITHUB_TOKEN (secret, optional): fine-grained PAT with Actions read/write
+    // so the admin can dispatch the preview transcoder. GITHUB_REPO var
+    // overrides the default DhakadG/husky-drop.
     // DRIVE_PARENT_ID is a secret, not a var — set it with:
     //   wrangler secret put DRIVE_PARENT_ID
     // Optional: Drive folder ID that new per-link folders are created inside.
