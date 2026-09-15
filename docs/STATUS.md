@@ -28,7 +28,7 @@ the GitHub → Cloudflare integration.
 | 18 | Google Drive icons | Partial — picker header only | [#8](https://github.com/DhakadG/husky-drop/pull/8) |
 | 19 | "Refresh snapshot" does nothing until reload | Changed — button now re-arms the live socket. Needs confirmation on prod. | [#7](https://github.com/DhakadG/husky-drop/pull/7) |
 | 20 | Real-time transfer view without burning Cloudflare quota | Already the design: one Durable Object WebSocket per admin tab, no KV polling. Nothing to add unless #19 proves the socket drops. | — |
-| 21 | Clerk viewer auth | Parked, untested | branch `wip/clerk-viewer-auth` |
+| 21 | Clerk viewer auth | Dropped (2026-09-15) — viewer sign-in stays Google OAuth | — |
 | 22 | Routes secured | Admin API cookie-gated + same-origin; `/admin/*` pages public shells, data behind auth. No change needed. | — |
 
 ## Root causes worth remembering
@@ -61,7 +61,7 @@ the GitHub → Cloudflare integration.
 - Confirm on prod whether "Refresh snapshot" / live view stays current during a
   long transfer. If not, note what the sidebar pill says (`live updates on`
   or `off`) — that tells us whether the socket died.
-- Decide when to pick up Clerk (`wip/clerk-viewer-auth`).
+- Delete any unused `CLERK_*` secrets/vars from the Worker and `.dev.vars`.
 
 ## Not done, on purpose
 

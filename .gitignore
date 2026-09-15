@@ -15,3 +15,6 @@ entities.json
 
 /docs/plans/
 /docs/superpowers/plans/
+
+# generated knowledge graph (graphify update .)
+graphify-out/
