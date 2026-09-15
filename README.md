@@ -243,13 +243,22 @@ For local API calls, create an ignored `.dev.vars` file containing the same requ
 ```text
 husky-drop/
 ├── src/
-│   ├── worker.js       # router, public/admin APIs, upload sessions
-│   ├── auth.js         # Google sign-in and admin session cookies
-│   ├── drive.js        # Drive OAuth, folders, quota, file metadata
-│   ├── live.js         # Durable Object, WebSockets, batching, rollups
-│   ├── share.js        # galleries, signed downloads, streaming ZIP64
-│   ├── store.js        # KV events, counters, lockouts, notifications
-│   └── util.js         # normalizers, security helpers, constants
+│   ├── worker.js         # router, page serving, admin auth, live sockets
+│   ├── drop-api.js       # public drop endpoints: sessions, progress, completions
+│   ├── admin-api.js      # admin drop-link CRUD, overview, cleanup
+│   ├── auth.js           # Google sign-in and admin session cookies
+│   ├── drive.js          # Drive OAuth, folders, quota, file metadata
+│   ├── live.js           # Durable Object: sessions, hibernatable WebSockets
+│   ├── live-analytics.js # DO SQLite: rollups, telemetry, activity, share stats
+│   ├── live-digest.js    # per-session finished-upload email
+│   ├── live-completions.js # batched KV flush of Drive-verified completions
+│   ├── share.js          # public share endpoints: meta, listing, tracking
+│   ├── share-admin.js    # share CRUD + Drive permission revocation
+│   ├── share-token.js    # signed download tokens, download safety list
+│   ├── share-media.js    # thumbnails, Range downloads, on-demand EXIF
+│   ├── share-zip.js      # streaming ZIP64 "download all"
+│   ├── store.js          # KV events, counters, lockouts, notifications
+│   └── util.js           # normalizers, security helpers, constants
 ├── public/             # home, admin, drop, share, legal pages and assets
 ├── scripts/            # OAuth helper and automated test suites
 ├── test/dev-fixtures/  # synthetic local-only test media

@@ -20,7 +20,7 @@ const STATE_TTL = 10 * 60; // seconds an OAuth state token is valid
 // Every HMAC key derives from a deployment secret. A guessable fallback
 // ("dev", "undefined") would let anyone who has read this file mint viewer
 // and admin cookies, so a missing secret fails loud instead of degrading.
-function requireSecret(env, name) {
+export function requireSecret(env, name) {
   if (!env[name]) throw new Error(`${name} must be set - refusing to sign with a default key`);
   return env[name];
 }

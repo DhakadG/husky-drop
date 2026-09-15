@@ -7,21 +7,18 @@ import {
   COMPLETION_FLUSH_MS,
   EVENT_CAP,
   JSON_HEADERS,
-  RECENT_CAP,
   clamp,
   cleanText,
   dayKey,
-  mergeRecent,
   normalizeEvent,
   normalizeLiveSession,
-  normalizeStats,
-  normalizeUploadMeta,
   sanitizeFolderName,
 } from "./util.js";
 import { ensureLinkFolderDirect, resolvePathFolderDirect, resolveUploaderFolderDirect } from "./drive.js";
 import { bumpStats } from "./store.js";
 import { Analytics } from "./live-analytics.js";
 import { DigestQueue } from "./live-digest.js";
+import { CompletionQueue } from "./live-completions.js";
 
 // Progress ticks from N uploaders inside this window become one admin patch.
 const BROADCAST_COALESCE_MS = 200;
@@ -44,7 +41,6 @@ export class LiveTracker {
     this.folderLocks = new Map(); // key -> in-flight resolve promise
     this.folderIds = new Map(); // key -> { id, at } resolved Drive folder id (KV is eventually consistent; this is not)
     this.started = new Set();
-    this.pending = new Map(); // slug -> pending completions
     this.pendingOpens = new Map(); // slug -> count
     this.rateBuckets = new Map(); // key -> { count, reset }
     this.digests = new DigestQueue(env, () => this.armAlarm().catch(() => {}));
@@ -53,6 +49,7 @@ export class LiveTracker {
       sql = state.storage.sql;
     } catch {}
     this.analytics = new Analytics(sql);
+    this.completions = new CompletionQueue(env, this.analytics);
     state.blockConcurrencyWhile(() => this.wake());
   }
 
@@ -206,7 +203,12 @@ export class LiveTracker {
     if (isPost && path === "/complete") {
       const slug = cleanText(body.slug || "", 60);
       if (!slug || !body.meta) return reply({ ok: false });
-      await this.accumulateCompletion(slug, cleanText(body.label || "", 100), body.meta, { origin: cleanText(body.origin || "", 200), client: body.client || null });
+      const label = cleanText(body.label || "", 100);
+      const { id, meta } = this.completions.add(slug, label, body.meta);
+      if (meta.si) {
+        this.digests.note(meta.si, { slug, label, verifiedUploader: meta.u, origin: cleanText(body.origin || "", 200), client: body.client || null, file: { id, bytes: meta.s, name: meta.n } });
+      }
+      await this.armAlarm();
       return reply({ ok: true, queued: true });
     }
 
@@ -386,43 +388,9 @@ export class LiveTracker {
     this.state.storage.put(RECENT_DONE_KEY, this.recentDone).catch(() => {});
   }
 
-  // Buffer completed-file metadata in memory and schedule a single batched KV
-  // flush, instead of writing stats/recent/event KV keys per file. Completions
-  // are de-duped by file id within the batch so a retried completion never
-  // gets queued twice.
-  async accumulateCompletion(slug, label, rawMeta, ctx = {}) {
-    const meta = normalizeUploadMeta(rawMeta);
-    let pend = this.pending.get(slug);
-    if (!pend) {
-      pend = { recents: [], seen: new Set(), label, lastUploader: "", lastFile: "", lastSessionId: "" };
-      this.pending.set(slug, pend);
-    }
-    const id = meta.f || `${meta.n}:${meta.at}`;
-    if (!pend.seen.has(id)) {
-      pend.seen.add(id);
-      pend.recents.push(meta);
-      if (pend.recents.length > RECENT_CAP + 50) pend.recents = pend.recents.slice(-RECENT_CAP);
-    }
-    pend.label = label || pend.label;
-    pend.lastUploader = meta.u || pend.lastUploader;
-    pend.lastFile = meta.n || pend.lastFile;
-    pend.lastSessionId = meta.si || pend.lastSessionId;
-    if (meta.si) this.digests.note(meta.si, { slug, label, verifiedUploader: meta.u, origin: ctx.origin, client: ctx.client, file: { id, bytes: meta.s, name: meta.n } });
-    await this.armAlarm();
-  }
-
   async alarm() {
     // 1) completions -> recent:/stats: keys + day rollups
-    const pending = this.pending;
-    this.pending = new Map();
-    for (const [slug, pend] of pending) {
-      try {
-        await this.flushCompletions(slug, pend);
-      } catch (err) {
-        console.error("completion flush failed", err.message);
-        this.requeueCompletions(slug, pend);
-      }
-    }
+    await this.completions.flush();
 
     // 2) opens -> stats: keys
     const opens = this.pendingOpens;
@@ -442,83 +410,8 @@ export class LiveTracker {
     // 4) finished-session digest emails
     await this.digests.flush();
 
-    if (this.digests.size || this.pending.size || this.pendingOpens.size || this.analytics.hasPending()) {
+    if (this.digests.size || this.completions.size || this.pendingOpens.size || this.analytics.hasPending()) {
       await this.state.storage.setAlarm(Date.now() + COMPLETION_FLUSH_MS);
-    }
-  }
-
-  // Merge a failed batch back into whatever arrived while it was flushing.
-  requeueCompletions(slug, pend) {
-    const cur = this.pending.get(slug);
-    if (!cur) {
-      this.pending.set(slug, pend);
-      return;
-    }
-    for (const m of pend.recents) {
-      const id = m.f || `${m.n}:${m.at}`;
-      if (cur.seen.has(id)) continue;
-      cur.seen.add(id);
-      cur.recents.push(m);
-    }
-    cur.label = pend.label || cur.label;
-    cur.lastUploader = pend.lastUploader || cur.lastUploader;
-    cur.lastFile = pend.lastFile || cur.lastFile;
-    cur.lastSessionId = pend.lastSessionId || cur.lastSessionId;
-  }
-
-  async flushCompletions(slug, pend) {
-    const existing = (await this.env.KV.get(`recent:${slug}`, "json")) || [];
-    const existingIds = new Set(existing.map((m) => m.f || `${m.n}:${m.at}`));
-
-    // Stats counters only ever move for files we have never recorded, so a
-    // retried/re-synced completion refreshes the history without inflating
-    // the totals. Drive remains the source of truth for the full archive.
-    let newFiles = 0;
-    let newBytes = 0;
-    const newMetas = [];
-    for (const m of pend.recents) {
-      const id = m.f || `${m.n}:${m.at}`;
-      if (existingIds.has(id)) continue;
-      existingIds.add(id);
-      newFiles++;
-      newBytes += m.s;
-      newMetas.push(m);
-    }
-
-    await this.env.KV.put(`recent:${slug}`, JSON.stringify(mergeRecent(existing, pend.recents)));
-    if (newFiles === 0) return;
-
-    const stats = normalizeStats(await this.env.KV.get(`stats:${slug}`, "json"));
-    stats.files += newFiles;
-    stats.bytes += newBytes;
-    await this.env.KV.put(`stats:${slug}`, JSON.stringify(stats));
-
-    this.analytics.bumpDay(slug, { files: newFiles, bytes: newBytes });
-    const newBySession = new Map();
-    for (const meta of newMetas) {
-      const key = meta.si || "";
-      if (!newBySession.has(key)) newBySession.set(key, []);
-      newBySession.get(key).push(meta);
-    }
-    for (const [sessionId, metas] of newBySession) {
-      const bytes = metas.reduce((total, meta) => total + meta.s, 0);
-      const last = metas.at(-1);
-      this.analytics.recordEvent(
-        normalizeEvent(
-          {
-            type: "file",
-            slug,
-            label: pend.label,
-            uploader: last?.u || pend.lastUploader,
-            file: metas.length === 1 ? last?.n : "",
-            bytes,
-            count: metas.length,
-            message: metas.length === 1 ? "" : `${metas.length} files saved`,
-            sessionId,
-          },
-          null,
-        ),
-      );
     }
   }
 

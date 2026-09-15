@@ -16,7 +16,7 @@ const [shareJs, shareHtml, shareCss, shareFx, publicJs, viewerEngine, shareBacke
   read("public/share-fx.js"),
   read("public/public.js"),
   read("public/share-viewer-engine.js"),
-  read("src/share.js"),
+  Promise.all(["share", "share-media", "share-zip", "share-token"].map((n) => read(`src/${n}.js`))).then((parts) => parts.join("\n")),
   read("src/worker.js"),
   read("src/drive.js"),
   read("package.json"),
