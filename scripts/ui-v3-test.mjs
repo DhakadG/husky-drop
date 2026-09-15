@@ -14,9 +14,9 @@ assert.match(css, /\.brand-mark\s*\{[\s\S]*?url\("\/logo-mark\.svg"\)/, "every l
 assert.match(css, /\.brand-mark::after\s*\{[\s\S]*?content:\s*none/, "the retired CSS-drawn droplet cannot overlay the canonical logo");
 assert.match(faviconSvg, /<path[^>]+fill="#fff"/, "favicon contains the banner-derived white droplet");
 
-const workerSource = await read("src/worker.js");
+const workerSource = (await Promise.all(["worker", "drop-api", "admin-api"].map((n) => read(`src/${n}.js`)))).join(" ");
 const liveSource = await read("src/live.js");
-const shareSource = await read("src/share.js");
+const shareSource = await read("src/share-admin.js");
 const storeSource = await read("src/store.js");
 assert.match(workerSource, /\/api\/admin\/events/, "plan 09 registers activity pagination");
 assert.match(workerSource, /\/api\/admin\/drive\/folders/, "plan 09 registers Drive folder browsing");

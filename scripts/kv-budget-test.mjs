@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import worker from "../src/worker.js";
 import { LiveTracker } from "../src/live.js";
 import { accessToken } from "../src/drive.js";
-import { listShares, shareTrack } from "../src/share.js";
+import { shareTrack } from "../src/share.js";
+import { listShares } from "../src/share-admin.js";
 import { gatePin } from "../src/store.js";
 import { makePinFields } from "../src/util.js";
 
