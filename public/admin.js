@@ -1241,9 +1241,10 @@ async function createLink() {
     navigator.clipboard?.writeText(url).catch(() => {});
     refreshAll();
   } catch (error) {
-    // The form (and its error slot) is hidden by now; say it on the button.
-    button.textContent = error.message;
-    setTimeout(() => (button.textContent = "Share this drop's folder"), 4000);
+    // Creation failed, so the form is still on screen: use its error slot.
+    // (This used to reference an undefined `button` and threw instead.)
+    const slot = $("create-err");
+    if (slot) slot.textContent = error.message;
   } finally {
     document.querySelectorAll('#drop-create-form button[type="submit"]').forEach((button) => (button.disabled = false));
   }
