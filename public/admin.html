@@ -108,7 +108,7 @@
     <div class="admin-content">
       <!-- OVERVIEW: the at-a-glance page -->
       <section id="tab-overview" class="tab-pane">
-        <div class="pane-head"><h1 class="pane-title grad-text">Overview</h1><span class="muted">What people sent, what they looked at, and who is uploading right now</span></div>
+        <div class="pane-head"><h1 class="pane-title">Overview</h1><span class="muted">What people sent, what they looked at, and who is uploading right now</span></div>
         <div class="stat-grid" id="stats"></div>
         <section class="panel">
           <div class="section-title">
@@ -147,7 +147,7 @@
 
       <!-- LIVE: still one pane in the shared /admin document -->
       <section id="tab-live" class="tab-pane hidden">
-        <div class="pane-head"><div><p class="eyebrow">right now</p><h1 class="pane-title grad-text">Uploads in progress</h1><span class="muted">Everyone currently sending files, updated as it happens.</span></div><button class="mini" id="live-refresh" type="button">Refresh snapshot</button></div>
+        <div class="pane-head"><div><p class="eyebrow">right now</p><h1 class="pane-title">Uploads in progress</h1><span class="muted">Everyone currently sending files, updated as it happens.</span></div><button class="mini" id="live-refresh" type="button">Refresh snapshot</button></div>
         <div id="live-metrics" class="live-metrics live-summary-strip"></div>
         <div id="live-list" class="live-list tall"></div>
         <section id="live-empty" class="panel live-empty hidden"><span class="live-empty-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#inbox"></use></svg></span><h2>No transfers right now</h2><p class="muted">This view updates automatically when somebody starts an upload.</p><div id="live-last-completed"></div></section>
@@ -159,7 +159,7 @@
         <div class="pane-head">
           <div>
             <p class="eyebrow">inbound collections</p>
-            <h1 class="pane-title grad-text">Drop links</h1>
+            <h1 class="pane-title">Drop links</h1>
             <span class="muted">Private /d/ links that send files directly into Drive.</span>
           </div>
           <div class="pane-actions">
@@ -179,13 +179,13 @@
 
       <!-- SHARE LINKS: one pane in the shared /admin shell -->
       <section id="tab-shares" class="tab-pane hidden">
-        <div class="pane-head"><div><p class="eyebrow">outbound galleries</p><h1 class="pane-title grad-text">Share links</h1><span class="muted">Private /s/ links that give selected people read access to Drive folders.</span></div><button class="btn" data-goto-tab="create-share" type="button">+ New share link</button></div>
+        <div class="pane-head"><div><p class="eyebrow">outbound galleries</p><h1 class="pane-title">Share links</h1><span class="muted">Private /s/ links that give selected people read access to Drive folders.</span></div><button class="btn" data-goto-tab="create-share" type="button">+ New share link</button></div>
         <div id="share-rows" class="share-card-list" aria-live="polite"></div>
       </section>
 
       <!-- CREATE SHARE LINK: a separate tab pane inside the shared /admin document -->
       <section id="tab-create-share" class="tab-pane hidden">
-        <div class="pane-head"><div><p class="eyebrow">new gallery</p><h1 class="pane-title grad-text">New share link</h1><span class="muted">Choose one or more Drive folders, even when they live in different locations.</span></div></div>
+        <div class="pane-head"><div><p class="eyebrow">new gallery</p><h1 class="pane-title">New share link</h1><span class="muted">Choose one or more Drive folders, even when they live in different locations.</span></div></div>
         <section class="panel share-create-panel">
           <div class="section-title"><div><p class="eyebrow">new share</p><h2>Create share link</h2></div></div>
           <div class="grid-2">
@@ -219,7 +219,7 @@
         <div class="pane-head">
           <div>
             <p class="eyebrow">audit trail</p>
-            <h1 class="pane-title grad-text">Activity</h1>
+            <h1 class="pane-title">Activity</h1>
             <span class="muted">Every upload, open, view, download and error—grouped into human-readable sessions.</span>
           </div>
         </div>
@@ -247,7 +247,7 @@
       <!-- CREATE DROP LINK: still a pane, not a separate page -->
       <section id="tab-create" class="tab-pane hidden">
         <div class="pane-head">
-          <div><p class="eyebrow">new collection</p><h1 class="pane-title grad-text">New drop link</h1><span class="muted">Label it, choose a destination, then optionally add protection.</span></div>
+          <div><p class="eyebrow">new collection</p><h1 class="pane-title">New drop link</h1><span class="muted">Label it, choose a destination, then optionally add protection.</span></div>
         </div>
         <div class="create-flow">
           <div class="create-steps" aria-hidden="true"><span class="active" data-create-indicator="1">1 · Basics</span><i></i><span data-create-indicator="2">2 · Optional settings</span></div>

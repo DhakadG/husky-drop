@@ -392,7 +392,7 @@ function renderStats() {
     ([label]) => label,
     ([label]) => {
       const el = document.createElement("div");
-      el.className = `stat-card v3${label === "received" ? " accent" : ""}`;
+      el.className = "stat-card v3";
       const [tint, color, name] = STAT_ICONS[label] || STAT_ICONS.links;
       el.innerHTML = `<span class="stat-ico"${tint ? ` style="background:${tint};color:${color}"` : ""}>${icon(name)}</span><div><b></b><span class="stat-label"></span></div>`;
       el._value = el.querySelector("b");
@@ -848,9 +848,10 @@ function activityTypeLabel(type) {
     "drop-upload_resumed": "Resumed a file", "drop-upload_retry": "Retried an upload", "drop-upload_progress": "Upload progress",
     "drop-upload_bytes_complete": "Sent file bytes", "drop-upload_complete": "Upload verified complete", "drop-upload_error": "Upload error",
     "drop-network_offline": "Uploader went offline", "drop-network_online": "Uploader came online",
+    "drop-session_end": "Left the drop page", "drop-client_error": "Uploader hit an error", "drop-upload_paused": "Paused uploads",
     clienterror: "Client error", autopause: "Link auto-paused", lock: "Link locked", "global-lock": "Uploads locked",
   };
-  return labels[type] || "Activity";
+  return labels[type] || String(type || "Activity").replace(/^(drop|share)-/, "").replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 }
 
 function activityTimeRange(firstAt, lastAt) {
@@ -867,7 +868,7 @@ function makeCompactEventRow() {
 
 function updateCompactEventRow(row, event) {
   const actor = event.u || "anonymous";
-  row.innerHTML = `<span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(actor)}</b><small>${esc(activityTypeLabel(event.t))}${event.l || event.s ? ` · ${esc(event.l || event.s)}` : ""}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>`;
+  row.innerHTML = `<span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(activityTypeLabel(event.t))}</b><small>${esc(actor)}${event.l || event.s ? ` · ${esc(event.l || event.s)}` : ""}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>`;
 }
 
 function eventKey(event) {

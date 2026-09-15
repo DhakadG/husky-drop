@@ -1201,7 +1201,7 @@ input.invalid {
 /* ---------- Stat grid ---------- */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -3870,11 +3870,8 @@ body.selecting .g-check {
   padding: 2px 4px;
 }
 .pane-title {
-  font-size: clamp(24px, 3vw, 34px);
-  background: linear-gradient(115deg, var(--accent) 8%, var(--accent-2) 70%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  font-size: clamp(24px, 3vw, 32px);
+  color: var(--ink);
 }
 
 .live-list.tall {
@@ -4007,7 +4004,7 @@ table.uploads .empty-cell {
     gap: 14px;
     align-items: center;
   }
-  .side-brand {
+  .admin-side .side-brand {
     font-size: 0;
     padding: 0;
     gap: 0;
@@ -5523,12 +5520,6 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   border-color: var(--red);
   color: var(--red);
 }
-.pane-title.grad-text {
-  background: var(--grad-text);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
 .live-dot {
   display: inline-block;
   width: 9px;
@@ -5738,33 +5729,17 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .stat-card.v3 b {
   display: block;
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.03em;
+  line-height: 1.1;
 }
+/* Labels are read, not decoded: sentence case in the body face. */
 .stat-card.v3 .stat-label {
   display: block;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  margin: 2px 0 0;
+  font: 500 12.5px var(--font-body);
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-.stat-card.v3.accent {
-  border-color: rgba(47, 107, 255, 0.28);
-  background: linear-gradient(135deg, rgba(47, 107, 255, 0.12), rgba(21, 192, 201, 0.12));
-  box-shadow: 0 16px 40px -24px rgba(47, 107, 255, 0.55);
-}
-.stat-card.v3.accent .stat-ico {
-  background: var(--grad);
-  box-shadow: 0 8px 18px -8px rgba(47, 107, 255, 0.7);
-}
-.stat-card.v3.accent b {
-  background: linear-gradient(120deg, var(--accent), #0e9aa7);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 
 /* ---------- Chart v3 ---------- */
@@ -6131,9 +6106,9 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   gap: 6px;
   border: 1px solid rgba(12, 26, 43, 0.09);
   border-radius: 10px;
-  padding: 7px 9px;
+  padding: 7px 10px;
   color: var(--ink-soft);
-  font: 10.5px var(--font-mono);
+  font: 600 12px var(--font-body);
   background: rgba(255, 255, 255, 0.55);
   cursor: pointer;
 }
@@ -6141,9 +6116,26 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   color: var(--accent);
   border-color: rgba(47, 107, 255, 0.25);
 }
+/* Hierarchy: the primary action (Details) reads as the button, destructive
+   actions sit at the far end as quiet text until hovered. */
+.link-action[data-open-detail],
+.link-action[data-edit-share] {
+  color: #fff;
+  border-color: transparent;
+  background: var(--grad);
+}
+.link-action[data-open-detail]:hover,
+.link-action[data-edit-share]:hover { color: #fff; filter: brightness(1.05); }
+.link-action.danger {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
 .link-action.danger:hover {
   color: var(--red);
   border-color: rgba(240, 85, 107, 0.28);
+  background: rgba(240, 85, 107, 0.06);
 }
 .link-action svg,
 .folder-option svg {
@@ -7364,7 +7356,7 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
     background: rgba(240, 85, 107, 0.06);
   }
   .stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
   .dashboard-grid {
     grid-template-columns: 1fr;
