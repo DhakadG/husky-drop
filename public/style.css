@@ -656,7 +656,10 @@ h2 {
   line-height: 1.5;
 }
 
-/* ---------- Icons (admin injects <svg class="ico">) ---------- */
+/* ---------- Icons ----------
+   One system: Lucide strokes from /icons.svg, always
+   <svg class="ico"><use href="/icons.svg#name"/></svg>. Containers size the
+   svg; colour is currentColor; a lone icon in a tile has no side margin. */
 .ico {
   width: 16px;
   height: 16px;
@@ -668,11 +671,30 @@ h2 {
   fill: none;
   flex: 0 0 auto;
   vertical-align: -3px;
+  overflow: visible;
 }
-.ico-fill {
-  fill: currentColor;
-  stroke: none;
+/* Icon tiles and icon-only controls: no text follows, so no side margin. */
+.icon-tile .ico, .stat-ico .ico, .edge-icon .ico, .dropzone-icon .ico, .success-check .ico,
+.live-empty-icon .ico, .share-mode-icon .ico, .mini-drop-icon .ico, .auth-lock .ico,
+.g-play .ico, .strip-play .ico, .g-check .ico, .g-dl .ico, .size-control-end .ico,
+.activity-type-icon .ico, .icon-btn .ico, .settings-role-icon, .settings-chevron,
+.tab-icon .ico, .mini-file > .ico, .pswp .ico, .sort-control > .ico { margin: 0; }
+.ico-sm { width: 14px; height: 14px; }
+.ico-lg { width: 20px; height: 20px; }
+.ico-xl { width: 24px; height: 24px; }
+/* Brand marks keep their own colours */
+.ico-brand { stroke: none; }
+/* Lucide symbols referenced inside PhotoSwipe's own <svg> buttons */
+.pswp-lucide {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
+/* Spinner glyph */
+.ico-spin { animation: icoSpin 900ms linear infinite; }
+@keyframes icoSpin { to { transform: rotate(360deg); } }
 
 /* ---------- Settings fold ---------- */
 .settings-fold summary {
@@ -2583,7 +2605,7 @@ body.selecting .g-check {
   width: 40px;
   height: 40px;
   fill: rgba(255, 255, 255, 0.92);
-  stroke: none;
+  stroke: rgba(255, 255, 255, 0.92);
   filter: drop-shadow(0 4px 12px rgba(8, 16, 28, 0.55));
 }
 .g-dur {
@@ -3701,6 +3723,7 @@ body.selecting .g-check {
   width: 14px;
   height: 14px;
   fill: rgba(255, 255, 255, 0.92);
+  stroke: rgba(255, 255, 255, 0.92);
 }
 
 .mobile-select-bar {
@@ -4325,7 +4348,6 @@ table.uploads .empty-cell {
 .icon-btn svg {
   width: 15px;
   height: 15px;
-  fill: currentColor;
 }
 
 /* Duotone icon tile (44px, tinted gradient backplate) for stat cards / steps */
@@ -4425,15 +4447,6 @@ table.uploads .empty-cell {
 .eyebrow svg {
   width: 12px;
   height: 12px;
-  fill: currentColor;
-}
-
-/* Duotone inline SVG default sizing (icons carry their own opacity backplates) */
-.duo {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  fill: currentColor;
 }
 
 /* Dashed empty-state card */
@@ -4677,7 +4690,10 @@ table.uploads .empty-cell {
 }
 .strip-item > svg {
   flex: 0 0 auto;
-  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  color: var(--accent);
 }
 .strip-item b {
   font-size: 14px;
@@ -5740,8 +5756,6 @@ table.uploads .empty-cell {
 .activity-chevron {
   margin: 0;
   color: var(--muted);
-  fill: currentColor;
-  stroke: none;
   transition: transform 0.18s ease;
 }
 .activity-session.expanded .activity-chevron {
@@ -5906,10 +5920,6 @@ table.uploads .empty-cell {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
-}
-.link-action .ico-fill {
-  fill: currentColor;
-  stroke: none;
 }
 .link-stat-grid {
   display: grid;
@@ -6112,7 +6122,6 @@ table.uploads .empty-cell {
 .size-control-end svg {
   width: 14px;
   height: 14px;
-  fill: currentColor;
 }
 .size-control-end svg.large {
   width: 17px;
@@ -6476,22 +6485,15 @@ table.uploads .empty-cell {
   border-radius: 10px;
   padding: 7px;
   color: var(--accent);
-  fill: currentColor;
-  stroke: none;
   background: rgba(47, 107, 255, 0.09);
   transform: none;
-}
-.settings-accordion summary .settings-role-icon:not(.ico-fill) {
-  fill: none;
-  stroke: currentColor;
 }
 .settings-accordion summary .settings-chevron {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
   margin: 0;
-  fill: var(--muted);
-  stroke: none;
+  color: var(--muted);
 }
 .settings-accordion details[open] summary .settings-chevron {
   transform: rotate(180deg);
@@ -6662,8 +6664,6 @@ table.uploads .empty-cell {
 .share-mode-icon svg {
   width: 19px;
   height: 19px;
-  fill: currentColor;
-  stroke: none;
 }
 .share-mode-card b,
 .share-mode-card small {

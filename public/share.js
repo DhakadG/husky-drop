@@ -28,7 +28,7 @@ const slug = location.pathname.split("/").filter(Boolean).pop();
 // ponytail: share-fx.js is a plain <script> loaded before this module in
 // share.html, so window.shareFx is always set by the time this runs.
 const fx = window.shareFx;
-const { uiIcon, uiIconDefinition } = window;
+const { uiIcon } = window;
 
 let meta = null;
 let viewer = null;
@@ -779,7 +779,7 @@ function folderCard(sub) {
   el.type = "button";
   el.className = "folder-card";
   el.dataset.cursor = "folder";
-  el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span></span>`;
+  el.innerHTML = `${uiIcon("folder")}<span></span>`;
   el.querySelector("span").textContent = sub.name;
   el.addEventListener("click", () => navigate({ fid: sub.fid, name: sub.name, token: sub.ls }, { push: true }));
   return el;
@@ -811,13 +811,13 @@ function card(file) {
   fig.className = `g-card${media ? "" : " plain"}${isVideo ? " video-card" : ""}${blocked ? " download-blocked" : ""}`;
   fig.dataset.cursor = isVideo ? "video" : media ? "photo" : "";
   const dur = file.dur ? `<span class="g-dur">${fmtDur(file.dur)}</span>` : "";
-  const play = isVideo ? `<span class="g-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></span>` : "";
+  const play = isVideo ? `<span class="g-play">${uiIcon("play")}</span>` : "";
   fig.innerHTML = `
     <button class="g-check" type="button" aria-label="select ${escAttr(file.name)}" data-cursor="link">
-      <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      ${uiIcon("check")}
     </button>
     <a class="g-dl${blocked ? " blocked" : ""}" href="${escAttr(file.dl)}" download aria-label="${blocked ? "download blocked for" : "download"} ${escAttr(file.name)}" title="${blocked ? escAttr(file.downloadBlockReason || "Download blocked") : ""}" data-cursor="link">
-      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      ${uiIcon("download")}
     </a>
     ${play}${dur}
     <figcaption><b>${esc(file.name)}</b><span>${fmtBytes(file.size)}</span></figcaption>`;
@@ -2509,7 +2509,7 @@ function mountMobileViewerControls(instance) {
     ["rotate-cw", "Rotate right", "rotate-right", () => rotateCurrentMedia(90), true],
     ["rotate-ccw-square", "Reset rotation", "reset-rotation", resetCurrentRotation, true],
     ["gallery-horizontal-end", "Filmstrip size", "filmstrip-size", () => mountStripSizeControl(instance), lightboxItems.length >= 2],
-    ["gallery", "Hide filmstrip", "toggle-filmstrip", toggleFilmstrip, lightboxItems.length >= 2],
+    ["images", "Hide filmstrip", "toggle-filmstrip", toggleFilmstrip, lightboxItems.length >= 2],
     ["wand-sparkles", "Motion settings", "motion-settings", () => mountViewerMotionPanel(instance), true],
     ["circle-help", "Viewer guide", "viewer-guide", () => toggleViewerGuide(instance), true],
     ["maximize", "Fullscreen", "fullscreen", toggleViewerFullscreen, true],
@@ -2561,9 +2561,11 @@ function registerUi(instance) {
       button.setAttribute("aria-disabled", String(!enabled));
     });
   };
+  // PhotoSwipe wraps `inner` in its own <svg>; the <use> carries the Lucide
+  // stroke styling (see .pswp-lucide) since the sprite symbols are bare.
   const icon = (name, id) => {
-    const definition = uiIconDefinition(name);
-    return { isCustomSVG: true, size: 24, inner: definition.body, outlineID: id };
+    uiIcon(name); // validates the name against the catalog
+    return { isCustomSVG: true, size: 24, inner: `<use class="pswp-lucide" href="/icons.svg#${name}"></use>`, outlineID: id };
   };
   const shortcut = (value) => (element) => element.setAttribute("aria-keyshortcuts", value);
   instance.on("uiRegister", () => {
@@ -3108,7 +3110,7 @@ function mountStripSizeControl(instance) {
   panel.innerHTML = `<header><div><span>Viewer layout</span><b>Filmstrip size</b></div><button type="button" aria-label="Close filmstrip settings">×</button></header>`;
   const control = document.createElement("div");
   control.className = "pswp-strip-size size-control";
-  control.innerHTML = `<div class="size-control-head"><span>Filmstrip scale</span><output class="size-control-value">${stripSizeDescription(stripScale)}</output></div><div class="size-control-rail"><span class="size-control-end"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="5" height="12" rx="1"/><rect x="11" y="6" width="5" height="12" rx="1"/><rect x="18" y="6" width="2" height="12" rx="1"/></svg><small>Browse</small></span><input type="range" min="1" max="13" step="1" value="${stripScale}" aria-label="Filmstrip thumbnail size" aria-valuetext="${stripSizeDescription(stripScale)}"/><span class="size-control-end"><svg class="large" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2"/></svg><small>Inspect</small></span></div>`;
+  control.innerHTML = `<div class="size-control-head"><span>Filmstrip scale</span><output class="size-control-value">${stripSizeDescription(stripScale)}</output></div><div class="size-control-rail"><span class="size-control-end">${uiIcon("grid-3x3")}<small>Browse</small></span><input type="range" min="1" max="13" step="1" value="${stripScale}" aria-label="Filmstrip thumbnail size" aria-valuetext="${stripSizeDescription(stripScale)}"/><span class="size-control-end">${uiIcon("grid-2x2", "large")}<small>Inspect</small></span></div>`;
   const range = control.querySelector("input");
   range.addEventListener("input", () => {
     stripScale = readScale("", range.value, STRIP_WIDTHS.length);
@@ -3177,7 +3179,7 @@ function stripSlide(f, i) {
     el.appendChild(span);
   }
   if (isVideo) {
-    el.insertAdjacentHTML("beforeend", `<i class="strip-play"><svg viewBox="0 0 24 24"><polygon points="8 5 19 12 8 19 8 5"/></svg></i>`);
+    el.insertAdjacentHTML("beforeend", `<i class="strip-play">${uiIcon("play")}</i>`);
   }
   return el;
 }

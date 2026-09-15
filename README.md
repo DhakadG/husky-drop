@@ -203,6 +203,11 @@ npm test
 npm run dev
 ```
 
+Icons come from one Lucide sprite. Add a name to `UI_ICON_NAMES` in
+`public/public.js`, run `npm run icons` to regenerate `public/icons.svg`, and
+use it as `<svg class="ico"><use href="/icons.svg#name"/></svg>` or
+`uiIcon("name")`. The test suite fails on any inline glyph that bypasses it.
+
 For local API calls, create an ignored `.dev.vars` file containing the same required secrets. The full guided checklist is in [Setup required](docs/SETUP-REQUIRED.md).
 
 ## Configuration

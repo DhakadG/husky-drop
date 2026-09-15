@@ -64,6 +64,7 @@ async function init() {
     tokenEye.title = action;
     tokenEye.setAttribute("aria-label", action);
     tokenEye.setAttribute("aria-pressed", String(visible));
+    tokenEye.innerHTML = icon(visible ? "eye-off" : "eye");
   });
   $("refresh").addEventListener("click", refreshAll);
   $("live-refresh")?.addEventListener("click", () => {
@@ -364,13 +365,14 @@ function upsertCards(container, pairs, cls) {
   );
 }
 
+// [tile tint, glyph colour, catalog icon]; the accent card inherits white.
 const STAT_ICONS = {
-  links: ['rgba(47,107,255,0.12)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#2f6bff"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l2.8-2.8a3 3 0 0 1 4.2 4.2l-2 2a1 1 0 1 1-1.4-1.4l2-2a1 1 0 0 0-1.4-1.4l-2.8 2.8a1 1 0 0 1-1.4 0z"></path><path d="M13.4 10.6a1 1 0 0 1 0 1.4l-2.8 2.8a3 3 0 0 1-4.2-4.2l2-2a1 1 0 0 1 1.4 1.4l-2 2a1 1 0 1 0 1.4 1.4l2.8-2.8a1 1 0 0 1 1.4 0z" opacity="0.55"></path></svg>'],
-  opens: ['rgba(21,192,201,0.14)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#0e9aa7"><path d="M12 5c5 0 8.6 3.6 10 7-1.4 3.4-5 7-10 7S3.4 15.4 2 12c1.4-3.4 5-7 10-7z" opacity="0.2"></path><path d="M12 7c3.9 0 6.8 2.6 8 5-1.2 2.4-4.1 5-8 5s-6.8-2.6-8-5c1.2-2.4 4.1-5 8-5zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>'],
-  sessions: ['rgba(123,107,255,0.14)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#7b6bff"><circle cx="9" cy="8" r="3.4"></circle><path d="M9 13c3.6 0 6.5 1.9 6.5 4.2V19H2.5v-1.8C2.5 14.9 5.4 13 9 13z" opacity="0.55"></path><circle cx="17" cy="9" r="2.6" opacity="0.55"></circle><path d="M17 13.2c2.6 0 4.5 1.4 4.5 3.1V18h-4"></path></svg>'],
-  files: ['rgba(47,107,255,0.12)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#2f6bff"><path d="M6 3h8l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" opacity="0.2"></path><path d="M6.5 4h7l4.5 4.5V20h-11.5V4zM13 5.5V9h3.5L13 5.5z"></path></svg>'],
-  received: ['', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 3a1 1 0 0 1 1 1v9.6l2.8-2.8a1 1 0 0 1 1.4 1.4l-4.5 4.5a1 1 0 0 1-1.4 0L6.8 12.2a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1z"></path><path d="M4 17a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1z" opacity="0.7"></path></svg>'],
-  "drive free": ['rgba(31,178,122,0.14)', '<svg width="16" height="16" viewBox="0 0 24 24" fill="#1fb27a"><ellipse cx="12" cy="6" rx="8" ry="3" opacity="0.55"></ellipse><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0 1.7-3.6 3-8 3S4 7.7 4 6zm16 6c0 1.7-3.6 3-8 3s-8-1.3-8-3"></path></svg>'],
+  links: ["rgba(47,107,255,0.12)", "#2f6bff", "link"],
+  opens: ["rgba(21,192,201,0.14)", "#0e9aa7", "eye"],
+  sessions: ["rgba(123,107,255,0.14)", "#7b6bff", "users-round"],
+  files: ["rgba(47,107,255,0.12)", "#2f6bff", "files"],
+  received: ["", "", "download"],
+  "drive free": ["rgba(31,178,122,0.14)", "#1fb27a", "hard-drive"],
 };
 
 function renderStats() {
@@ -391,8 +393,8 @@ function renderStats() {
     ([label]) => {
       const el = document.createElement("div");
       el.className = `stat-card v3${label === "received" ? " accent" : ""}`;
-      const [tint, svg] = STAT_ICONS[label] || STAT_ICONS.links;
-      el.innerHTML = `<span class="stat-ico"${tint ? ` style="background:${tint}"` : ""}>${svg}</span><div><b></b><span class="stat-label"></span></div>`;
+      const [tint, color, name] = STAT_ICONS[label] || STAT_ICONS.links;
+      el.innerHTML = `<span class="stat-ico"${tint ? ` style="background:${tint};color:${color}"` : ""}>${icon(name)}</span><div><b></b><span class="stat-label"></span></div>`;
       el._value = el.querySelector("b");
       el._label = el.querySelector(".stat-label");
       return el;
@@ -800,7 +802,7 @@ function updateActivitySession(article, session) {
       <span class="avatar">${esc(initialsOf(actor))}</span>
       <span class="activity-person"><b>${esc(actor)} <i>·</i> ${esc(place)}</b><small>${esc(context.o || "Unknown device")}${context.l ? ` · ${esc(context.l)}` : ""} · ${activityTimeRange(first.at, last.at)}</small></span>
       <span class="activity-counts">${counts}${fileCount ? `<em>${fileCount} file${fileCount === 1 ? "" : "s"}</em>` : ""}</span>
-      ${icon("chevron", "activity-chevron")}
+      ${icon("chevron-down", "activity-chevron")}
     </button>
     <div class="activity-timeline">${events.map(activityTimelineRow).join("")}</div>`;
   article.querySelector(".activity-session-summary").onclick = () => {
@@ -877,9 +879,9 @@ function eventTypeIcon(type) {
   if (type === "file" || type === "share-view" || type === "share-browse" || type === "share-file-info" || type === "share-media_view_end") return "image";
   if (type === "open" || type === "share-open") return "eye";
   if (type === "share-dl") return "download";
-  if (type?.startsWith("drop-upload")) return type.includes("error") ? "alert" : "play";
+  if (type?.startsWith("drop-upload")) return type.includes("error") ? "circle-alert" : "play";
   if (type === "lock" || type === "global-lock" || type === "autopause") return "lock";
-  if (type === "sessionclose" || type === "clienterror") return "alert";
+  if (type === "sessionclose" || type === "clienterror") return "circle-alert";
   return "list";
 }
 async function loadEarlierActivity() {
@@ -937,11 +939,11 @@ function updateLinkCard(article, link) {
     </div>
     <div class="link-action-row" aria-label="Actions for ${escAttr(link.label)}">
       ${linkActionButton("copy", "Copy link", `data-copy-link="/d/${escAttr(link.slug)}"`)}
-      ${linkActionButton("qr", "Show QR", `data-qr-link="/d/${escAttr(link.slug)}" data-qr-label="${escAttr(link.label)}"`)}
+      ${linkActionButton("qr-code", "Show QR", `data-qr-link="/d/${escAttr(link.slug)}" data-qr-label="${escAttr(link.label)}"`)}
       ${linkActionButton("folder", "Open Drive folder", `data-open-folder="${escAttr(link.slug)}"`)}
       ${linkActionButton(link.disabled ? "play" : "pause", link.disabled ? "Resume" : "Pause", `data-pause-link="${escAttr(link.slug)}" data-paused="${link.disabled ? "1" : "0"}"`)}
-      ${linkActionButton("detail", "Details", `data-open-detail="${escAttr(link.slug)}"`)}
-      ${linkActionButton("trash", "Delete", `data-del-link="${escAttr(link.slug)}" data-del-label="${escAttr(link.label)}"`, true)}
+      ${linkActionButton("chevron-right", "Details", `data-open-detail="${escAttr(link.slug)}"`)}
+      ${linkActionButton("trash-2", "Delete", `data-del-link="${escAttr(link.slug)}" data-del-label="${escAttr(link.label)}"`, true)}
     </div>
     <div class="link-stat-grid">
       ${linkStat("Opens", link.stats.opens || 0)}
@@ -1043,7 +1045,7 @@ async function openFolderPicker(parentId, mode = folderPickerMode) {
       ? data.folders.map((folder) => {
         const selectedMap = folderPickerMode === "share-edit" ? shareEditSelectedFolders : shareSelectedFolders;
         const added = shareMode && selectedMap.has(folder.id);
-        return `<div class="folder-option"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg><span>${esc(folder.name)}</span><span class="folder-open-cue">Open →</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}" ${added ? "disabled" : ""}>${added ? "Added" : shareMode ? "Add" : "Select"}</button></div>`;
+        return `<div class="folder-option"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}">${icon("folder-open")}<span>${esc(folder.name)}</span><span class="folder-open-cue">Open →</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}" ${added ? "disabled" : ""}>${added ? "Added" : shareMode ? "Add" : "Select"}</button></div>`;
       }).join("")
       : '<div class="empty">No child folders here.</div>';
     $("folder-list").querySelectorAll("[data-pick-folder]").forEach((button) => button.addEventListener("click", () => {
@@ -1267,15 +1269,15 @@ function updateShareCard(article, share) {
   const viewers = (share.recentViewers || []).map((viewer) => `<span class="viewer-chip" title="${escAttr(viewer.email)}"><i>${esc(initialsOf(viewer.name || viewer.email))}</i><span>${esc(viewer.name || viewer.email)}</span></span>`).join("");
   article.className = `share-card panel ${escAttr(share.state || "active")}`;
   article.innerHTML = `
-    <div class="share-card-head"><div><h2>${esc(share.label)}</h2><div class="share-mode-line"><span class="share-mode-pill">${share.mode === "gallery" ? icon("lock-small") : icon("redirect")}${esc(access)}</span><code>/s/${esc(share.slug)}</code></div><p>${esc((share.folderNames || []).join(" · ") || `${share.folderIds.length} Drive folder${share.folderIds.length === 1 ? "" : "s"}`)} · ${esc(closes)}</p></div><span class="link-status ${escAttr(share.state || "active")}">${esc(share.state || "active")}</span></div>
+    <div class="share-card-head"><div><h2>${esc(share.label)}</h2><div class="share-mode-line"><span class="share-mode-pill">${share.mode === "gallery" ? icon("lock") : icon("external-link")}${esc(access)}</span><code>/s/${esc(share.slug)}</code></div><p>${esc((share.folderNames || []).join(" · ") || `${share.folderIds.length} Drive folder${share.folderIds.length === 1 ? "" : "s"}`)} · ${esc(closes)}</p></div><span class="link-status ${escAttr(share.state || "active")}">${esc(share.state || "active")}</span></div>
     <div class="link-action-row">
-      ${shareActionButton("copy-compact", "Copy", `data-copy-link="/s/${escAttr(share.slug)}"`)}
-      ${shareActionButton("qr", "QR", `data-qr-link="/s/${escAttr(share.slug)}" data-qr-label="${escAttr(share.label)}"`)}
-      ${shareActionButton("share", "Share", `data-share-link="/s/${escAttr(share.slug)}"`)}
-      ${shareActionButton("sliders", "Edit", `data-edit-share="${escAttr(share.slug)}"`)}
-      ${shareActionButton("user", share.requireAuth ? "Sign-in on" : "Sign-in off", `data-toggle-share-auth="${escAttr(share.slug)}" data-auth="${share.requireAuth ? "1" : "0"}"`)}
+      ${shareActionButton("copy", "Copy", `data-copy-link="/s/${escAttr(share.slug)}"`)}
+      ${shareActionButton("qr-code", "QR", `data-qr-link="/s/${escAttr(share.slug)}" data-qr-label="${escAttr(share.label)}"`)}
+      ${shareActionButton("share-2", "Share", `data-share-link="/s/${escAttr(share.slug)}"`)}
+      ${shareActionButton("sliders-horizontal", "Edit", `data-edit-share="${escAttr(share.slug)}"`)}
+      ${shareActionButton("user-round", share.requireAuth ? "Sign-in on" : "Sign-in off", `data-toggle-share-auth="${escAttr(share.slug)}" data-auth="${share.requireAuth ? "1" : "0"}"`)}
       ${shareActionButton(share.disabled ? "play" : "pause", share.disabled ? "Resume" : "Pause", `data-pause-share="${escAttr(share.slug)}" data-paused="${share.disabled ? "1" : "0"}"`)}
-      ${shareActionButton("trash", "Delete", `data-del-share="${escAttr(share.slug)}" data-del-label="${escAttr(share.label)}"`, true)}
+      ${shareActionButton("trash-2", "Delete", `data-del-share="${escAttr(share.slug)}" data-del-label="${escAttr(share.label)}"`, true)}
     </div>
     <div class="share-stat-grid"><div><span>Opens</span><b>${share.stats.opens || 0}</b></div><div><span>Unique viewers</span><b>${share.viewerCount || 0}</b></div><div><span>File views</span><b>${share.stats.views || 0}</b></div><div><span>Downloaded</span><b>${fmtBytes(share.stats.bytes || 0)}</b></div></div>
     <div class="recent-viewers"><div><span class="muted">Recent viewers</span><div class="viewer-chips">${viewers || '<span class="muted">No identified viewers yet.</span>'}</div></div><button class="mini" data-view-share-activity="${escAttr(share.slug)}" type="button">View activity →</button></div>`;
@@ -1445,8 +1447,8 @@ function renderDetail(d) {
       <div class="detail-title-row">
         <div><p class="eyebrow">link detail</p><h1 class="pane-title grad-text">${esc(l.label)}</h1><div class="detail-chips"><span class="link-status ${escAttr(l.state || "active")}">${l.disabled ? "paused" : l.hasPin ? "PIN protected" : "open"}</span><code>/d/${esc(l.slug)}</code></div></div>
         <div class="link-action-row detail-actions">
-          ${linkActionButton("copy-compact", "Copy", `data-copy-link="/d/${escAttr(l.slug)}"`)}
-          ${linkActionButton("qr", "QR", `data-qr-link="/d/${escAttr(l.slug)}" data-qr-label="${escAttr(l.label)}"`)}
+          ${linkActionButton("copy", "Copy", `data-copy-link="/d/${escAttr(l.slug)}"`)}
+          ${linkActionButton("qr-code", "QR", `data-qr-link="/d/${escAttr(l.slug)}" data-qr-label="${escAttr(l.label)}"`)}
           ${linkActionButton("folder", "Drive", `data-open-folder="${escAttr(l.slug)}"`)}
           ${linkActionButton(l.disabled ? "play" : "pause", l.disabled ? "Resume" : "Pause", `data-pause-link="${escAttr(l.slug)}" data-paused="${l.disabled ? "1" : "0"}"`)}
         </div>
@@ -1472,8 +1474,8 @@ function renderDetail(d) {
         </div>
         <div class="history-tools">
           <span class="muted" id="up-count"></span>
-          <button class="mini" data-refresh-detail="${escAttr(l.slug)}" type="button">${icon("refresh")}refresh</button>
-          <button class="mini" data-sync-detail="${escAttr(l.slug)}" type="button">${icon("folder-add")}sync from Drive</button>
+          <button class="mini" data-refresh-detail="${escAttr(l.slug)}" type="button">${icon("refresh-cw")}refresh</button>
+          <button class="mini" data-sync-detail="${escAttr(l.slug)}" type="button">${icon("folder-plus")}sync from Drive</button>
         </div>
       </div>
       <div class="upload-tools">
@@ -1495,13 +1497,13 @@ function renderDetail(d) {
       <button class="mini upload-show-all hidden" id="up-show-all" type="button"></button>
     </section>
     <section class="panel settings-fold">
-      <div class="section-title"><div><p class="eyebrow">configuration</p><h2>${icon("sliders")} Settings</h2></div><span class="muted">Changes apply to this link only.</span></div>
+      <div class="section-title"><div><p class="eyebrow">configuration</p><h2>${icon("sliders-horizontal")} Settings</h2></div><span class="muted">Changes apply to this link only.</span></div>
       <div class="settings-accordion">
-        <details open><summary><span class="settings-summary-copy">${icon("lock", "settings-role-icon")}<span><b>Access & destination</b><small>${l.requireAuth ? "Google sign-in" : l.hasPin ? "PIN protected" : "Open"} · ${l.expiresAt ? `expires ${fmtDateDMY(l.expiresAt)}` : "never expires"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Label</label><input id="d-label" type="text" value="${escAttr(l.label)}" /></div><div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" autocomplete="new-password" /></div><div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="${expiryDays}" /></div></div><div class="folder-picker"><div class="field"><label>Destination Drive folder</label><input id="d-folder" type="text" value="${escAttr(l.folderId || "")}" /><small id="d-folder-name">${esc(l.folderName || "Automatic folder")}</small></div><button class="mini folder-browse-button" id="d-folder-browse" type="button">Browse Drive</button></div><label class="check"><input id="d-auth" type="checkbox" ${l.requireAuth ? "checked" : ""} /> Require Google sign-in before upload</label></div></details>
-        <details><summary><span class="settings-summary-copy">${icon("sliders", "settings-role-icon")}<span><b>Transfer</b><small>${l.settings.adaptiveConcurrency ? "auto 2–8× parallel" : `${l.settings.concurrency}× parallel`} · ${l.settings.chunkMB} MB chunks · ${l.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Starting parallel files</label><select id="d-conc">${opts([1, 2, 3, 4, 6, 8], l.settings.concurrency)}</select></div><div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8, 16, 32, 64], l.settings.chunkMB, " MB")}</select></div><div class="field"><label>Max single file GB</label><input id="d-maxgb" type="number" min="0" value="${escAttr(maxTransferGb)}" /></div></div><div class="check-row"><label class="check"><input id="d-adaptive" type="checkbox" ${l.settings.adaptiveConcurrency ? "checked" : ""} /> Adapt parallelism to live network performance</label><label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Create subfolders per uploader</label></div></div></details>
-        <details><summary><span class="settings-summary-copy">${icon("budget", "settings-role-icon")}<span><b>Budgets</b><small>${l.settings.maxTotalBytes ? `${fmtBytes(l.stats.bytes)} of ${fmtBytes(l.settings.maxTotalBytes)}` : "Unlimited"} · auto-pause at limit</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Max total GB</label><input id="d-budget-gb" type="number" min="0" value="${escAttr(budgetGb)}" /></div><div class="field"><label>Max files</label><input id="d-budget-files" type="number" min="0" value="${l.settings.maxTotalFiles || ""}" /></div><div class="field"><label>Max sessions</label><input id="d-budget-sessions" type="number" min="0" value="${l.settings.maxSessions || ""}" /></div></div></details>
-        <details><summary><span class="settings-summary-copy">${icon("bell", "settings-role-icon")}<span><b>Notifications</b><small>${l.notify.enabled ? "Email enabled" : "Email disabled"} · ${l.notify.start ? "start alerts" : "no start alerts"} · ${l.notify.complete ? "completion digest" : "no completion digest"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body check-row"><label class="check"><input id="d-notify" type="checkbox" ${l.notify.enabled ? "checked" : ""} /> Email enabled</label><label class="check"><input id="d-notify-start" type="checkbox" ${l.notify.start ? "checked" : ""} /> On upload start</label><label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Session digest when done</label></div></details>
-        <details><summary><span class="settings-summary-copy">${icon("palette", "settings-role-icon")}<span><b>Branding & promo</b><small>${l.theme.logoUrl || l.theme.backgroundUrl || l.theme.promoTitle ? "Custom theme configured" : "Default losthusky/drop theme"}</small></span></span>${icon("chevron", "settings-chevron")}</summary><div class="settings-body grid-2"><div class="field"><label>Logo URL</label><input id="d-logo" type="url" value="${escAttr(l.theme.logoUrl)}" /></div><div class="field"><label>Background image URL</label><input id="d-bg" type="url" value="${escAttr(l.theme.backgroundUrl)}" /></div><div class="field"><label>Accent</label><input id="d-accent" type="color" value="${escAttr(l.theme.accentColor)}" /></div><div class="field"><label>Background</label><input id="d-bgcolor" type="color" value="${escAttr(l.theme.backgroundColor)}" /></div><div class="field wide"><label>Welcome message</label><input id="d-welcome" type="text" value="${escAttr(l.theme.welcome)}" /></div><div class="field"><label>Promo title</label><input id="d-promo-title" type="text" value="${escAttr(l.theme.promoTitle)}" /></div><div class="field"><label>Promo text</label><input id="d-promo-text" type="text" value="${escAttr(l.theme.promoText)}" /></div><div class="field"><label>YouTube/Vimeo URL</label><input id="d-video" type="url" value="${escAttr(l.theme.videoUrl)}" /></div><div class="field"><label>CTA label</label><input id="d-cta-label" type="text" value="${escAttr(l.theme.ctaLabel)}" /></div><div class="field"><label>CTA URL</label><input id="d-cta-url" type="url" value="${escAttr(l.theme.ctaUrl)}" /></div></div></details>
+        <details open><summary><span class="settings-summary-copy">${icon("lock", "settings-role-icon")}<span><b>Access & destination</b><small>${l.requireAuth ? "Google sign-in" : l.hasPin ? "PIN protected" : "Open"} · ${l.expiresAt ? `expires ${fmtDateDMY(l.expiresAt)}` : "never expires"}</small></span></span>${icon("chevron-down", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Label</label><input id="d-label" type="text" value="${escAttr(l.label)}" /></div><div class="field"><label>New password (blank keeps current)</label><input id="d-pin" type="password" autocomplete="new-password" /></div><div class="field"><label>Expires in days from now</label><input id="d-days" type="number" min="0" max="30" value="${expiryDays}" /></div></div><div class="folder-picker"><div class="field"><label>Destination Drive folder</label><input id="d-folder" type="text" value="${escAttr(l.folderId || "")}" /><small id="d-folder-name">${esc(l.folderName || "Automatic folder")}</small></div><button class="mini folder-browse-button" id="d-folder-browse" type="button">Browse Drive</button></div><label class="check"><input id="d-auth" type="checkbox" ${l.requireAuth ? "checked" : ""} /> Require Google sign-in before upload</label></div></details>
+        <details><summary><span class="settings-summary-copy">${icon("sliders-horizontal", "settings-role-icon")}<span><b>Transfer</b><small>${l.settings.adaptiveConcurrency ? "auto 2–8× parallel" : `${l.settings.concurrency}× parallel`} · ${l.settings.chunkMB} MB chunks · ${l.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</small></span></span>${icon("chevron-down", "settings-chevron")}</summary><div class="settings-body"><div class="grid-3"><div class="field"><label>Starting parallel files</label><select id="d-conc">${opts([1, 2, 3, 4, 6, 8], l.settings.concurrency)}</select></div><div class="field"><label>Chunk size</label><select id="d-chunk">${opts([8, 16, 32, 64], l.settings.chunkMB, " MB")}</select></div><div class="field"><label>Max single file GB</label><input id="d-maxgb" type="number" min="0" value="${escAttr(maxTransferGb)}" /></div></div><div class="check-row"><label class="check"><input id="d-adaptive" type="checkbox" ${l.settings.adaptiveConcurrency ? "checked" : ""} /> Adapt parallelism to live network performance</label><label class="check"><input id="d-folders" type="checkbox" ${l.settings.perUploaderFolders ? "checked" : ""} /> Create subfolders per uploader</label></div></div></details>
+        <details><summary><span class="settings-summary-copy">${icon("circle-gauge", "settings-role-icon")}<span><b>Budgets</b><small>${l.settings.maxTotalBytes ? `${fmtBytes(l.stats.bytes)} of ${fmtBytes(l.settings.maxTotalBytes)}` : "Unlimited"} · auto-pause at limit</small></span></span>${icon("chevron-down", "settings-chevron")}</summary><div class="settings-body grid-3"><div class="field"><label>Max total GB</label><input id="d-budget-gb" type="number" min="0" value="${escAttr(budgetGb)}" /></div><div class="field"><label>Max files</label><input id="d-budget-files" type="number" min="0" value="${l.settings.maxTotalFiles || ""}" /></div><div class="field"><label>Max sessions</label><input id="d-budget-sessions" type="number" min="0" value="${l.settings.maxSessions || ""}" /></div></div></details>
+        <details><summary><span class="settings-summary-copy">${icon("bell", "settings-role-icon")}<span><b>Notifications</b><small>${l.notify.enabled ? "Email enabled" : "Email disabled"} · ${l.notify.start ? "start alerts" : "no start alerts"} · ${l.notify.complete ? "completion digest" : "no completion digest"}</small></span></span>${icon("chevron-down", "settings-chevron")}</summary><div class="settings-body check-row"><label class="check"><input id="d-notify" type="checkbox" ${l.notify.enabled ? "checked" : ""} /> Email enabled</label><label class="check"><input id="d-notify-start" type="checkbox" ${l.notify.start ? "checked" : ""} /> On upload start</label><label class="check"><input id="d-notify-complete" type="checkbox" ${l.notify.complete ? "checked" : ""} /> Session digest when done</label></div></details>
+        <details><summary><span class="settings-summary-copy">${icon("palette", "settings-role-icon")}<span><b>Branding & promo</b><small>${l.theme.logoUrl || l.theme.backgroundUrl || l.theme.promoTitle ? "Custom theme configured" : "Default losthusky/drop theme"}</small></span></span>${icon("chevron-down", "settings-chevron")}</summary><div class="settings-body grid-2"><div class="field"><label>Logo URL</label><input id="d-logo" type="url" value="${escAttr(l.theme.logoUrl)}" /></div><div class="field"><label>Background image URL</label><input id="d-bg" type="url" value="${escAttr(l.theme.backgroundUrl)}" /></div><div class="field"><label>Accent</label><input id="d-accent" type="color" value="${escAttr(l.theme.accentColor)}" /></div><div class="field"><label>Background</label><input id="d-bgcolor" type="color" value="${escAttr(l.theme.backgroundColor)}" /></div><div class="field wide"><label>Welcome message</label><input id="d-welcome" type="text" value="${escAttr(l.theme.welcome)}" /></div><div class="field"><label>Promo title</label><input id="d-promo-title" type="text" value="${escAttr(l.theme.promoTitle)}" /></div><div class="field"><label>Promo text</label><input id="d-promo-text" type="text" value="${escAttr(l.theme.promoText)}" /></div><div class="field"><label>YouTube/Vimeo URL</label><input id="d-video" type="url" value="${escAttr(l.theme.videoUrl)}" /></div><div class="field"><label>CTA label</label><input id="d-cta-label" type="text" value="${escAttr(l.theme.ctaLabel)}" /></div><div class="field"><label>CTA URL</label><input id="d-cta-url" type="url" value="${escAttr(l.theme.ctaUrl)}" /></div></div></details>
       </div>
       <div class="settings-actions"><button class="btn" id="save-detail" type="button">${icon("save")}Save settings</button><button class="btn ghost" id="clear-pin" type="button">${icon("lock")}Clear password</button><button class="btn ghost danger" id="detail-delete" type="button">Delete link</button></div>
       <div class="msg-err" id="detail-msg"></div>

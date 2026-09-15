@@ -22,38 +22,33 @@
       <div class="grad-border-inner auth-inner">
         <div class="auth-head">
           <span class="icon-tile auth-lock">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="#2f6bff"><rect x="5" y="10" width="14" height="10" rx="3" opacity="0.22"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6zm7 2a1.5 1.5 0 0 0-.8 2.8V18h1.6v-1.2A1.5 1.5 0 0 0 12 14z"></path></svg>
+            <svg class="ico" aria-hidden="true"><use href="/icons.svg#lock"></use></svg>
           </span>
           <h1>Unlock dashboard</h1>
           <p>Admin access only. Your session stays signed in on this device for 30 days.</p>
         </div>
         <button class="btn ghost google-btn" id="admin-google" type="button">
-          <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
-            <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.9 2.4 30.4 0 24 0 14.6 0 6.4 5.4 2.5 13.2l7.9 6.1C12.3 13 17.7 9.5 24 9.5z"/>
-            <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.2-.4-4.7H24v9h12.7c-.6 3-2.3 5.5-4.9 7.2l7.6 5.9c4.4-4.1 7.1-10.1 7.1-17.4z"/>
-            <path fill="#FBBC05" d="M10.4 19.3c-.5 1.4-.8 3-.8 4.7s.3 3.3.8 4.7l-7.9 6.1C.9 31.6 0 27.9 0 24s.9-7.6 2.5-10.8l7.9 6.1z"/>
-            <path fill="#34A853" d="M24 48c6.4 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.7-3.5-13.6-9.3l-7.9 6.1C6.4 42.6 14.6 48 24 48z"/>
-          </svg>
+          <svg class="ico ico-brand" aria-hidden="true"><use href="/icons.svg#google-g"></use></svg>
           Sign in with Google
         </button>
         <div class="auth-divider"><span>or use the admin token</span></div>
         <div class="auth-field">
           <label for="tok">Admin token</label>
           <div class="auth-input">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="#9aa8b8"><path d="M14 3a7 7 0 0 1 6.9 8.2c-.5 3-3 5.4-6 5.7-.6.1-1.2 0-1.8-.1L11 19h-2v2H7v2H3v-4l7.2-7.2c-.1-.6-.2-1.2-.1-1.8.3-3 2.7-5.5 5.7-6 .4-.1.8-.1 1.2 0zM16 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"></path></svg>
+            <svg class="ico" aria-hidden="true"><use href="/icons.svg#key-round"></use></svg>
             <input id="tok" type="password" autocomplete="current-password" placeholder="••••••••••" />
             <button type="button" id="tok-eye" title="show token" aria-label="show token" aria-pressed="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="#9aa8b8"><path d="M12 5c5 0 8.6 3.6 10 7-1.4 3.4-5 7-10 7S3.4 15.4 2 12c1.4-3.4 5-7 10-7z" opacity="0.25"></path><path d="M12 7c3.9 0 6.8 2.6 8 5-1.2 2.4-4.1 5-8 5s-6.8-2.6-8-5c1.2-2.4 4.1-5 8-5zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg>
+              <svg class="ico" aria-hidden="true"><use href="/icons.svg#eye"></use></svg>
             </button>
           </div>
         </div>
         <button class="btn" id="tok-go" type="button">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="#ffffff"><path d="M13 4a1 1 0 0 1 1 1v3h-2V6H6v12h6v-2h2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h8z" opacity="0.75"></path><path d="M15.6 8.6L20 12l-4.4 3.4-1.2-1.5 1.8-1.4H9v-2h7.2l-1.8-1.4 1.2-1.5z"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#log-in"></use></svg>
           Unlock
         </button>
         <div class="msg-err" id="tok-err"></div>
         <div class="auth-note">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="#1fb27a"><path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5l8-3z" opacity="0.18"></path><path d="M12 4.2l6 2.2v4.7c0 3.9-2.5 6.8-6 8.8-3.5-2-6-4.9-6-8.8V6.4l6-2.2zm-1 9.4l-1.8-1.8-1.2 1.2 3 3 5-5-1.2-1.2-3.8 3.8z"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#shield-check"></use></svg>
           <span>Rate-limited: 5 attempts, then a 15-minute lockout.</span>
         </div>
       </div>
@@ -66,37 +61,37 @@
       <a class="brand side-brand" href="/"><i class="brand-mark"></i><span>losthusky <span class="brand-slash">/</span> drop</span></a>
       <nav class="side-nav" aria-label="dashboard sections">
         <button class="tab active" data-tab="overview" type="button">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="2.5"></rect><rect x="13" y="3" width="8" height="8" rx="2.5" opacity="0.55"></rect><rect x="3" y="13" width="8" height="8" rx="2.5" opacity="0.55"></rect><rect x="13" y="13" width="8" height="8" rx="2.5"></rect></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#layout-dashboard"></use></svg>
           <span class="tab-label">Overview</span>
         </button>
         <button class="tab" data-tab="live" type="button">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" opacity="0.16"></circle><path d="M13 2L4.5 13.5H11l-1 8.5L18.5 10H12l1-8z"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#zap"></use></svg>
           <span class="tab-label">Live</span>
           <span class="nav-badge hidden" id="live-badge">0</span>
         </button>
         <button class="tab" data-tab="links" type="button">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M4 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z"></path><path d="M12 3a1 1 0 0 1 .7.3l4.5 4.5a1 1 0 0 1-1.4 1.4L13 6.4V15a1 1 0 1 1-2 0V6.4L8.2 9.2a1 1 0 0 1-1.4-1.4l4.5-4.5A1 1 0 0 1 12 3z" opacity="0.55" transform="rotate(180 12 9)"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#download"></use></svg>
           <span class="tab-label">Drops</span>
         </button>
         <button class="tab" data-tab="shares" type="button">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="6" r="3" opacity="0.55"></circle><circle cx="18" cy="18" r="3" opacity="0.55"></circle><path d="M8.6 10.8l6.8-3.6M8.6 13.2l6.8 3.6" stroke="currentColor" stroke-width="1.8" fill="none"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#share-2"></use></svg>
           <span class="tab-label">Shares</span>
         </button>
         <button class="tab-more" id="admin-more-toggle" type="button" aria-expanded="false" aria-controls="admin-mobile-more">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#ellipsis"></use></svg>
           <span class="tab-label">More</span>
         </button>
         <button class="tab" data-tab="activity" type="button">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#activity"></use></svg>
           <span class="tab-label">Activity</span>
         </button>
         <div class="side-divider" role="presentation"></div>
         <button class="tab tab-create" data-tab="create" type="button">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#plus"></use></svg>
           <span class="tab-label">New drop link</span>
         </button>
         <button class="tab tab-create tab-create-share" data-tab="create-share" type="button">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="7" cy="12" r="2.4"></circle><circle cx="17" cy="7" r="2.4" opacity=".65"></circle><circle cx="17" cy="17" r="2.4" opacity=".65"></circle><path d="m9.2 10.9 5.6-2.8M9.2 13.1l5.6 2.8" fill="none" stroke="currentColor" stroke-width="1.8"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#send"></use></svg>
           <span class="tab-label">New share link</span>
         </button>
         <button class="tab hidden" data-tab="detail" id="detail-tab" type="button">Link detail</button>
@@ -104,7 +99,7 @@
       <div class="side-foot">
         <div class="status-pill" id="live-state">live updates off</div>
         <button class="mini logout" id="logout" type="button">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="10" width="14" height="10" rx="2.5" opacity="0.3"></rect><path d="M7 10V8a5 5 0 0 1 10 0v2h-2V8a3 3 0 0 0-6 0v2H7zm-2 2h14v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6z"></path></svg>
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#log-out"></use></svg>
           lock
         </button>
       </div>
@@ -155,7 +150,7 @@
         <div class="pane-head"><div><p class="eyebrow">right now</p><h1 class="pane-title grad-text">Uploads in progress</h1><span class="muted">Everyone currently sending files, updated as it happens.</span></div><button class="mini" id="live-refresh" type="button">Refresh snapshot</button></div>
         <div id="live-metrics" class="live-metrics live-summary-strip"></div>
         <div id="live-list" class="live-list tall"></div>
-        <section id="live-empty" class="panel live-empty hidden"><span class="live-empty-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16c2-2 4-3 8-3s6 1 8 3" fill="none" stroke="currentColor" stroke-width="2"></path><circle cx="12" cy="8" r="3" fill="currentColor" opacity=".18"></circle><path d="M8 20h8" fill="none" stroke="currentColor" stroke-width="2"></path></svg></span><h2>No transfers right now</h2><p class="muted">This view updates automatically when somebody starts an upload.</p><div id="live-last-completed"></div></section>
+        <section id="live-empty" class="panel live-empty hidden"><span class="live-empty-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#inbox"></use></svg></span><h2>No transfers right now</h2><p class="muted">This view updates automatically when somebody starts an upload.</p><div id="live-last-completed"></div></section>
         <section id="live-finished-section" class="panel live-finished hidden"><div class="section-title"><h2>Finished this hour</h2><span class="muted">Most recent 20 sessions</span></div><div id="live-finished-list"></div></section>
       </section>
 
@@ -176,7 +171,7 @@
         <section id="expired-links-section" class="expired-links hidden">
           <button id="expired-links-toggle" class="expired-links-head" type="button" aria-expanded="false">
             <span>Expired · <b id="expired-links-count">0</b></span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+            <svg class="ico" aria-hidden="true"><use href="/icons.svg#chevron-down"></use></svg>
           </button>
           <div id="expired-rows" class="link-card-list"></div>
         </section>
@@ -205,8 +200,8 @@
           </div>
           <fieldset class="share-mode-fieldset">
             <legend>Visitor experience</legend>
-            <label class="share-mode-card"><input type="radio" name="share-mode-choice" value="gallery" checked /><span class="share-mode-icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10" opacity="0.14"></circle><path d="M12 6.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zm0 2.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"></path></svg></span><span><b>Gallery</b><small>Private gallery with PIN, identity and file analytics.</small></span></label>
-            <label class="share-mode-card"><input type="radio" name="share-mode-choice" value="redirect" /><span class="share-mode-icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10" opacity="0.12"></circle><path d="M13 6h5v5h-2V9.4l-5.3 5.3-1.4-1.4L14.6 8H13V6zM6 8h4v2H8v6h6v-2h2v4H6V8z"></path></svg></span><span><b>Redirect</b><small>Send visitors directly to a public Drive folder.</small></span></label>
+            <label class="share-mode-card"><input type="radio" name="share-mode-choice" value="gallery" checked /><span class="share-mode-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#images"></use></svg></span><span><b>Gallery</b><small>Private gallery with PIN, identity and file analytics.</small></span></label>
+            <label class="share-mode-card"><input type="radio" name="share-mode-choice" value="redirect" /><span class="share-mode-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#external-link"></use></svg></span><span><b>Redirect</b><small>Send visitors directly to a public Drive folder.</small></span></label>
           </fieldset>
           <input id="s-mode" type="hidden" value="gallery" />
           <div class="grid-2">
@@ -239,7 +234,7 @@
               <button class="chip-filter danger" data-activity-filter="errors" type="button">Errors</button>
             </div>
             <label class="activity-search" for="activity-query">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" opacity="0.25"></circle><path d="M10.5 5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zm0 2a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm5.8 8l4 4-1.3 1.3-4-4 1.3-1.3z"></path></svg>
+              <svg class="ico" aria-hidden="true"><use href="/icons.svg#search"></use></svg>
               <input id="activity-query" type="search" placeholder="Search person or link" autocomplete="off" />
             </label>
           </div>
@@ -324,7 +319,7 @@
 
           <section id="create-success" class="grad-border create-success hidden" aria-live="polite">
             <div class="create-success-inner">
-              <span class="success-check"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg></span>
+              <span class="success-check"><svg class="ico" aria-hidden="true"><use href="/icons.svg#check"></use></svg></span>
               <p class="eyebrow">ready to share</p><h2>Your drop link is live</h2>
               <code id="create-success-url"></code>
               <div><button class="btn" id="create-copy" type="button">Copy URL</button><button class="btn ghost" id="create-qr" type="button">Show QR</button><button class="btn ghost" id="create-share-of-drop" type="button">Share this drop's folder</button><button class="mini" id="create-another" type="button">Create another</button></div>
@@ -371,7 +366,7 @@
 </dialog>
 <dialog id="drive-picker-dialog" class="drive-picker-dialog">
   <section id="folder-picker-panel" class="folder-picker-panel">
-    <div class="folder-dialog-title"><div><p class="eyebrow"><svg class="drive-glyph" viewBox="0 0 87.3 78" aria-hidden="true"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0-1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.5l5.85 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg> Google Drive</p><h2 id="folder-picker-title">Choose a destination</h2></div><button class="dialog-close" id="folder-close" type="button" aria-label="Close Drive browser">×</button></div>
+    <div class="folder-dialog-title"><div><p class="eyebrow"><svg class="ico drive-glyph" aria-hidden="true"><use href="/icons.svg#folder-open"></use></svg> Google Drive</p><h2 id="folder-picker-title">Choose a destination</h2></div><button class="dialog-close" id="folder-close" type="button" aria-label="Close Drive browser">×</button></div>
     <div class="folder-picker-head">
       <button class="mini" id="folder-up" type="button">← Parent</button>
       <nav id="folder-breadcrumbs" class="folder-breadcrumbs" aria-label="Drive folder path"></nav>
