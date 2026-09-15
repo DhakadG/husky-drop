@@ -21,7 +21,7 @@ const MODES = [
 ];
 
 const folders = new Map();
-const cfg = { maxMp: 8, quality: 82, format: "same", metadata: "keep", mode: "copy", recursive: true, onlyIfSmaller: true, minMb: 1.5, exclude: "", types: new Set(TYPES.map(([k]) => k)) };
+const cfg = { maxMp: 8, quality: 82, format: "same", metadata: "keep", mode: "copy", recursive: true, onlyIfSmaller: true, minMb: 1.5, targetMb: 0, exclude: "", types: new Set(TYPES.map(([k]) => k)) };
 let plan = null;
 let state = null;
 let pollTimer = 0;
@@ -79,6 +79,7 @@ function shell() {
           <div class="ia-field"><label>Skip files under</label><div class="ia-inline"><input type="number" id="ia-minmb" class="ia-input ia-num" min="0" step="0.5" value="${cfg.minMb}"><span class="muted">MB</span></div></div>
           <div class="ia-field"><label>Exclude names matching</label><input id="ia-exclude" class="ia-input" placeholder="regex, e.g. _edited|\\.psd$"></div>
         </div>
+        <div class="ia-field"><label>Aim for a size per photo</label><div class="ia-inline"><input type="number" id="ia-target" class="ia-input ia-num" min="0" step="0.5" value="0" placeholder="0 = off"><span class="muted">MB · 0 = off. Smooth frames get a higher quality, busy ones lower, until the file lands within ±30% of this. Costs up to 4 encodes per photo.</span></div></div>
         <div class="ia-toggles">${toggle("onlyIfSmaller", "Only keep a result that is smaller than the original", cfg.onlyIfSmaller)}</div>
       </details>
     </section>
@@ -109,7 +110,7 @@ function sampleEstimate() {
   const srcPx = 24e6;
   const outPx = cfg.maxMp ? Math.min(srcPx, cfg.maxMp * 1e6) : srcPx;
   const format = cfg.format === "same" ? "jpeg" : cfg.format;
-  const bytes = outPx * (BPP[format] || 0.3) * (cfg.quality / 82);
+  const bytes = cfg.targetMb ? cfg.targetMb * 1024 * 1024 : outPx * (BPP[format] || 0.3) * (cfg.quality / 82);
   const side = Math.round(Math.sqrt(outPx * 1.5));
   return { bytes, w: side, h: Math.round(side / 1.5), format };
 }
@@ -126,12 +127,12 @@ function syncControls() {
   $("ia-confirm").classList.toggle("hidden", cfg.mode !== "replace");
   $("ia-mp-note").textContent = cfg.maxMp ? `≈ ${Math.round(Math.sqrt(cfg.maxMp * 1e6 * 1.5))}×${Math.round(Math.sqrt(cfg.maxMp * 1e6 / 1.5))} for a 3:2 photo` : "keeps the original pixel count";
   const s = sampleEstimate();
-  $("ia-sample").innerHTML = `<div class="ia-sample-row"><span class="ia-sample-box"><b>24 MP</b><small>6000×4000 · ~14 MB</small></span><span class="ia-sample-arrow">${icon("chevron-right")}</span><span class="ia-sample-box ia-sample-out"><b>~${fmtBytes(s.bytes)}</b><small>${s.w}×${s.h} · ${s.format.toUpperCase()} q${cfg.quality}</small></span></div><small class="muted">per photo, ±30% depending on detail</small>`;
+  $("ia-sample").innerHTML = `<div class="ia-sample-row"><span class="ia-sample-box"><b>24 MP</b><small>6000×4000 · ~14 MB</small></span><span class="ia-sample-arrow">${icon("chevron-right")}</span><span class="ia-sample-box ia-sample-out"><b>~${fmtBytes(s.bytes)}</b><small>${s.w}×${s.h} · ${s.format.toUpperCase()} ${cfg.targetMb ? "quality auto" : `q${cfg.quality}`}</small></span></div><small class="muted">${cfg.targetMb ? "quality is tuned per photo to hit this size" : "per photo; dark or smooth frames compress to a fraction of this, busy ones to double"}</small>`;
   plan = null;
   $("ia-start").disabled = true;
 }
 function options() {
-  return { folderIds: [...folders.keys()], recursive: cfg.recursive, maxMp: cfg.maxMp, quality: cfg.quality, format: cfg.format, metadata: cfg.metadata, minBytes: Math.round(cfg.minMb * 1024 * 1024), exclude: cfg.exclude, types: [...cfg.types], onlyIfSmaller: cfg.onlyIfSmaller, mode: cfg.mode };
+  return { folderIds: [...folders.keys()], recursive: cfg.recursive, maxMp: cfg.maxMp, quality: cfg.quality, format: cfg.format, metadata: cfg.metadata, minBytes: Math.round(cfg.minMb * 1024 * 1024), targetBytes: Math.round(cfg.targetMb * 1024 * 1024), exclude: cfg.exclude, types: [...cfg.types], onlyIfSmaller: cfg.onlyIfSmaller, mode: cfg.mode };
 }
 
 function renderChips() {
@@ -217,7 +218,7 @@ function renderJobs() {
     ctl.push(`<button class="mini" data-job-items="${j.id}" type="button">${icon("list", "ico-sm")} files</button>`);
     const note = { running: "runner reports every 8 files · auto-refresh 20 s", pausing: "stops after the current file", paused: "resume to continue where it left off", planned: "waiting for start", done: `finished ${j.finishedAt ? new Date(j.finishedAt).toLocaleString() : ""}`, cancelled: "cancelled - files already written stay" }[j.status] || "";
     return `<article class="ia-job" data-status="${j.status}">
-      <div class="ia-job-head"><div><b>${(j.roots || []).map((r) => esc(r.name)).join(", ") || esc(j.id)}</b><small class="muted">${esc(j.id)} · ${j.options.mode} · ${j.options.maxMp ? `${j.options.maxMp} MP` : "full res"} · q${j.options.quality} · ${j.options.format}</small></div><span class="chip ia-status" data-status="${j.status}">${esc(j.status)}</span></div>
+      <div class="ia-job-head"><div><b>${(j.roots || []).map((r) => esc(r.name)).join(", ") || esc(j.id)}</b><small class="muted">${esc(j.id)} · ${j.options.mode} · ${j.options.maxMp ? `${j.options.maxMp} MP` : "full res"} · ${j.options.targetBytes ? `~${fmtBytes(j.options.targetBytes)} target` : `q${j.options.quality}`} · ${j.options.format}</small></div><span class="chip ia-status" data-status="${j.status}">${esc(j.status)}</span></div>
       <div class="ia-bar ia-bar-progress"><i style="width:${pct(done, total)}%"></i></div>
       <div class="ia-job-stats"><span><b>${done}</b>/${total} files</span><span><b>${fmtBytes(p.bytesIn)}</b> → <b>${fmtBytes(p.bytesOut)}</b>${p.bytesIn ? ` <em>−${pct(saved, p.bytesIn)}%</em>` : ""}</span>${p.failed ? `<span class="img-bad">${p.failed} failed</span>` : ""}${p.skipped ? `<span class="muted">${p.skipped} skipped</span>` : ""}<span class="muted">${esc(note)}</span></div>
       <div class="ia-job-ctl">${ctl.join("")}</div>
@@ -232,7 +233,7 @@ async function showItems(id) {
   if (box.innerHTML) return (box.innerHTML = "");
   const r = await fetch(`/api/admin/images/jobs/${encodeURIComponent(id)}/items`);
   const d = await r.json();
-  box.innerHTML = `<ul class="ia-items">${d.items.map((i) => `<li>${i.ok ? icon("check", "ico-sm") : icon(i.soft ? "info" : "circle-x", "ico-sm")} <span class="ia-item-name" title="${escAttr(i.path)}/${escAttr(i.name)}">${esc(i.name)}</span><span class="muted">${i.ok ? `${fmtBytes(i.size)} · ${fmtTime(i.ms / 1000)}` : esc(i.error)}</span></li>`).join("") || "<li class='muted'>nothing processed yet</li>"}</ul>`;
+  box.innerHTML = `<ul class="ia-items">${d.items.map((i) => `<li>${i.ok ? icon("check", "ico-sm") : icon(i.soft ? "info" : "circle-x", "ico-sm")} <span class="ia-item-name" title="${escAttr(i.path)}/${escAttr(i.name)}">${esc(i.name)}</span><span class="muted">${i.ok ? `${fmtBytes(i.sizeIn)} → ${fmtBytes(i.size)} · ${fmtTime(i.ms / 1000)}` : esc(i.error)}</span></li>`).join("") || "<li class='muted'>nothing processed yet</li>"}</ul>`;
 }
 async function jobAction(button, id, action) {
   const body = {};
@@ -254,6 +255,7 @@ function wire() {
   });
   $("ia-minmb").addEventListener("change", (e) => (cfg.minMb = Math.max(0, Number(e.target.value) || 0), syncControls()));
   $("ia-exclude").addEventListener("change", (e) => (cfg.exclude = e.target.value.trim(), syncControls()));
+  $("ia-target").addEventListener("change", (e) => (cfg.targetMb = Math.max(0, Number(e.target.value) || 0), syncControls()));
   $("ia-folder-add").addEventListener("click", addFolderFromInput);
   $("ia-folder-input").addEventListener("keydown", (e) => e.key === "Enter" && addFolderFromInput());
   $("ia-folder-browse").addEventListener("click", () => browse("root"));

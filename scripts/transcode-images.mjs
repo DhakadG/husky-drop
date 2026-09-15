@@ -74,12 +74,26 @@ async function encode(source, output, file, options, original) {
   // EXIF/XMP/IPTC. Both keep modes carry everything and strip-gps removes
   // GPS afterwards with exiftool.
   img = options.metadata === "strip" ? img.keepIccProfile() : img.keepMetadata();
-  const q = options.quality;
-  if (file.format === "jpeg") img = img.jpeg({ quality: q, mozjpeg: true, chromaSubsampling: q >= 90 ? "4:4:4" : "4:2:0" });
-  else if (file.format === "webp") img = img.webp({ quality: q, effort: 4 });
-  else if (file.format === "avif") img = img.avif({ quality: Math.round(q * 0.75), effort: 4 });
-  else img = img.png({ compressionLevel: 9, palette: false });
-  const info = await img.toFile(output);
+  const withQuality = (q) => {
+    if (file.format === "jpeg") return img.clone().jpeg({ quality: q, mozjpeg: true, chromaSubsampling: q >= 90 ? "4:4:4" : "4:2:0" });
+    if (file.format === "webp") return img.clone().webp({ quality: q, effort: 4 });
+    if (file.format === "avif") return img.clone().avif({ quality: Math.round(q * 0.75), effort: 4 });
+    return img.clone().png({ compressionLevel: 9, palette: false });
+  };
+  let q = options.quality;
+  let info = await withQuality(q).toFile(output);
+  // Size target: smooth frames compress far below the target at a given
+  // quality, busy ones far above. Nudge quality a few times toward it.
+  if (options.targetBytes && file.format !== "png") {
+    for (let i = 0; i < 4; i++) {
+      const ratio = info.size / options.targetBytes;
+      if (ratio > 0.7 && ratio < 1.3) break;
+      const next = Math.max(50, Math.min(95, ratio < 0.7 ? q + (ratio < 0.35 ? 8 : 4) : q - (ratio > 2 ? 10 : 5)));
+      if (next === q) break;
+      q = next;
+      info = await withQuality(q).toFile(output);
+    }
+  }
   // RAW went through an intermediate (developed TIFF or embedded preview),
   // so copy the tags from the real original; pixels are already upright.
   if (options.metadata !== "strip" && source !== original) await run("exiftool", ["-overwrite_original", "-q", "-tagsfromfile", original, "-all:all", "-orientation=", output]).catch(() => {});
@@ -97,12 +111,21 @@ async function processOne(file, options, dir) {
   const info = await encode(source, output, file, options, input);
   const { size } = await stat(output);
   if (!size || !info.width) throw new Error("encoder produced nothing");
-  const put = await api(`/api/admin/images/jobs/${jobId}/file/${file.id}`, {
-    method: "PUT",
-    headers: { "content-type": "application/octet-stream", "x-format": file.format, "content-length": String(size) },
-    body: await readFile(output),
-  });
-  const result = await put.json().catch(() => ({}));
+  const bytes = await readFile(output);
+  let put;
+  let result;
+  // The worker-to-Drive hop occasionally 502s; one retry, flagged so the
+  // worker removes any copy the first attempt may have stored.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    put = await api(`/api/admin/images/jobs/${jobId}/file/${file.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/octet-stream", "x-format": file.format, "content-length": String(size), ...(attempt ? { "x-retry": "1" } : {}) },
+      body: bytes,
+    });
+    result = await put.json().catch(() => ({}));
+    if (put.ok || put.status < 500) break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
   if (!put.ok) throw new Error(result.error || `put ${put.status}`);
   if (result.skipped) throw new Error(result.skipped);
   if (result.w && (Math.abs(result.w - info.width) > 1 || Math.abs(result.h - info.height) > 1)) throw new Error(`Drive reports ${result.w}x${result.h}, encoded ${info.width}x${info.height}`);
@@ -110,12 +133,20 @@ async function processOne(file, options, dir) {
 }
 
 let batch = { done: [], skipped: [] };
+// A failed report keeps its batch for the next attempt; nothing is dropped.
 async function report(extra = {}) {
   if (!batch.done.length && !batch.skipped.length && !Object.keys(extra).length) return null;
   const body = JSON.stringify({ ...batch, ...extra });
-  batch = { done: [], skipped: [] };
-  const r = await api(`/api/admin/images/jobs/${jobId}/report`, { method: "POST", headers: { "content-type": "application/json" }, body });
-  return r.ok ? r.json() : null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await api(`/api/admin/images/jobs/${jobId}/report`, { method: "POST", headers: { "content-type": "application/json" }, body }).catch(() => null);
+    if (r?.ok) {
+      batch = { done: [], skipped: [] };
+      return r.json();
+    }
+    console.log(`report failed (${r?.status || "network"}), retrying`);
+    await new Promise((res) => setTimeout(res, 4000 * (attempt + 1)));
+  }
+  return null;
 }
 
 const started = Date.now();

@@ -13,7 +13,7 @@
 //             copy); the new file takes its place with the same name.
 //   copy    - original untouched; the new file goes to _compressed/<folder name>/.
 
-import { accessToken, driveCreateFolder, driveFileMeta, driveFindFolder, driveListFolder } from "./drive.js";
+import { accessToken, driveCreateFolder, driveFileMeta, driveFindFolder, driveListFolder, driveTrashFile } from "./drive.js";
 import { json, cleanText } from "./util.js";
 
 const KEY = "images:jobs";
@@ -32,7 +32,9 @@ const TYPES = {
 };
 // Bytes per output pixel at the default quality; the dry run is an estimate.
 const BPP = { jpeg: 0.30, webp: 0.22, avif: 0.15 };
-const SECS = { jpeg: 2, png: 3, heic: 4, tiff: 3, webp: 2, raw: 9 };
+// Seconds per file on the GitHub runner, measured: ~6 s for a 14 MB JPEG
+// (download through the worker + encode + upload); RAW develops add ~8 s.
+const SECS = { jpeg: 4, png: 5, heic: 6, tiff: 5, webp: 4, raw: 12 };
 
 async function loadJobs(env) {
   return ((await env.KV.get(KEY, "json")) || {}).jobs || [];
@@ -56,6 +58,9 @@ export function normalizeOptions(raw = {}) {
     minBytes: Math.max(0, Number(raw.minBytes) || 1.5 * 1024 * 1024),
     onlyIfSmaller: raw.onlyIfSmaller !== false,
     mode: ["replace", "archive", "copy"].includes(raw.mode) ? raw.mode : "copy",
+    // Optional size target per photo: the runner nudges quality up on smooth
+    // frames and down on busy ones until the output lands near it.
+    targetBytes: Math.max(0, Math.min(20 * 1024 * 1024, Number(raw.targetBytes) || 0)),
     excludeRe: safeRegex(cleanText(raw.exclude || "", 200)),
   };
 }
@@ -110,6 +115,7 @@ async function walk(env, folderId, options, out, path, depth, seen) {
       else if (options.excludeRe && new RegExp(options.excludeRe, "i").test(file.name)) skip = "name excluded";
       else if (file.size > MAX_UPLOAD * 3) skip = "over 270 MB";
       const est = estimate(file, options);
+      if (options.targetBytes) est.bytes = Math.min(Math.round(file.size * 0.9), options.targetBytes);
       if (!skip && options.onlyIfSmaller && est.bytes >= file.size * 0.9) skip = "no worthwhile saving";
       if (skip) {
         out.skipped[skip] = (out.skipped[skip] || 0) + 1;
@@ -136,7 +142,7 @@ export async function planImageJob(request, env) {
   }
   const bytes = out.files.reduce((n, f) => n + f.size, 0);
   const estBytes = out.files.reduce((n, f) => n + f.est, 0);
-  const etaSec = out.files.reduce((n, f) => n + (SECS[f.type] || 3) + f.size / 8e6, 0);
+  const etaSec = out.files.reduce((n, f) => n + (SECS[f.type] || 4) + f.size / 6e6 + (options.targetBytes ? 3 : 0), 0);
   const largest = [...out.files].sort((a, b) => b.size - a.size).slice(0, 8).map((f) => ({ name: f.name, size: f.size, est: f.est, type: f.type, w: f.w, h: f.h }));
   const job = {
     id: `img-${Date.now().toString(36)}`,
@@ -245,6 +251,14 @@ async function moveFile(env, tok, fileId, fromId, toId) {
   const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${toId}&removeParents=${fromId}&supportsAllDrives=true`, { method: "PATCH", headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" }, body: "{}" });
   if (!r.ok) throw new Error("Drive move failed");
 }
+// A retried PUT must not leave two copies behind: drop anything already
+// tagged as made from this original.
+async function trashPriorCopies(env, tok, originalId) {
+  const params = new URLSearchParams({ q: `appProperties has { key='archivedFrom' and value='${originalId}' } and trashed=false`, fields: "files(id)", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
+  const r = await fetch("https://www.googleapis.com/drive/v3/files?" + params, { headers: { authorization: `Bearer ${tok}` } });
+  if (!r.ok) return;
+  for (const f of (await r.json()).files || []) await driveTrashFile(env, f.id).catch(() => {});
+}
 async function multipart(env, tok, url, method, meta, body, mime) {
   const boundary = `hd-${crypto.randomUUID()}`;
   const head = `--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\ncontent-type: ${mime}\r\n\r\n`;
@@ -271,6 +285,7 @@ export async function putImageResult(request, env, jobId, fileId) {
   const tok = await accessToken(env);
   const name = withExt(file.name, format);
   const props = { appProperties: { archivedFrom: file.id, archiveJob: job.id } };
+  if (request.headers.get("x-retry") && job.options.mode !== "replace") await trashPriorCopies(env, tok, file.id);
   let created;
   if (job.options.mode === "replace") {
     created = await multipart(env, tok, `https://www.googleapis.com/upload/drive/v3/files/${file.id}?uploadType=multipart&fields=id,size,imageMediaMetadata(width,height)&supportsAllDrives=true`, "PATCH", { name, mimeType: mime, ...props }, body, mime);
@@ -319,5 +334,5 @@ export async function imageJobItems(env, jobId) {
   const job = (await loadJobs(env)).find((j) => j.id === jobId);
   if (!job) return json({ error: "job not found" }, 404);
   const names = new Map(job.files.map((f) => [f.id, f]));
-  return json({ items: job.items.map((i) => ({ ...i, name: names.get(i.id)?.name || i.id, path: names.get(i.id)?.path || "", size: names.get(i.id)?.size || 0 })).reverse() });
+  return json({ items: job.items.map((i) => ({ ...i, name: names.get(i.id)?.name || i.id, path: names.get(i.id)?.path || "", sizeIn: names.get(i.id)?.size || 0 })).reverse() });
 }
