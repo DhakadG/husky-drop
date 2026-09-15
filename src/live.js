@@ -28,15 +28,22 @@ import { bumpShareStats, bumpStats, mergeEventsKV, notifyEmail, sendNotify } fro
 // ponytail: digest candidates live in DO memory; a DO restart mid-transfer drops that one email.
 const DIGEST_SETTLE_MS = 8_000;
 const DIGEST_IDLE_MS = 90_000;
+// Progress ticks from N uploaders inside this window become one admin patch.
+const BROADCAST_COALESCE_MS = 200;
+const FOLDER_ID_TTL_MS = 6 * 3600_000;
+const RECENT_DONE_KEY = "recentDone";
 
 export class LiveTracker {
   constructor(state, env) {
     this.state = state;
     this.env = env;
     this.sessions = new Map();
-    this.adminSockets = new Set();
+    this.sortedSessions = null; // snapshot() cache, dropped on any session mutation
+    this.dirtySessions = new Set(); // ids changed since the last admin patch
+    this.recentDirty = false;
+    this.broadcastTimer = null;
     this.folderLocks = new Map(); // key -> in-flight resolve promise
-    this.folderIds = new Map(); // key -> resolved Drive folder id (KV is eventually consistent; this is not)
+    this.folderIds = new Map(); // key -> { id, at } resolved Drive folder id (KV is eventually consistent; this is not)
     this.started = new Set();
     this.digests = new Map(); // sessionId -> finished-session email candidate
     this.pending = new Map(); // slug -> pending completions
@@ -51,10 +58,29 @@ export class LiveTracker {
     this.sqlReady = false;
     try {
       this.sql = state.storage.sql;
-      state.blockConcurrencyWhile(async () => this.initSql());
+      state.blockConcurrencyWhile(() => this.wake());
     } catch {
       this.sql = null;
     }
+  }
+
+  // Runs on every cold start, including a wake from WebSocket hibernation.
+  // Live sessions are rebuilt from the next progress frame; the "finished
+  // this hour" list is the one thing worth keeping across the gap. Admin
+  // sockets survive hibernation holding a stale list, so they get a fresh
+  // (possibly empty) snapshot right away.
+  async wake() {
+    this.initSql();
+    try {
+      this.recentDone = (await this.state.storage.get(RECENT_DONE_KEY)) || [];
+    } catch {}
+    for (const socket of this.adminSockets()) {
+      this.safeSend(socket, { type: "snapshot", active: this.snapshot(), recent: this.recentDone });
+    }
+  }
+
+  adminSockets() {
+    return this.state.getWebSockets?.("admin") || [];
   }
 
   initSql() {
@@ -146,15 +172,21 @@ export class LiveTracker {
       const days = clamp(Number(url.searchParams.get("days")) || 3, 1, 14);
       const start = new Date(`${before}T00:00:00Z`).getTime();
       if (!Number.isFinite(start)) return new Response(JSON.stringify({ error: "bad before date" }), { status: 400, headers: JSON_HEADERS });
-      const out = [];
-      for (let index = 1; index <= days; index++) {
-        const day = dayKey(start - index * 86400_000);
-        const rows = this.sqlReady
-          ? this.sql.exec("SELECT record_json FROM activity_events WHERE day = ? ORDER BY at DESC LIMIT ?", day, EVENT_CAP).toArray()
-          : [];
-        out.push({ day, events: rows.map((row) => JSON.parse(row.record_json)).filter(Boolean) });
+      // One ranged query, bucketed in JS, instead of one query per day.
+      const byDay = new Map();
+      for (let index = 1; index <= days; index++) byDay.set(dayKey(start - index * 86400_000), []);
+      const oldest = dayKey(start - days * 86400_000);
+      const rows = this.sqlReady
+        ? this.sql.exec("SELECT day, record_json FROM activity_events WHERE day >= ? AND day < ? ORDER BY at DESC", oldest, before).toArray()
+        : [];
+      for (const row of rows) {
+        const bucket = byDay.get(row.day);
+        if (!bucket || bucket.length >= EVENT_CAP) continue;
+        const record = JSON.parse(row.record_json);
+        if (record) bucket.push(record);
       }
-      return new Response(JSON.stringify({ days: out, oldest: out.length ? out.at(-1).day : before }), { headers: JSON_HEADERS });
+      const out = [...byDay].map(([day, events]) => ({ day, events }));
+      return new Response(JSON.stringify({ days: out, oldest }), { headers: JSON_HEADERS });
     }
 
     if (url.pathname === "/share-stats") {
@@ -266,16 +298,12 @@ export class LiveTracker {
       const id = cleanText(body.id || "", 100);
       const slug = cleanText(body.slug || "", 60);
       let closed = 0;
-      if (id && this.sessions.delete(id)) closed++;
-      if (!id && slug) {
-        for (const [sessionId, session] of this.sessions) {
-          if (session.slug === slug) {
-            this.sessions.delete(sessionId);
-            closed++;
-          }
-        }
+      for (const [sessionId, session] of this.sessions) {
+        if (id ? sessionId !== id : session.slug !== slug) continue;
+        this.sessions.delete(sessionId);
+        this.markDirty(sessionId);
+        closed++;
       }
-      if (closed) this.broadcast();
       return new Response(JSON.stringify({ ok: true, closed }), { headers: JSON_HEADERS });
     }
 
@@ -350,7 +378,10 @@ export class LiveTracker {
         return new Response(JSON.stringify({ first: false }), { headers: JSON_HEADERS });
       }
       const key = `${link.slug}:${id}`;
-      if (this.started.has(key)) {
+      // Memory answers repeats for free; the KV guard only matters after a
+      // hibernation wake emptied `started` mid-session.
+      if (this.started.has(key) || (await this.env.KV.get(`started:${key}`))) {
+        this.started.add(key);
         return new Response(JSON.stringify({ first: false }), { headers: JSON_HEADERS });
       }
       this.started.add(key);
@@ -362,9 +393,7 @@ export class LiveTracker {
 
     if (request.method === "POST" && url.pathname === "/progress") {
       const body = await request.json().catch(() => ({}));
-      const session = this.recordSession(body);
-      this.noteDigest(session.id, { slug: session.slug, label: session.label, uploader: session.uploader, expected: session.count, done: session.state === "done" });
-      this.broadcast();
+      this.recordProgress(body);
       return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
     }
 
@@ -382,45 +411,58 @@ export class LiveTracker {
       return new Response("expected websocket", { status: 426 });
     }
 
+    // Hibernatable sockets: the DO is evicted (and unbilled) while admin
+    // dashboards sit idle, and events arrive via webSocketMessage/Close.
+    // Per-socket state must live in the attachment, not on the object.
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    const role = url.searchParams.get("role");
+    const role = url.searchParams.get("role") === "admin" ? "admin" : "upload";
     const slug = url.searchParams.get("slug") || "";
 
-    server.accept();
+    this.state.acceptWebSocket(server, [role]);
+    server.serializeAttachment({ role, slug, sessionId: "" });
     if (role === "admin") {
-      this.adminSockets.add(server);
       this.safeSend(server, { type: "snapshot", active: this.snapshot(), recent: this.recentDone });
-      server.addEventListener("close", () => this.adminSockets.delete(server));
-      server.addEventListener("error", () => this.adminSockets.delete(server));
-    } else {
-      server.addEventListener("message", (event) => {
-        let msg;
-        try {
-          msg = JSON.parse(event.data);
-        } catch {
-          return;
-        }
-        if (msg.type !== "progress") return;
-        const session = this.recordSession({ ...msg, slug });
-        server.sessionId = session.id;
-        this.noteDigest(session.id, { slug: session.slug, label: session.label, uploader: session.uploader, expected: session.count, done: session.state === "done" });
-        this.broadcast();
-      });
-      server.addEventListener("close", () => {
-        if (server.sessionId) {
-          const existing = this.sessions.get(server.sessionId);
-          if (existing) {
-            existing.state = existing.state === "done" ? "done" : "stale";
-            existing.lastSeen = Date.now();
-            this.sessions.set(server.sessionId, existing);
-            this.broadcast();
-          }
-        }
-      });
     }
-
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  webSocketMessage(ws, data) {
+    const meta = ws.deserializeAttachment() || {};
+    if (meta.role !== "upload") return;
+    let msg;
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return;
+    }
+    if (msg?.type !== "progress") return;
+    const session = this.recordProgress({ ...msg, slug: meta.slug });
+    if (meta.sessionId !== session.id) ws.serializeAttachment({ ...meta, sessionId: session.id });
+  }
+
+  webSocketClose(ws) {
+    const meta = ws.deserializeAttachment() || {};
+    const existing = meta.sessionId && this.sessions.get(meta.sessionId);
+    if (existing) {
+      existing.state = existing.state === "done" ? "done" : "stale";
+      existing.lastSeen = Date.now();
+      this.markDirty(existing.id);
+    }
+    try {
+      ws.close();
+    } catch {}
+  }
+
+  webSocketError(ws) {
+    this.webSocketClose(ws);
+  }
+
+  // Shared by the WebSocket path and the /api/progress fallback.
+  recordProgress(input) {
+    const session = this.recordSession(input);
+    this.noteDigest(session.id, { slug: session.slug, label: session.label, uploader: session.uploader, expected: session.count, done: session.state === "done" });
+    return session;
   }
 
   // Resolve a Drive folder once per DO lifetime. Parallel files from one
@@ -429,19 +471,23 @@ export class LiveTracker {
   // series - about one file per second no matter how fast the network was.
   async resolveFolderOnce(key, resolve) {
     const known = this.folderIds.get(key);
-    if (known) return known;
+    if (known && Date.now() - known.at < FOLDER_ID_TTL_MS) return known.id;
     if (!this.folderLocks.has(key)) {
       this.folderLocks.set(key, resolve().finally(() => this.folderLocks.delete(key)));
     }
     const id = await this.folderLocks.get(key);
-    // ponytail: never evicted; a folder deleted in Drive stays cached until the DO restarts.
-    if (id) this.folderIds.set(key, id);
+    // A folder deleted in Drive stays cached for at most the TTL.
+    if (id) this.folderIds.set(key, { id, at: Date.now() });
     return id;
   }
 
   rateLimit(key, max, windowSec) {
     const now = Date.now();
-    if (this.rateBuckets.size > 5000) this.rateBuckets.clear(); // memory guard
+    // Memory guard that only drops expired buckets: clearing everything at
+    // once handed every client a coordinated free window.
+    if (this.rateBuckets.size > 5000) {
+      for (const [k, b] of this.rateBuckets) if (b.reset <= now) this.rateBuckets.delete(k);
+    }
     let bucket = this.rateBuckets.get(key);
     if (!bucket || bucket.reset <= now) {
       bucket = { count: 0, reset: now + windowSec * 1000 };
@@ -545,7 +591,7 @@ export class LiveTracker {
       }
     }
     this.pendingEvents.push(record);
-    if (this.pendingEvents.length > EVENT_CAP + 50) this.pendingEvents.shift();
+    if (this.pendingEvents.length > EVENT_CAP + 50) this.pendingEvents = this.pendingEvents.slice(-EVENT_CAP);
   }
 
   async armAlarm() {
@@ -556,7 +602,9 @@ export class LiveTracker {
   prune() {
     const cutoff = Date.now() - 2 * 60_000;
     for (const [id, session] of this.sessions) {
-      if (session.lastSeen < cutoff) this.sessions.delete(id);
+      if (session.lastSeen >= cutoff) continue;
+      this.sessions.delete(id);
+      this.markDirty(id);
     }
   }
 
@@ -603,6 +651,7 @@ export class LiveTracker {
     }
 
     this.sessions.set(session.id, session);
+    this.markDirty(session.id);
     return session;
   }
 
@@ -621,6 +670,8 @@ export class LiveTracker {
     });
     const cutoff = Date.now() - 3600_000;
     this.recentDone = this.recentDone.filter((s) => s.endedAt >= cutoff).slice(0, 20);
+    this.recentDirty = true;
+    this.state.storage.put(RECENT_DONE_KEY, this.recentDone).catch(() => {});
   }
 
   // One digest email per finished session ("Priya uploaded 214 files, 18 GB").
@@ -877,19 +928,37 @@ export class LiveTracker {
 
   snapshot() {
     this.prune();
-    return [...this.sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen);
+    this.sortedSessions ??= [...this.sessions.values()].sort((a, b) => b.lastSeen - a.lastSeen);
+    return this.sortedSessions;
   }
 
-  broadcast() {
-    const payload = { type: "snapshot", active: this.snapshot(), recent: this.recentDone };
-    for (const socket of [...this.adminSockets]) this.safeSend(socket, payload);
+  // Admin viewers get deltas, not the whole list: a progress tick used to
+  // re-sort and re-serialize every session for every socket. Ticks inside the
+  // coalesce window collapse into one patch; new sockets still get a snapshot.
+  markDirty(sessionId) {
+    this.sortedSessions = null;
+    this.dirtySessions.add(sessionId);
+    this.broadcastTimer ??= setTimeout(() => this.flushBroadcast(), BROADCAST_COALESCE_MS);
+  }
+
+  flushBroadcast() {
+    this.broadcastTimer = null;
+    if (!this.dirtySessions.size && !this.recentDirty) return;
+    const patch = {
+      type: "patch",
+      updated: [...this.dirtySessions].map((id) => this.sessions.get(id)).filter(Boolean),
+      removed: [...this.dirtySessions].filter((id) => !this.sessions.has(id)),
+    };
+    if (this.recentDirty) patch.recent = this.recentDone;
+    this.dirtySessions.clear();
+    this.recentDirty = false;
+    const payload = JSON.stringify(patch);
+    for (const socket of this.adminSockets()) this.safeSend(socket, payload);
   }
 
   safeSend(socket, payload) {
     try {
-      socket.send(JSON.stringify(payload));
-    } catch {
-      this.adminSockets.delete(socket);
-    }
+      socket.send(typeof payload === "string" ? payload : JSON.stringify(payload));
+    } catch {}
   }
 }

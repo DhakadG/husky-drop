@@ -164,9 +164,13 @@ All admin endpoints require:
 Authorization: Bearer <ADMIN_TOKEN>
 ```
 
-### `GET /api/admin/live?token=<ADMIN_TOKEN>`
+### `GET /api/admin/live`
 
-Admin WebSocket endpoint for live upload progress snapshots.
+Admin WebSocket endpoint (cookie-authenticated). On connect the server sends
+`{type:"snapshot", active:[...], recent:[...]}`; afterwards it sends
+coalesced deltas `{type:"patch", updated:[session], removed:[id], recent?}`
+that the client merges by session id. Sockets are hibernatable, so an idle
+dashboard costs nothing while no upload is running.
 
 ### `GET /api/admin/overview`
 
