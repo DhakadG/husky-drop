@@ -4,6 +4,18 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Density slider v2, smooth playback bars (PR #39)
+
+- Gallery density is continuous: 1-9 in quarter steps, tile size
+  interpolated between the old nine stops. Mouse wheel over the slider
+  nudges a step, double-click resets to Balanced. The text-input focus box
+  that leaked onto the range is gone.
+- Tile play glyph scales with the tile (`20cqw`, 18-44 px) instead of a
+  fixed 40 px that swamped dense grids.
+- Hover-preview played bar and the viewer seek bar update from
+  `requestAnimationFrame` while playing; `timeupdate` alone fires ~4x/s and
+  looked stepped.
+
 ## 2026-09-16 — Hot video tiles (PR #38)
 
 - Video tiles actually inside the viewport (second, margin-less
