@@ -47,6 +47,7 @@ import {
   showCreateStep,
   toggleExpiredLinks,
   toggleLinkPause,
+  confirmAction,
 } from "./admin-links.js";
 import {
   createShare,
@@ -510,6 +511,11 @@ export function handleAdminAction(e) {
     shareEditSelectedFolders.delete(removeShareEditFolder.dataset.removeShareEditFolder);
     return renderShareEditFolders();
   }
+  const trash = e.target.closest("[data-trash-upload]");
+  if (trash) {
+    trashUploadFromDetail(trash);
+    return;
+  }
   const prev = e.target.closest("[data-preview]");
   if (prev) return previewFile(prev.dataset.preview, prev);
   if (e.target.id === "qr-modal") $("qr-modal").close();
@@ -579,4 +585,22 @@ export async function closeLiveSession(id, slug) {
   renderLive();
   if (currentDetailSlug) renderDetailLive(currentDetailSlug);
   refreshAll();
+}
+
+async function trashUploadFromDetail(button) {
+  const ok = await confirmAction({
+    title: "Move to Drive trash?",
+    message: `"${button.dataset.trashName}" leaves this link's history and goes to Drive's trash, where it stays recoverable for 30 days.`,
+    confirmLabel: "Move to trash",
+  });
+  if (!ok) return;
+  button.disabled = true;
+  try {
+    const r = await fetch(`/api/admin/uploads/${encodeURIComponent(currentDetailSlug)}/${encodeURIComponent(button.dataset.trashUpload)}`, { method: "DELETE" });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "remove failed");
+    refreshDetail(currentDetailSlug, false);
+  } catch (err) {
+    button.disabled = false;
+    flash(button, err.message);
+  }
 }

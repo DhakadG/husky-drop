@@ -249,7 +249,7 @@ function uploadRow(u) {
       <td>${esc(u.u)}</td>
       <td class="num">${fmtBytes(u.s)}</td>
       <td class="num">${new Date(u.at).toLocaleString()}</td>
-      <td class="num"><button class="mini" data-preview="${escAttr(u.f)}" ${u.f ? "" : "disabled"} type="button">open</button></td>
+      <td class="num"><button class="mini" data-preview="${escAttr(u.f)}" ${u.f ? "" : "disabled"} type="button">open</button> <button class="mini danger" data-trash-upload="${escAttr(u.f)}" data-trash-name="${escAttr(u.n)}" ${u.f ? "" : "disabled"} type="button">remove</button></td>
     </tr>`;
 }
 function detailStatCard(label, value, iconName, accent = false) {

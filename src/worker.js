@@ -64,6 +64,7 @@ import {
   patchLink,
   deleteLink,
   listUploads,
+  trashUpload,
   linkDetail,
   adminOverview,
   adminTimeseries,
@@ -223,6 +224,10 @@ async function api(request, env, url, ctx) {
     }
     if (m === "DELETE" && p.startsWith("/api/admin/links/")) {
       return deleteLink(request, env, p.slice("/api/admin/links/".length));
+    }
+    if (m === "DELETE" && p.startsWith("/api/admin/uploads/")) {
+      const [uploadSlug, fileId] = p.slice("/api/admin/uploads/".length).split("/");
+      return trashUpload(request, env, uploadSlug, fileId || "");
     }
     if (m === "GET" && p.startsWith("/api/admin/uploads/")) {
       return listUploads(env, p.slice("/api/admin/uploads/".length), url);

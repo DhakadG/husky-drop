@@ -382,3 +382,17 @@ export async function ensureLinkFolderDirect(env, slug) {
   await cachePut(env, `link:${slug}`, JSON.stringify(link));
   return folder.id;
 }
+
+// Move a file to Drive's trash (recoverable for 30 days) instead of a hard
+// delete. Returns false when Drive refuses.
+export async function driveTrashFile(env, fileId) {
+  const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!id) return false;
+  const tok = await accessToken(env);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?supportsAllDrives=true`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" },
+    body: JSON.stringify({ trashed: true }),
+  });
+  return r.ok;
+}
