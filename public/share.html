@@ -101,15 +101,14 @@
       <div class="gallery-toolbar panel">
         <nav class="crumbs" id="crumbs" aria-label="folders"></nav>
         <div class="toolbar-tools">
-          <div class="tile-size-control size-control" id="tile-size">
-            <div class="size-control-head"><span>Gallery density</span><output class="size-control-value"
-                for="tile-size-range">Balanced</output></div>
+          <div class="tile-size-control size-control" id="tile-size" title="Gallery density">
+            <span class="size-control-end"><svg class="ico" aria-hidden="true"><use href="/icons.svg#grid-3x3"></use></svg></span>
             <div class="size-control-rail">
-              <span class="size-control-end"><svg class="ico" aria-hidden="true"><use href="/icons.svg#grid-3x3"></use></svg><small>More</small></span>
               <input id="tile-size-range" type="range" min="1" max="9" step="1" value="5"
                 aria-label="Gallery tile density" aria-valuetext="Balanced" />
-              <span class="size-control-end"><svg class="ico large" aria-hidden="true"><use href="/icons.svg#grid-2x2"></use></svg><small>Detail</small></span>
+              <output class="size-control-value" for="tile-size-range" aria-hidden="true">Balanced</output>
             </div>
+            <span class="size-control-end"><svg class="ico large" aria-hidden="true"><use href="/icons.svg#grid-2x2"></use></svg></span>
           </div>
           <span class="sort-control">
             <select id="sort" class="sort-select" aria-label="sort files">

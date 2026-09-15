@@ -30,7 +30,7 @@ import {
 import { toast, fmtDur } from "./share-utils.js";
 import { trackEvent, installTracking } from "./share-beacon.js";
 import { downloadFile } from "./share-download.js";
-import { installHoverPreview, probeVideoMetadata } from "./share-preview.js";
+import { installHoverPreview, probeVideoMetadata, warmVideoTile } from "./share-preview.js";
 import { openViewer } from "./share-viewer.js";
 import {
   cancelTouchSelection,
@@ -57,11 +57,14 @@ const cardObserver =
     ? new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
-            if (entry.isIntersecting) {
-              const file = entry.target._file;
-              if (file && /^video\//.test(file.mime) && !file.aspect && !file.thumb) probeVideoMetadata(file);
+            const file = entry.target._file;
+            if (!file) continue;
+            if (!/^video\//.test(file.mime)) {
               cardObserver.unobserve(entry.target);
+              continue;
             }
+            warmVideoTile(file, entry.isIntersecting);
+            if (entry.isIntersecting && !file.aspect && !file.thumb) probeVideoMetadata(file);
           }
         },
         { rootMargin: "700px" },
@@ -647,6 +650,7 @@ function installTileSizeControl() {
     range.setAttribute("aria-valuetext", label);
     control.querySelector(".size-control-value").textContent = label;
     control.style.setProperty("--size-progress", `${((tileScale - 1) / 8) * 100}%`);
+    control.style.setProperty("--size-frac", String((tileScale - 1) / 8));
     localStorage.setItem("lhdb_gallery_scale", String(tileScale));
     scheduleLayout();
     if (report) trackEvent("layout", sizeDescription(tileScale), { control: "tile-size", step: tileScale });
