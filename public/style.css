@@ -2724,7 +2724,7 @@ body.selecting .g-check {
   min-height: 48px;
   padding: 5px 7px;
   display: grid;
-  grid-template-columns: 40px auto minmax(72px, 1fr) auto 40px;
+  grid-template-columns: 40px auto minmax(72px, 1fr) auto auto 40px;
   align-items: center;
   gap: 6px;
   transform: translateX(-50%);
@@ -7756,7 +7756,8 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 
 /* Viewer quality toggle: preview (720p) by default, HD = original */
 .pswp-video-controls [data-video-quality] {
-  min-width: 34px;
+  min-width: 36px;
+  min-height: 30px;
   padding: 0 8px;
   border-radius: 8px;
   font: 700 11px var(--font-mono);
@@ -7769,4 +7770,8 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   color: #0b1a2b;
   background: #fff;
   border-color: #fff;
+}
+/* No preview for this file: collapse the HD slot so the row stays five-up */
+.pswp-video-controls:has([data-video-quality].hidden) {
+  grid-template-columns: 40px auto minmax(72px, 1fr) auto 40px;
 }
