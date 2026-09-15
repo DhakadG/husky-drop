@@ -6332,8 +6332,44 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
     linear-gradient(125deg, rgba(47, 107, 255, 0.34), rgba(21, 188, 200, 0.24), rgba(255, 255, 255, 0.8)) border-box;
   box-shadow: 0 10px 28px -22px rgba(34, 91, 184, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
+/* Gallery density: icon - slider - icon, one toolbar row. The value only
+   shows as a tooltip over the thumb while hovering or dragging. */
 .tile-size-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 200px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
   color: var(--ink-soft);
+}
+.tile-size-control .size-control-rail {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tile-size-control .size-control-end {
+  display: flex;
+  color: var(--muted);
+}
+.tile-size-control .size-control-value {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: calc(9px + (100% - 18px) * var(--size-frac, 0.5));
+  translate: -50% 0;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+.tile-size-control:hover .size-control-value,
+.tile-size-control:focus-within .size-control-value {
+  opacity: 1;
 }
 .size-control-head {
   display: flex;

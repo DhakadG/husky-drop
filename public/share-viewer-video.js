@@ -1,7 +1,7 @@
 import { createVideoSession, projectVideoTimeline } from "./share-video-session.js";
 import { fx, uiIcon } from "./share-state.js";
 import { downloadFile, ensureFreshDownload, tokenFresh } from "./share-download.js";
-import { videoWarmLease } from "./share-preview.js";
+import { adoptPreviewVideo, videoWarmLease } from "./share-preview.js";
 import { inlineUrl, thumbUrl } from "./share.js";
 
 // PhotoSwipe viewer + Swiper thumbstrip.
@@ -59,7 +59,7 @@ export function registerVideoContent(instance) {
     status.textContent = "Loading video";
     wrap.appendChild(status);
 
-    const video = document.createElement("video");
+    const video = adoptPreviewVideo(file) || document.createElement("video");
     video.className = "pswp-video";
     video.controls = false;
     video.playsInline = true;

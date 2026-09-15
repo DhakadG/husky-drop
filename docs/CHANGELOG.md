@@ -4,6 +4,21 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Share video efficiency + density slider (PR #36)
+
+- Opening a hovered video in the viewer adopts the tile's already-buffered
+  `<video>` (`adoptPreviewVideo`) instead of creating a new element, so the
+  clip is not downloaded twice.
+- Video tiles near the viewport keep a metadata-only element warm
+  (`warmVideoTile`, capped at 12) so hover playback starts without a cold
+  fetch; the warm lease is released when the tile scrolls away.
+- Shift-scrub issues one accurate seek at a time and applies the latest
+  pointer target on `seeked` (was: a `fastSeek` per animation frame, which
+  piled up seeks and jumped between keyframes).
+- Gallery density is now a bare icon-slider-icon row in the toolbar; the
+  value shows as a tooltip over the thumb while hovering/dragging. The
+  boxed "Gallery density" card and More/Detail sublabels are gone.
+
 ## 2026-09-15 — Trash a delivered upload (PR #35)
 
 - Link detail → upload history → **remove**: moves the file to Drive trash,

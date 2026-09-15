@@ -17,7 +17,7 @@ import { inlineUrl, scheduleLayout } from "./share.js";
 
 export function installHoverPreview(fig, file) {
   if (!/^video\//.test(file.mime)) return;
-  let scrubRaf = 0;
+  let seekTarget = NaN;
   let startPromise = null;
   const state = { scrubbing: false, hovering: false };
 
@@ -35,9 +35,21 @@ export function installHoverPreview(fig, file) {
     if (!video || !Number.isFinite(video.duration) || video.duration <= 0 || !fig.classList.contains("previewing")) return false;
     state.scrubbing = true;
     video.pause();
+    video.addEventListener("seeked", applySeek);
     fig.classList.add("scrubbing");
     fx.setScrubbing(true, fig);
     return true;
+  };
+
+  // One seek in flight at a time: the browser queues nothing, so firing a
+  // seek per pointermove made every frame fight the previous decode. The
+  // latest target waits here and goes out the moment `seeked` fires.
+  const applySeek = () => {
+    const video = previewVideos.get(file.id);
+    if (!video || video.seeking || !Number.isFinite(seekTarget)) return;
+    const t = seekTarget;
+    seekTarget = NaN;
+    if (Math.abs(video.currentTime - t) > 0.04) video.currentTime = t;
   };
 
   // Always sets --scrub-x (and the timestamp badge) in the same synchronous
@@ -51,21 +63,14 @@ export function installHoverPreview(fig, file) {
     const t = pct * video.duration;
     fig.style.setProperty("--scrub-x", `${pct * 100}%`);
     updateScrubBadge(fig, video, t);
-    if (!scrubRaf) {
-      scrubRaf = requestAnimationFrame(() => {
-        scrubRaf = 0;
-        if (Math.abs(video.currentTime - t) > 0.08) {
-          if (video.fastSeek) video.fastSeek(t);
-          else video.currentTime = t;
-        }
-      });
-    }
+    seekTarget = t;
+    applySeek();
   };
 
   const endScrub = ({ resume = true, stopPreview = false } = {}) => {
     if (!state.scrubbing) return;
-    cancelAnimationFrame(scrubRaf);
-    scrubRaf = 0;
+    seekTarget = NaN;
+    previewVideos.get(file.id)?.removeEventListener("seeked", applySeek);
     state.scrubbing = false;
     fig.classList.remove("scrubbing");
     fig.style.removeProperty("--scrub-x");
@@ -144,10 +149,10 @@ async function startHoverPreview(fig, file, opts = {}) {
 
 export function stopHoverPreview(fig, file, opts = {}) {
   videoWarmLease(file).release("preview");
+  fig.classList.remove("previewing", "buffering");
   const video = previewVideos.get(file.id);
   if (!video) return;
   video.pause();
-  fig.classList.remove("previewing", "buffering");
   if (opts.removeBar) {
     fig.querySelector(".buffer-bar")?.remove();
     fig._scrubBadge = null;
@@ -345,4 +350,40 @@ export function videoWarmLease(file) {
   });
   videoWarmLeases.set(file.id, lease);
   return lease;
+}
+
+// The viewer takes over the tile's <video> so a clip that already buffered
+// under the pointer plays immediately instead of downloading a second time.
+// Ownership moves with it: the tile gets a fresh element on its next hover.
+export function adoptPreviewVideo(file) {
+  const video = previewVideos.get(file.id);
+  if (!video || !video.getAttribute("src")) return null;
+  previewVideos.delete(file.id);
+  video.pause();
+  video.loop = false;
+  video.muted = false;
+  video.removeAttribute("style");
+  try {
+    video.currentTime = 0;
+  } catch {}
+  return video;
+}
+
+// Tiles near the viewport keep a metadata-only <video> warm (moov atom,
+// first frame) so hover playback starts without a cold fetch. Capped so a
+// long gallery never holds dozens of decoders open.
+const warmTiles = new Set();
+const WARM_LIMIT = 12;
+export function warmVideoTile(file, visible) {
+  if (!canHoverPreview || !/^video\//.test(file.mime)) return;
+  const lease = videoWarmLease(file);
+  if (!visible) {
+    warmTiles.delete(file.id);
+    lease.release("visible");
+    return;
+  }
+  if (warmTiles.has(file.id) || warmTiles.size >= WARM_LIMIT) return;
+  warmTiles.add(file.id);
+  lease.claim("visible");
+  getPreviewVideo(file).catch(() => {});
 }
