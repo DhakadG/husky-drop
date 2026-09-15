@@ -37,6 +37,7 @@ import {
   liveStub,
   logEvent,
   mergeEventsKV,
+  notifyEmail,
   rateLimitRemote,
   recordCompletion,
   sendNotify,
