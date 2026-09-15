@@ -4,6 +4,13 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Home polish (PR #30)
+
+- Headline no longer hyphen-breaks ("original‑quality" is one word; `text-wrap:
+  balance`). The visitor CTA is "See how it works"; "Create a drop link" is
+  the secondary (owner) action. Feature strip icons use the same tile
+  language as the step cards. Footer text passes contrast.
+
 ## 2026-09-15 — admin.js client split (PR #29)
 
 - `public/admin.js` (1.7k, classic script) → ES modules: `admin.js` (boot,
