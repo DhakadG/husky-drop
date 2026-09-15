@@ -198,11 +198,11 @@ for (const [f, at] of [["a", 1], ["b", 2], ["a", 1]]) {
 }
 const digest = digestTracker.digests.get("sess-1");
 assert.deepEqual([digest.files, digest.bytes, digest.uploader], [2, 2000, "Priya"], "retried completions must count once in the digest");
-assert.equal(digestTracker.digestReady(digest, Date.now() + 10_000), false, "an active session with no done signal waits for the idle window");
-assert.equal(digestTracker.digestReady(digest, Date.now() + 100_000), true, "an idle session still gets its digest without the browser saying done");
-digestTracker.noteDigest("sess-1", { done: true, uploader: "typed name" });
+assert.equal(digestTracker.digests.ready(digest, Date.now() + 10_000), false, "an active session with no done signal waits for the idle window");
+assert.equal(digestTracker.digests.ready(digest, Date.now() + 100_000), true, "an idle session still gets its digest without the browser saying done");
+digestTracker.digests.note("sess-1", { done: true, uploader: "typed name" });
 assert.equal(digestTracker.digests.get("sess-1").uploader, "Priya", "verified uploader name beats the browser's progress frame");
-assert.equal(digestTracker.digestReady(digestTracker.digests.get("sess-1"), Date.now() + 9_000), true, "a done session sends after the short settle window");
+assert.equal(digestTracker.digests.ready(digestTracker.digests.get("sess-1"), Date.now() + 9_000), true, "a done session sends after the short settle window");
 console.log("digest decision checks passed");
 
 // Admin sockets receive one coalesced delta per burst of progress ticks, not a
