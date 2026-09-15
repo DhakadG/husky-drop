@@ -267,27 +267,32 @@ function showMain() {
   $("collector-name").textContent = link.ownerName ? `${link.ownerName} is collecting` : "Your files are being collected";
   $("welcome").textContent = link.theme?.welcome || "Send original photos and videos here.";
 
-  const meta = $("meta");
-  meta.innerHTML = "";
-  meta.append(chip(link.requiresPin ? "password protected" : "open link", "", link.requiresPin ? "lock" : "link"));
-  if (link.requiresAuth && link.viewer) meta.append(chip(`signed in as ${link.viewer.name || link.viewer.email}`, "", "user-round"));
-  meta.append(chip(`up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`, "", "hard-drive"));
-  if (link.settings?.adaptiveConcurrency) meta.append(chip("smart parallel uploads", "", "zap"));
-  if (link.settings?.perUploaderFolders) meta.append(chip("your own subfolder", "", "folder-plus"));
-  if (link.driveFreeGB != null) {
-    meta.append(chip(`~${link.driveFreeGB} GB free in Drive`, link.driveFreeGB < 30 ? "warn" : "", "folder"));
-  }
+  // One quiet line of facts instead of a row of chips competing with the title.
+  const facts = [
+    link.requiresPin ? "password protected" : "private link",
+    link.requiresAuth && link.viewer ? `signed in as ${link.viewer.name || link.viewer.email}` : "",
+    `files up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`,
+    link.settings?.perUploaderFolders ? "your own subfolder" : "",
+  ];
+  if (link.driveFreeGB != null && link.driveFreeGB < 100) facts.push(`~${link.driveFreeGB} GB free in Drive`);
   if (link.expiresAt) {
     const d = Math.max(0, Math.ceil((link.expiresAt - Date.now()) / 86400000));
-    meta.append(chip(`closes in ${d} day${d === 1 ? "" : "s"}`, d <= 2 ? "warn" : "", "clock"));
+    facts.push(d === 0 ? "closes today" : `closes in ${d} day${d === 1 ? "" : "s"}`);
   }
+  $("meta").textContent = facts.filter(Boolean).join("  ·  ");
 
   setupPromo();
   maybeShowResumeBanner();
   $("who").value = localStorage.getItem("lhdb_name") || "";
+  syncNameStep();
   const zone = $("zone");
   const picker = $("picker");
-  zone.addEventListener("click", () => pickerGate() && picker.click());
+  zone.addEventListener("click", (e) => {
+    if (e.target.closest("button")) return;
+    if (pickerGate()) picker.click();
+  });
+  $("pick-files").addEventListener("click", () => pickerGate() && picker.click());
+  $("add-more-files").addEventListener("click", () => pickerGate() && picker.click());
   zone.addEventListener("keydown", (e) => {
     if ((e.key === "Enter" || e.key === " ") && pickerGate()) picker.click();
   });
@@ -317,10 +322,13 @@ function showMain() {
   const keepTree = !link.settings?.perUploaderFolders;
   if (keepTree && folderBtn && folderPicker && "webkitdirectory" in folderPicker && !/android|iphone|ipad|ipod/i.test(navigator.userAgent)) {
     folderBtn.classList.remove("hidden");
-    folderBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (pickerGate()) folderPicker.click();
-    });
+    $("add-more-folder").classList.remove("hidden");
+    for (const button of [folderBtn, $("add-more-folder")]) {
+      button.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (pickerGate()) folderPicker.click();
+      });
+    }
     folderPicker.addEventListener("change", () => {
       addFiles(folderPicker.files);
       folderPicker.value = "";
@@ -497,7 +505,7 @@ function addFiles(files) {
 
 function toggleQueuePause() {
   queuePaused = !queuePaused;
-  $("pause-all").textContent = queuePaused ? "Resume" : "Pause";
+  $("pause-all").innerHTML = `${uiIcon(queuePaused ? "play" : "pause")}${queuePaused ? "Resume" : "Pause"}`;
   $("pause-all").classList.toggle("active", queuePaused);
   sendLive(true);
   schedulePaint();
@@ -506,8 +514,7 @@ function toggleQueuePause() {
 
 // Step 1 shows a tick once there is a name, so the page reads as progress.
 function syncNameStep() {
-  const step = document.querySelector(".name-step");
-  if (step) step.classList.toggle("done", !!$("who").value.trim());
+  document.querySelector(".dv4-name")?.classList.toggle("done", !!$("who").value.trim());
 }
 
 // Going offline pauses the queue without touching the user's own pause; back
@@ -663,7 +670,7 @@ async function uploadFile(item) {
         if (++item.retries > MAX_RETRIES) throw err;
         window.dropTrekker?.track("upload_retry", item.file.name, { retry: item.retries, status: err.status || 0, chunk: item.chunk, uploadSessionId: sessionId });
         const wait = Math.min(30000, 1000 * 2 ** item.retries);
-        item.stat = `retrying in ${Math.round(wait / 1000)}s`;
+        item.stat = `${humanError(err).replace(/ - tap retry$/, "")} · retrying in ${Math.round(wait / 1000)}s`;
         schedulePaint();
         await sleep(wait);
         if (item.canceled) return;
@@ -680,14 +687,14 @@ async function uploadFile(item) {
     if (item.canceled) return;
     if (err.status === 413) {
       queuePaused = true;
-      $("pause-all").textContent = "Resume";
+      $("pause-all").innerHTML = `${uiIcon("play")}Resume`;
       $("budget-notice").classList.remove("hidden");
     }
-    item.stat = err.message.slice(0, 80);
+    item.stat = humanError(err);
     setState(item, "error");
     reportError("upload", err, item.file.name);
     window.dropTrekker?.track("upload_error", item.file.name, { size: item.file.size, status: err.status || 0, message: String(err.message || err).slice(0, 120), retries: item.retries || 0, uploadSessionId: sessionId });
-    toast("Upload paused", `${item.file.name}: ${err.message.slice(0, 80)}`, "err");
+    toast("Couldn't upload a file", `${item.file.name}: ${humanError(err)}`, "err");
   }
 }
 
@@ -1174,13 +1181,14 @@ function renderSummary() {
   $("queue-title").textContent = !inFlight && totals.count ? `Delivered ${landed} of ${totals.count} files` : queuePaused ? `Paused — ${landed} of ${totals.count} files delivered` : `Uploading — ${landed} of ${totals.count} files`;
   const completed = totals.count > 0 && totals.done === totals.count;
   document.body.dataset.phase = !totals.count ? "ready" : completed ? "done" : networkPaused ? "offline" : queuePaused ? "paused" : totals.error ? "attention" : "uploading";
+  $("add-more-bar").classList.toggle("hidden", !totals.count || completed);
   // Nothing left to protect once everything landed: drop the "keep this page
   // open" banner and the pause button instead of nagging under a green tick.
   document.querySelector(".keep-open")?.classList.toggle("hidden", !inFlight);
   $("pause-all").classList.toggle("hidden", !inFlight);
   $("done-card").classList.toggle("hidden", !completed);
   if (completed) {
-    $("done-title").textContent = `All ${totals.done} files delivered ✓`;
+    $("done-title").textContent = `All ${totals.done} files delivered`;
     $("done-recap").textContent = `${fmtBytes(totals.bytes)} saved to the collector’s Drive.`;
   }
 
@@ -1190,11 +1198,27 @@ function renderSummary() {
   const cancelBtn = $("cancel-all");
   if (retryBtn) {
     retryBtn.classList.toggle("hidden", failed === 0);
-    retryBtn.textContent = failed ? `retry ${failed} failed` : "retry failed";
+    retryBtn.innerHTML = `${uiIcon("refresh-cw")}${failed ? `Retry ${failed} failed` : "Retry failed"}`;
   }
   if (cancelBtn) cancelBtn.classList.toggle("hidden", pending === 0);
 
   maybeQueueNotice();
+}
+
+// The row shows what the uploader can act on, never a stack-trace fragment;
+// the raw message still goes to the admin via reportError().
+function humanError(err) {
+  const status = Number(err?.status) || 0;
+  const message = String(err?.message || "");
+  if (!navigator.onLine || /network|offline|failed to fetch|probe/i.test(message)) return "Connection dropped - tap retry";
+  if (status === 401) return "Sign-in expired - reload the page";
+  if (status === 403) return "This link no longer accepts uploads";
+  if (status === 410) return "This link has closed";
+  if (status === 413) return "Upload budget reached";
+  if (status === 507) return "The collector's Drive is full";
+  if (status >= 500 || /is not defined|TypeError|internal error|KV/i.test(message)) return "Server hiccup - tap retry";
+  if (/too large/i.test(message)) return "File too large for this link";
+  return message && message.length < 60 && !/[{}<>]/.test(message) ? message : "Couldn't upload - tap retry";
 }
 
 function detailText() {

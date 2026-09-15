@@ -292,7 +292,10 @@ export async function createSession(request, env) {
     return json({ error: "Drive folder create failed: " + err.message }, 502);
   }
   const tok = await accessToken(env);
-  const origin = new URL(request.url).origin;
+  // The browser talks to Drive directly, so the resumable session must be
+  // minted for the page origin the browser actually has. Under `wrangler dev`
+  // request.url carries the configured route host, not localhost.
+  const origin = request.headers.get("origin") || new URL(request.url).origin;
 
   const appProperties = { uploader, dropLink: linkId };
   const relPath = cleanText(relativePath || "", 200);

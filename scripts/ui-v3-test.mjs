@@ -114,7 +114,7 @@ assert.match(dropHtml, /id="collector-name"/, "plan 08 displays the real collect
 assert.match(dropHtml, /id="progress-ring-value"/, "plan 08 provides the transfer progress ring");
 assert.match(dropHtml, /id="budget-notice"/, "plan 08 provides the real budget-stop notice");
 assert.match(dropHtml, /id="done-card"/, "plan 08 provides the delivered-files recap");
-assert.match(dropHtml, /class="trust-strip"/, "plan 08 provides uploader trust guidance");
+assert.match(dropHtml, /class="[^"]*trust-strip[^"]*"/, "plan 08 provides uploader trust guidance");
 assert.match(dropJs, /let queuePaused = false/, "plan 08 tracks queue pause state");
 assert.match(dropJs, /function toggleQueuePause\(/, "plan 08 implements queue pause and resume");
 assert.match(dropJs, /paused:\s*queuePaused/, "plan 08 reports queue pause state to the live admin feed");
