@@ -54,13 +54,10 @@ This bit us once already — always resolve the final record with
 the Resend dashboard's "pending" status.
 
 Also:
-- Add a DMARC record too — Resend does not ask for it, Gmail wants it. Gmail
-  soft-bounced 5 of the first 8 notifications with `550-5.7.1 likely
-  unsolicited mail` before this and the richer email body were in place:
-
-  | Type | Name | Content |
-  |---|---|---|
-  | TXT | `_dmarc` (→ `_dmarc.losthusky.qzz.io`) | `v=DMARC1; p=none; rua=mailto:ghanisht.kumawat@gmail.com` |
+- No DMARC record is needed. Gmail soft-bounced 5 of the first 8
+  notifications (`550-5.7.1 likely unsolicited mail`) while subjects began
+  with "LostHusky's DropBox:" and bodies were two lines; since the
+  informative layout and plain subjects (2026-09-15) every email is delivered.
 
 - Set the records to **DNS only** (grey cloud). Email DNS records must never be proxied.
 - Back in Resend, click **Verify DNS Records**. Propagation is usually < 15 minutes

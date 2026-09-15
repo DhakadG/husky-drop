@@ -49,8 +49,8 @@ Triggered by: no emails for finished uploads, the upload page stuck on
 - **#6 Informative emails.** Shared `notifyEmail()` layout: headline, facts,
   file list, dashboard button. Subjects no longer start with "LostHusky's
   DropBox:" — Gmail was soft-bouncing (`550-5.7.1 likely unsolicited`) on the
-  Dropbox look-alike subject and two-line body. `_dmarc` record documented in
-  EMAIL.md; retries carry an `Idempotency-Key`.
+  Dropbox look-alike subject and two-line body; all delivered since. No DMARC
+  needed. Retries carry an `Idempotency-Key`.
 - **#7 Saturate fast links.** `pump()` capped bytes in flight at
   `concurrency × chunkSize`, so once chunks grew to 128 MB only 2–4 files ran.
   Parallelism is now a file count (≤12 desktop, ≤8 mobile) under a memory

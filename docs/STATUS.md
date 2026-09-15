@@ -48,7 +48,7 @@ the GitHub → Cloudflare integration.
   files. Parallelism is now a file count (≤12 desktop / ≤8 mobile) with a
   memory-only byte cap.
 - **Gmail soft-bounces.** `550-5.7.1 likely unsolicited`: two-line body, a
-  subject starting "LostHusky's DropBox:" (Dropbox look-alike), no DMARC.
+  subject starting "LostHusky's DropBox:" (Dropbox look-alike).
   Bodies are now informative and subjects read
   `Priya sent 7 files (27.7 MB) to Chandlai`.
 - **Slow sign-in screen.** The cookie check was the full overview (serial KV
@@ -56,8 +56,6 @@ the GitHub → Cloudflare integration.
 
 ## Still on you
 
-- Cloudflare DNS: `TXT _dmarc.losthusky.qzz.io` →
-  `v=DMARC1; p=none; rua=mailto:ghanisht.kumawat@gmail.com` (grey cloud).
 - Confirm on prod whether "Refresh snapshot" / live view stays current during a
   long transfer. If not, note what the sidebar pill says (`live updates on`
   or `off`) — that tells us whether the socket died.
