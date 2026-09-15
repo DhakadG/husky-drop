@@ -4,6 +4,27 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Drop/share states (PRs #20–#21)
+
+- **#20 hotfix.** `chip()` on the drop page still used retired icon names and
+  threw after #19; audit test now fails on retired names at icon call sites.
+- **#21 states.** Drop page: one `#gate` card renders loading (skeleton
+  title), closed (404 / expired / paused / budget / offline / 5xx, each with
+  its own copy, tone and a way back), Google sign-in and PIN (masked input
+  with eye toggle, `one-time-code` autocomplete, checking state, shake +
+  inline error on a wrong code, lockout countdown, 410/403 escalate to the
+  closed card). Topbar pill is a real status: `checking / secure / live /
+  paused / offline / closed` (the double dot came from `::before` plus a
+  stray `<i>`). Offline is handled: uploads pause, a notice shows, and on
+  `online` failed files re-queue and the pump resumes. `body[data-phase]`
+  (ready / uploading / paused / offline / attention / done) compacts the
+  dropzone while a transfer runs and colour-codes the transfer panel; step 1
+  ticks once a name is entered. Share page: loading spinner, back link on
+  the closed card with per-cause copy, "Continue with Google" wording shared
+  with the drop page, folder-only roots get an "open a folder" hint. Admin:
+  901–1080px uses an icon rail instead of a wrapped header block. Viewer:
+  asset-ladder pill moves under the top bar below 1100px.
+
 ## 2026-09-15 — One icon system (PR #19)
 
 - Every icon is now a Lucide stroke glyph from `public/icons.svg`, referenced

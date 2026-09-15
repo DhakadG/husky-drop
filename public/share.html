@@ -30,28 +30,32 @@
   <main class="share-shell">
     <header class="topbar">
       <a class="brand" href="/"><i class="brand-mark"></i>losthusky<span>/</span>drop</a>
-      <div class="status-pill" id="ws-state">shared folder</div>
+      <div class="status-pill" id="ws-state" data-state="checking" role="status">shared folder</div>
     </header>
 
-    <section id="loading" class="panel center-panel">
+    <section id="loading" class="panel center-panel" aria-busy="true">
+      <span class="gate-icon"><svg class="ico ico-spin" aria-hidden="true"><use href="/icons.svg#loader-circle"></use></svg></span>
       <p class="eyebrow">loading share</p>
-      <h1>Opening this share...</h1>
+      <h1>Opening this share…</h1>
     </section>
 
     <section id="gone" class="panel center-panel hidden">
+      <span class="gate-icon gate-icon-err"><svg class="ico" aria-hidden="true"><use href="/icons.svg#circle-alert"></use></svg></span>
       <p class="eyebrow">closed</p>
       <h1>This share is not available.</h1>
       <p class="muted">It expired, was paused, or the URL is incomplete.</p>
+      <a class="btn ghost" href="/"><svg class="ico" aria-hidden="true"><use href="/icons.svg#arrow-left"></use></svg>Back to losthusky/drop</a>
     </section>
 
     <section id="gate" class="panel center-panel hidden gate-panel">
+      <span class="gate-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#lock-keyhole"></use></svg></span>
       <p class="eyebrow">protected share</p>
       <h1 id="gate-label">Sign in to continue</h1>
 
       <div id="gate-signed-out" class="hidden">
         <button class="btn google-btn" id="google-signin" type="button">
           <svg class="ico ico-brand" aria-hidden="true"><use href="/icons.svg#google-g"></use></svg>
-          Sign in with Google
+          Continue with Google
         </button>
       </div>
 

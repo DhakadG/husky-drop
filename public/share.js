@@ -118,12 +118,34 @@ const moreObserver =
 
 init();
 
+function showShareGone(eyebrow = "closed", title = "This share is not available.", sub = "It expired, was paused, or the URL is incomplete.") {
+  const gone = $("gone");
+  gone.querySelector(".eyebrow").textContent = eyebrow;
+  gone.querySelector("h1").textContent = title;
+  gone.querySelector(".muted").textContent = sub;
+  gone.classList.remove("hidden");
+  const pill = $("ws-state");
+  pill.dataset.state = "closed";
+  pill.textContent = "share closed";
+}
+
 async function init() {
-  const r = await fetch(`/api/share/meta/${encodeURIComponent(slug)}`);
+  $("ws-state").dataset.state = "checking";
+  let r;
+  try {
+    r = await fetch(`/api/share/meta/${encodeURIComponent(slug)}`);
+  } catch {
+    $("loading").classList.add("hidden");
+    return showShareGone("offline", "Can't reach this share.", "Check your connection and reload.");
+  }
   $("loading").classList.add("hidden");
-  if (!r.ok) return $("gone").classList.remove("hidden");
+  if (r.status === 404) return showShareGone();
+  if (r.status === 410) return showShareGone("expired", "This share has closed.", "Ask whoever sent it for a fresh link.");
+  if (!r.ok) return showShareGone("hiccup", "Something went wrong on our side.", "Reload in a moment.");
   meta = await r.json();
-  if (meta.state !== "active") return $("gone").classList.remove("hidden");
+  if (meta.state === "expired") return showShareGone("expired", "This share has closed.", "Ask whoever sent it for a fresh link.");
+  if (meta.state !== "active") return showShareGone("paused", "This share is paused right now.", "Ask whoever sent it to reopen it.");
+  $("ws-state").dataset.state = "secure";
   document.title = `${meta.label} - LostHusky's DropBox`;
   applyTheme(meta.theme || {});
   logOpenOnce();
@@ -534,6 +556,13 @@ function render(revealOnlyIds = null) {
       section.appendChild(more);
     }
     host.appendChild(section);
+  }
+  // A share whose root holds only folders looked empty at first glance.
+  if (!folders.some((f) => f.files.length) && folders.some((f) => f.subfolders?.length)) {
+    const hint = document.createElement("div");
+    hint.className = "empty folder-hint";
+    hint.innerHTML = `${uiIcon("folder-open")}<span>Everything is inside the folder${folders.reduce((n, f) => n + (f.subfolders?.length || 0), 0) === 1 ? "" : "s"} above - open one to browse.</span>`;
+    host.appendChild(hint);
   }
   updateSelInfo();
   scheduleLayout();
