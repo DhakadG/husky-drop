@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const adminHtml = fs.readFileSync(new URL("../public/admin.html", import.meta.url), "utf8");
-const adminJs = fs.readFileSync(new URL("../public/admin.js", import.meta.url), "utf8");
+const adminJs = ["admin", "admin-state", "admin-chart", "admin-live", "admin-activity", "admin-links", "admin-shares", "admin-detail", "admin-folders"].map((n) => fs.readFileSync(new URL(`../public/${n}.js`, import.meta.url), "utf8")).join("\n");
 const css = fs.readFileSync(new URL("../public/style.css", import.meta.url), "utf8");
 
 // Details must be able to call this helper from renderDetail (top-level scope).
