@@ -2,7 +2,7 @@ import { createVideoWarmLease } from "./share-video-session.js";
 import { canHoverPreview, fx, previewVideos, selected, videoWarmLeases } from "./share-state.js";
 import { fmtDur } from "./share-utils.js";
 import { ensureFreshDownload, tokenFresh } from "./share-download.js";
-import { inlineUrl, scheduleLayout } from "./share.js";
+import { inlineUrl, previewUrl, scheduleLayout } from "./share.js";
 
 // Hover preview: play by default, deliberate scrubbing, buffered bar.
 // ---- Hover preview: play by default, deliberate scrubbing, buffered bar ----
@@ -328,7 +328,9 @@ export async function probeVideoMetadata(file) {
 async function getPreviewVideo(file) {
   let video = previewVideos.get(file.id);
   const lease = videoWarmLease(file);
-  let source = lease.sourceFor((candidate) => tokenFresh(file) && candidate === inlineUrl(file));
+  const low = previewUrl(file);
+  let source = lease.sourceFor((candidate) => (low ? candidate === low : tokenFresh(file) && candidate === inlineUrl(file)));
+  if (!source && low) source = lease.remember(low);
   if (!source) {
     await ensureFreshDownload(file);
     source = lease.remember(inlineUrl(file));

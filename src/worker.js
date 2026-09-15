@@ -73,6 +73,7 @@ import {
   cleanupInactiveRecords,
   linkFolder,
 } from "./admin-api.js";
+import { listPendingPreviews, previewSource, putPreview, reindexPreviews } from "./previews.js";
 
 export { LiveTracker } from "./live.js";
 
@@ -224,6 +225,13 @@ async function api(request, env, url, ctx) {
     }
     if (m === "DELETE" && p.startsWith("/api/admin/links/")) {
       return deleteLink(request, env, p.slice("/api/admin/links/".length));
+    }
+    if (p.startsWith("/api/admin/previews/")) {
+      const rest = p.slice("/api/admin/previews/".length);
+      if (m === "GET" && rest === "pending") return listPendingPreviews(request, env);
+      if (m === "POST" && rest === "reindex") return reindexPreviews(request, env);
+      if (m === "GET" && rest.startsWith("source/")) return previewSource(request, env, rest.slice(7));
+      if (m === "PUT" && rest) return putPreview(request, env, rest);
     }
     if (m === "DELETE" && p.startsWith("/api/admin/uploads/")) {
       const [uploadSlug, fileId] = p.slice("/api/admin/uploads/".length).split("/");

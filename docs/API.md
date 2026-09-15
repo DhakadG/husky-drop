@@ -239,6 +239,21 @@ Moves the file to Drive's trash (recoverable for 30 days), drops it from the
 link's recent list and counters, and logs a `filedel` event. The file must
 carry this link's `dropLink` property (403 otherwise). Returns `{ok, removed}`.
 
+### Video previews (`/api/admin/previews/*`)
+
+Used by `.github/workflows/transcode-previews.yml` (Bearer `ADMIN_TOKEN`).
+
+- `GET /api/admin/previews/pending?limit=20` — videos in active shares with
+  no preview yet: `{pending: [{id, name, size, mime}], indexed}`.
+- `GET /api/admin/previews/source/:fileId` — streams the original.
+- `PUT /api/admin/previews/:fileId` (body: MP4, ≤ 90 MB) — stores the preview
+  in the private `_previews` folder under `DRIVE_PARENT_ID` with
+  `appProperties.previewOf`, and records it in KV `previews:index`.
+- `POST /api/admin/previews/reindex` — rebuilds the index from the folder.
+
+Share listings then carry `preview` / `previewExpiresAt` (a 4-hour signed
+`dl` token for the preview file) next to `dl`.
+
 ### `GET /api/admin/thumb/:fileId`
 
 Returns Drive file preview metadata for admin-side preview/open actions.

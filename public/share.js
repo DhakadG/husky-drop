@@ -910,6 +910,12 @@ export function inlineUrl(file) {
   return `${file.dl}${file.dl.includes("?") ? "&" : "?"}inline=1`;
 }
 
+// Low-res transcode (see src/previews.js) when one exists and its token is
+// still good; otherwise the original.
+export function previewUrl(file) {
+  return file?.preview && file.previewExpiresAt - Date.now() > 60_000 ? `${file.preview}?inline=1` : "";
+}
+
 // ---- Justified layout (Google-Photos style rows, no cropping) ----
 
 let layoutScheduled = false;

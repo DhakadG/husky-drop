@@ -29,6 +29,7 @@ import {
   storeTelemetry,
 } from "./store.js";
 import { getViewer } from "./auth.js";
+import { previewFields, previewIndex } from "./previews.js";
 import { revokeSharePermissions } from "./share-admin.js";
 import { signShareToken, signShareTokenWithExpiry, verifyShareToken, publicDownloadSafety } from "./share-token.js";
 
@@ -282,6 +283,7 @@ export async function listShareFiles(request, env) {
   const folderToken = resolved.folderToken;
   const single = !!folderToken || "folderIndex" in b;
 
+  const previews = await previewIndex(env);
   const folders = [];
   for (const [i, folderId] of targets) {
     const page = await driveListFolder(env, folderId, single ? cleanText(b.pageToken || "", 500) : "");
@@ -296,7 +298,7 @@ export async function listShareFiles(request, env) {
         });
         continue;
       }
-      files.push(await publicShareFile(env, share, f));
+      files.push(await publicShareFile(env, share, f, previews));
     }
     folders.push({
       index: i,
@@ -336,7 +338,7 @@ export async function resolveShareTargets(env, share, body) {
   };
 }
 
-export async function publicShareFile(env, share, f) {
+export async function publicShareFile(env, share, f, previews = {}) {
   const [{ token, expiresAt }, { token: thumbToken, expiresAt: thumbsExpireAt }] = await Promise.all([
     signShareTokenWithExpiry(env, "dl", share.slug, f.id),
     signShareTokenWithExpiry(env, "th", share.slug, f.id),
@@ -368,6 +370,7 @@ export async function publicShareFile(env, share, f) {
     dlExpiresAt: expiresAt,
     downloadBlocked: safety.blocked,
     downloadBlockReason: safety.reason,
+    ...(await previewFields(env, share.slug, f, previews)),
   };
 }
 

@@ -2,7 +2,7 @@ import { createVideoSession, projectVideoTimeline } from "./share-video-session.
 import { fx, uiIcon } from "./share-state.js";
 import { downloadFile, ensureFreshDownload, tokenFresh } from "./share-download.js";
 import { adoptPreviewVideo, videoWarmLease } from "./share-preview.js";
-import { inlineUrl, thumbUrl } from "./share.js";
+import { inlineUrl, previewUrl, thumbUrl } from "./share.js";
 
 // PhotoSwipe viewer + Swiper thumbstrip.
 import { formatVideoTime, syncRefreshedVideoThumbnails, applyImageTransform } from "./share-viewer.js";
@@ -72,13 +72,16 @@ export function registerVideoContent(instance) {
     controls.className = "pswp-video-controls";
     controls.setAttribute("role", "group");
     controls.setAttribute("aria-label", `Video controls for ${file.name}`);
-    controls.innerHTML = `<button type="button" data-video-play aria-label="Play">${uiIcon("play", "pswp-video-control-icon")}</button><output>0:00 / 0:00</output><input type="range" min="0" max="0" step="0.01" value="0" aria-label="Video position" disabled><button type="button" data-video-mute aria-label="Mute">${uiIcon("volume-2", "pswp-video-control-icon")}</button><button type="button" data-video-fullscreen aria-label="Enter video fullscreen">${uiIcon("maximize", "pswp-video-control-icon")}</button>`;
+    controls.innerHTML = `<button type="button" data-video-play aria-label="Play">${uiIcon("play", "pswp-video-control-icon")}</button><output>0:00 / 0:00</output><input type="range" min="0" max="0" step="0.01" value="0" aria-label="Video position" disabled><button type="button" data-video-mute aria-label="Mute">${uiIcon("volume-2", "pswp-video-control-icon")}</button><button type="button" data-video-quality class="${previewUrl(file) ? "" : "hidden"}" aria-pressed="false" aria-label="Play the original quality">HD</button><button type="button" data-video-fullscreen aria-label="Enter video fullscreen">${uiIcon("maximize", "pswp-video-control-icon")}</button>`;
     wrap.appendChild(controls);
     const play = controls.querySelector("[data-video-play]");
     const time = controls.querySelector("output");
     const seek = controls.querySelector("input");
     const mute = controls.querySelector("[data-video-mute]");
     const fullscreen = controls.querySelector("[data-video-fullscreen]");
+    const quality = controls.querySelector("[data-video-quality]");
+    // Preview (720p transcode) first when one exists; HD swaps in the original.
+    let wantHd = !previewUrl(file);
 
     const errorPanel = document.createElement("div");
     errorPanel.className = "pswp-video-error hidden";
@@ -98,7 +101,9 @@ export function registerVideoContent(instance) {
     session = createVideoSession({
       video,
       resolveSource: async (signal, { force }) => {
-        let source = !force && warmLease.sourceFor((candidate) => tokenFresh(file) && candidate === inlineUrl(file));
+        const low = wantHd ? "" : previewUrl(file);
+        let source = !force && warmLease.sourceFor((candidate) => (low ? candidate === low : tokenFresh(file) && candidate === inlineUrl(file)));
+        if (!source && low) source = warmLease.remember(low);
         if (!source) {
           await ensureFreshDownload(file, force, signal);
           source = warmLease.remember(inlineUrl(file));
@@ -182,11 +187,20 @@ export function registerVideoContent(instance) {
       else video.webkitEnterFullscreen?.();
     };
     const downloadFromFallback = () => void downloadFile(file);
+    const toggleQuality = (inputEvent) => {
+      inputEvent.stopPropagation();
+      wantHd = !wantHd;
+      quality.setAttribute("aria-pressed", String(wantHd));
+      quality.setAttribute("aria-label", wantHd ? "Play the smaller preview" : "Play the original quality");
+      const resume = !video.paused;
+      void session.retry({ play: resume, preserveTime: true }).catch(() => {});
+    };
     play.addEventListener("click", playFromButton);
     retry.addEventListener("click", retryFromButton);
     seek.addEventListener("input", seekVideo);
     mute.addEventListener("click", toggleMute);
     fullscreen.addEventListener("click", enterFullscreen);
+    quality.addEventListener("click", toggleQuality);
     downloadOriginal.addEventListener("click", downloadFromFallback);
     media.addEventListener("pointerdown", noteMediaPointerStart);
     media.addEventListener("pointerup", noteMediaPointerEnd);
@@ -215,6 +229,7 @@ export function registerVideoContent(instance) {
       seek.removeEventListener("input", seekVideo);
       mute.removeEventListener("click", toggleMute);
       fullscreen.removeEventListener("click", enterFullscreen);
+      quality.removeEventListener("click", toggleQuality);
       downloadOriginal.removeEventListener("click", downloadFromFallback);
       media.removeEventListener("pointerdown", noteMediaPointerStart);
       media.removeEventListener("pointerup", noteMediaPointerEnd);
