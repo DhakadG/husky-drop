@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Lint guard (PR #26)
+
+- `npm run lint` (ESLint 9, `no-undef` / `no-unused-vars` / `no-redeclare`)
+  runs first in `npm test`. Every identifier in `src/` and `public/` must
+  resolve - the static check that would have caught #22. Cross-checked the
+  #16/#18 split by diffing every function name in the pre-split files
+  against the tree: all present (live.js ones under their new class names).
+- Found by the linter: the create-drop-link error path referenced an
+  undefined `button` and threw instead of showing the API error.
+
 ## 2026-09-15 — Admin overview pass (PR #24)
 
 - Stat tiles: auto-fit grid (6 across on wide, 3×2 at 800px, 2 at phone),
