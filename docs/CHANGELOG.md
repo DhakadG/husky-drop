@@ -4,6 +4,23 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Image archive v2 (PR #45)
+
+- Tab rebuilt: three numbered steps on the left (folders, encoding,
+  originals) and a sticky plan card on the right with a live "24 MP photo
+  becomes ~X MB" sample, the dry-run digest as a before/after bar, and the
+  start button. Preset cards, segmented controls for resolution / format /
+  metadata, chip toggles for file types, switch toggles, an Advanced fold,
+  mode cards with the REPLACE confirmation inside the danger card, job
+  cards with progress bars. Scoped `.ia-*` form styles so the global
+  48 px input / uppercase label rules no longer apply.
+- Fixes from review: `_archive` / `_compressed` mirror the full relative
+  path (leaf-name collisions merged unrelated folders); "strip" metadata
+  really strips (sharp's `withMetadata()` keeps EXIF) - now `keepIccProfile`
+  only; RAW EXIF is copied back from the true original on both the libraw
+  and the embedded-preview path; pause and the time budget are checked per
+  file, not per batch; start guards a missing plan.
+
 ## 2026-09-16 — Image archive (PR #44)
 
 - New admin tab **Image archive** (`src/images.js`, `public/admin-images.js`,

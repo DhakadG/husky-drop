@@ -37,6 +37,8 @@ const SECS = { jpeg: 2, png: 3, heic: 4, tiff: 3, webp: 2, raw: 9 };
 async function loadJobs(env) {
   return ((await env.KV.get(KEY, "json")) || {}).jobs || [];
 }
+// ponytail: last write wins on the single key; fine while one runner and
+// one admin exist - add a version check if runners ever run concurrently.
 const saveJobs = (env, jobs) => env.KV.put(KEY, JSON.stringify({ jobs: jobs.slice(0, JOBS_KEPT) }));
 const publicJob = (job) => job && { ...job, files: undefined, fileCount: job.files?.length || 0 };
 
@@ -226,6 +228,19 @@ const MIME = { jpeg: "image/jpeg", webp: "image/webp", avif: "image/avif", png: 
 async function subfolder(env, name, parentId) {
   return (await driveFindFolder(env, name, parentId)) || driveCreateFolder(env, name, parentId);
 }
+// _archive/<root>/<sub>/... mirrors the source tree so two folders that
+// share a leaf name never merge. Folder ids memoised per isolate.
+const folderMemo = new Map();
+async function mirrorPath(env, base, relativePath) {
+  let parent = env.DRIVE_PARENT_ID || undefined;
+  let key = "";
+  for (const segment of [base, ...relativePath.split("/").filter(Boolean)]) {
+    key += `/${segment}`;
+    if (!folderMemo.has(key)) folderMemo.set(key, (await subfolder(env, segment, parent)).id);
+    parent = folderMemo.get(key);
+  }
+  return parent;
+}
 async function moveFile(env, tok, fileId, fromId, toId) {
   const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${toId}&removeParents=${fromId}&supportsAllDrives=true`, { method: "PATCH", headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" }, body: "{}" });
   if (!r.ok) throw new Error("Drive move failed");
@@ -261,12 +276,8 @@ export async function putImageResult(request, env, jobId, fileId) {
     created = await multipart(env, tok, `https://www.googleapis.com/upload/drive/v3/files/${file.id}?uploadType=multipart&fields=id,size,imageMediaMetadata(width,height)&supportsAllDrives=true`, "PATCH", { name, mimeType: mime, ...props }, body, mime);
   } else {
     let parent = file.folderId;
-    if (job.options.mode === "archive") {
-      const archive = await subfolder(env, file.path.split("/").pop() || "archive", (await subfolder(env, "_archive", env.DRIVE_PARENT_ID || undefined)).id);
-      await moveFile(env, tok, file.id, file.folderId, archive.id);
-    } else {
-      parent = (await subfolder(env, file.path.split("/").pop() || "compressed", (await subfolder(env, "_compressed", env.DRIVE_PARENT_ID || undefined)).id)).id;
-    }
+    if (job.options.mode === "archive") await moveFile(env, tok, file.id, file.folderId, await mirrorPath(env, "_archive", file.path));
+    else parent = await mirrorPath(env, "_compressed", file.path);
     created = await multipart(env, tok, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,size,imageMediaMetadata(width,height)&supportsAllDrives=true", "POST", { name, mimeType: mime, parents: [parent], ...props }, body, mime);
   }
   const size = Number(created.size) || 0;
