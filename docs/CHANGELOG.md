@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Drop/share list cards (PR #27)
+
+- Card order is head → stats → actions; actions are a footer row behind a
+  hairline. Stats and meta use the body face at readable sizes (11.5–12.5px,
+  no 9.5px uppercase mono). Status pill and budget warning colours pass
+  4.5:1 on the glass. Action buttons are 36px tall (44px on touch), have
+  focus rings and hover transitions; cards lift their border on hover.
+
 ## 2026-09-15 — Lint guard (PR #26)
 
 - `npm run lint` (ESLint 9, `no-undef` / `no-unused-vars` / `no-redeclare`)
