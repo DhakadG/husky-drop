@@ -4,6 +4,19 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Admin overview pass (PR #24)
+
+- Stat tiles: auto-fit grid (6 across on wide, 3×2 at 800px, 2 at phone),
+  sentence-case body-face labels, one visual weight (the "Data received"
+  accent tile is gone). Page titles are solid ink; gradient text is reserved
+  for brand and CTAs.
+- Activity rows lead with the action ("Browsed gallery") and put the actor
+  and link in the subline; unknown `drop-*`/`share-*` types get a readable
+  fallback instead of "Activity".
+- Link/share cards: Details/Edit is the one filled button, Delete is quiet
+  text at the far end until hovered, labels in the body face.
+- Icon rail (901–1080px) hides the brand wordmark properly.
+
 ## 2026-09-15 — Drop page v4 (PRs #22–#23)
 
 - **#22 hotfix.** `notifyEmail` import lost in the #18 split; every progress
