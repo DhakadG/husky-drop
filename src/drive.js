@@ -189,6 +189,24 @@ export async function driveFileMeta(env, fileId) {
   return r.json();
 }
 
+// Media requests (thumbnails, inline video, Range slices) hit the same file
+// metadata dozens of times in a row; every lookup was a full Drive round
+// trip in front of the actual byte fetch. Short isolate-local memo.
+// ponytail: per-isolate Map; promote to caches.default if cold isolates dominate.
+const META_TTL_MS = 120_000;
+const metaMemory = new Map();
+export async function driveFileMetaCached(env, fileId) {
+  const id = String(fileId || "");
+  const hit = metaMemory.get(id);
+  if (hit && hit.exp > Date.now()) return hit.meta;
+  const meta = await driveFileMeta(env, id);
+  if (meta?.id) {
+    if (metaMemory.size >= 500) metaMemory.delete(metaMemory.keys().next().value);
+    metaMemory.set(id, { meta, exp: Date.now() + META_TTL_MS });
+  }
+  return meta;
+}
+
 export async function driveFileChunk(env, fileId, maxBytes = 8 * 1024 * 1024) {
   const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
   const limit = Math.max(64 * 1024, Math.min(Number(maxBytes) || 0, 12 * 1024 * 1024));

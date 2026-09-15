@@ -161,6 +161,9 @@ export function stopHoverPreview(fig, file, opts = {}) {
 
 function resetPreviewTime(video) {
   const reset = () => {
+    // A fresh warm element is already at 0; seeking there anyway forces a
+    // round trip to the media proxy before the first frame.
+    if (video.currentTime < 0.05) return;
     try {
       video.currentTime = 0;
     } catch {}

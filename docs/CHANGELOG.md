@@ -4,6 +4,15 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Media metadata memo (PR #37)
+
+- `driveFileMetaCached`: share media routes (thumbnails, inline/Range
+  downloads, file info) memoise Drive file metadata for 2 minutes per
+  isolate. Every Range slice of a video was paying a full Drive metadata
+  round trip (~400 ms) before the byte fetch; measured TTFB on a 1 MB slice
+  was ~1 s.
+- Hover preview no longer seeks to 0 on an element that is already at 0.
+
 ## 2026-09-16 — Share video efficiency + density slider (PR #36)
 
 - Opening a hovered video in the viewer adopts the tile's already-buffered
