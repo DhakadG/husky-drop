@@ -62,7 +62,7 @@ async function decodable(input, file) {
   return input;
 }
 
-async function encode(source, output, file, options) {
+async function encode(source, output, file, options, original) {
   const meta = await sharp(source, { failOn: "none", limitInputPixels: false }).metadata();
   const w = meta.width || 0;
   const h = meta.height || 0;
@@ -70,17 +70,19 @@ async function encode(source, output, file, options) {
   const scale = w * h > cap ? Math.sqrt(cap / (w * h)) : 1;
   let img = sharp(source, { failOn: "none", limitInputPixels: false }).rotate();
   if (scale < 1) img = img.resize({ width: Math.round(w * scale), height: Math.round(h * scale), fit: "inside", withoutEnlargement: true });
-  if (options.metadata === "keep") img = img.keepMetadata();
-  else img = img.withMetadata(); // keeps ICC + orientation only
+  // "strip" keeps only the colour profile; sharp's default output drops
+  // EXIF/XMP/IPTC. Both keep modes carry everything and strip-gps removes
+  // GPS afterwards with exiftool.
+  img = options.metadata === "strip" ? img.keepIccProfile() : img.keepMetadata();
   const q = options.quality;
   if (file.format === "jpeg") img = img.jpeg({ quality: q, mozjpeg: true, chromaSubsampling: q >= 90 ? "4:4:4" : "4:2:0" });
   else if (file.format === "webp") img = img.webp({ quality: q, effort: 4 });
   else if (file.format === "avif") img = img.avif({ quality: Math.round(q * 0.75), effort: 4 });
   else img = img.png({ compressionLevel: 9, palette: false });
   const info = await img.toFile(output);
-  // Metadata straight from the RAW/HEIC container: sharp only saw the
-  // intermediate TIFF/JPEG. GPS strip happens after either path.
-  if (options.metadata === "keep" && source !== `${output}` && source.endsWith(".tiff")) await run("exiftool", ["-overwrite_original", "-q", "-tagsfromfile", source.replace(/\.tiff$/, ""), "-all:all", "-orientation=", output]).catch(() => {});
+  // RAW went through an intermediate (developed TIFF or embedded preview),
+  // so copy the tags from the real original; pixels are already upright.
+  if (options.metadata !== "strip" && source !== original) await run("exiftool", ["-overwrite_original", "-q", "-tagsfromfile", original, "-all:all", "-orientation=", output]).catch(() => {});
   if (options.metadata === "strip-gps") await run("exiftool", ["-overwrite_original", "-q", "-gps:all=", output]).catch(() => {});
   return info;
 }
@@ -92,7 +94,7 @@ async function processOne(file, options, dir) {
   if (!src.ok || !src.body) throw new Error(`source ${src.status}`);
   await pipeline(Readable.fromWeb(src.body), createWriteStream(input));
   const source = await decodable(input, file);
-  const info = await encode(source, output, file, options);
+  const info = await encode(source, output, file, options, input);
   const { size } = await stat(output);
   if (!size || !info.width) throw new Error("encoder produced nothing");
   const put = await api(`/api/admin/images/jobs/${jobId}/file/${file.id}`, {
@@ -121,11 +123,6 @@ const dir = await mkdtemp(join(tmpdir(), "hd-images-"));
 let processed = 0;
 try {
   for (;;) {
-    if (Date.now() - started > budgetMs) {
-      console.log("time budget reached - resume from the admin to continue");
-      await report({ stopped: true });
-      break;
-    }
     const res = await api(`/api/admin/images/jobs/${jobId}/next?n=8`);
     if (!res.ok) throw new Error(`next ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const { status, options, files, remaining } = await res.json();
@@ -140,7 +137,20 @@ try {
       break;
     }
     console.log(`${remaining} remaining`);
+    let stop = "";
     for (const file of files) {
+      // Pause and the time budget are honoured per file, not per batch.
+      if (Date.now() - started > budgetMs) {
+        stop = "time budget reached - resume from the admin to continue";
+        break;
+      }
+      if (file !== files[0]) {
+        const peek = await api(`/api/admin/images/jobs/${jobId}/next?n=1`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        if (peek && peek.status !== "running") {
+          stop = `job is ${peek.status}; stopping`;
+          break;
+        }
+      }
       const t0 = Date.now();
       try {
         const { newId, size } = await processOne(file, options, dir);
@@ -155,8 +165,8 @@ try {
       await mkdir(dir, { recursive: true });
     }
     const state = await report();
-    if (state && state.status !== "running") {
-      console.log(`job is ${state.status}; stopping`);
+    if (stop || (state && state.status !== "running")) {
+      console.log(stop || `job is ${state.status}; stopping`);
       await report({ stopped: true });
       break;
     }
