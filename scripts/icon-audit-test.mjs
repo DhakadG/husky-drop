@@ -19,11 +19,18 @@ assert.deepEqual([...spriteIds].sort(), [...catalog].sort(), "public/icons.svg i
 
 const files = (await readdir(publicRoot)).filter((name) => name.endsWith(".html") || name.endsWith(".js"));
 const used = new Map(); // name -> first file
+const RETIRED = new Set(["lock-small", "folder-add", "refresh", "sliders", "budget", "copy-compact", "qr", "detail", "trash", "share", "user", "alert", "chevron"]);
 const offenders = [];
 for (const name of files) {
   const source = await read(name);
   for (const m of source.matchAll(/icons\.svg#([a-z0-9-]+)/g)) used.set(m[1], name);
   for (const m of source.matchAll(/(?:uiIcon|icon|linkActionButton|shareActionButton)\(\s*"([a-z0-9-]+)"/g)) used.set(m[1], name);
+  // chip(text, cls, iconName) and ternaries: a retired icon name on any line
+  // that renders an icon is a runtime "Unknown icon" throw waiting to happen.
+  for (const line of source.split("\n")) {
+    if (!/\b(?:chip|uiIcon|icon)\(/.test(line)) continue;
+    for (const m of line.matchAll(/"([a-z0-9-]+)"/g)) if (RETIRED.has(m[1])) offenders.push(`${name}: retired icon name "${m[1]}" in: ${line.trim().slice(0, 80)}`);
+  }
   for (const m of source.matchAll(/return "([a-z0-9-]+)";/g)) if (name === "admin.js" && catalog.has(m[1])) used.set(m[1], name);
   // Hand-drawn glyphs are what let the icon set drift; only data
   // visualisations (rings, sparklines, charts) may still carry <path>.

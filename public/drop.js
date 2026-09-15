@@ -178,11 +178,11 @@ function showMain() {
 
   const meta = $("meta");
   meta.innerHTML = "";
-  meta.append(chip(link.requiresPin ? "password protected" : "open link", "", link.requiresPin ? "lock-small" : "gallery"));
-  if (link.requiresAuth && link.viewer) meta.append(chip(`signed in as ${link.viewer.name || link.viewer.email}`, "", "user"));
-  meta.append(chip(`up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`, "", "image"));
-  if (link.settings?.adaptiveConcurrency) meta.append(chip("smart parallel uploads", "", "sliders"));
-  if (link.settings?.perUploaderFolders) meta.append(chip("your own subfolder", "", "folder-add"));
+  meta.append(chip(link.requiresPin ? "password protected" : "open link", "", link.requiresPin ? "lock" : "link"));
+  if (link.requiresAuth && link.viewer) meta.append(chip(`signed in as ${link.viewer.name || link.viewer.email}`, "", "user-round"));
+  meta.append(chip(`up to ${fmtBytes(link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`, "", "hard-drive"));
+  if (link.settings?.adaptiveConcurrency) meta.append(chip("smart parallel uploads", "", "zap"));
+  if (link.settings?.perUploaderFolders) meta.append(chip("your own subfolder", "", "folder-plus"));
   if (link.driveFreeGB != null) {
     meta.append(chip(`~${link.driveFreeGB} GB free in Drive`, link.driveFreeGB < 30 ? "warn" : "", "folder"));
   }
