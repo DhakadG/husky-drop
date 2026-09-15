@@ -535,6 +535,17 @@ async function main() {
   assert.equal(previewIndex.files["vid-1"].id, "prev-1", "report indexes finished previews");
   assert.equal(previewIndex.failed["vid-2"].tries, 1, "report counts failures");
   assert.equal(previewIndex.runs[0].done, 1, "report keeps the run summary");
+
+  // Image archive jobs: admin only, a plan needs folders, reports need a known job.
+  res = await worker.fetch(request("/api/admin/images/jobs"), env);
+  assert.equal(res.status, 401, "image jobs require admin");
+  res = await worker.fetch(request("/api/admin/images/plan", { method: "POST", headers: { authorization: "Bearer test-admin", "content-type": "application/json" }, body: JSON.stringify({ folderIds: [], mode: "replace" }) }), env);
+  assert.equal(res.status, 400, "a plan without folders is rejected");
+  res = await worker.fetch(request("/api/admin/images/jobs/img-nope/report", { method: "POST", headers: { authorization: "Bearer test-admin", "content-type": "application/json" }, body: JSON.stringify({ done: [] }) }), env);
+  assert.equal(res.status, 404, "reports for unknown jobs are rejected");
+  res = await worker.fetch(request("/api/admin/images/jobs", { headers: { authorization: "Bearer test-admin" } }), env);
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).jobs, [], "no jobs yet");
   // Put the delivered file back so the rest of the run sees the same totals.
   await env.KV.put("recent:inbox", JSON.stringify([{ n: "IMG.HEIC", s: 200, m: "image/heic", u: "Riya", f: "drive-file-1", si: "session-1", at: Date.now() }]));
   await env.KV.put("stats:inbox", JSON.stringify({ opens: 1, sessions: 1, files: 1, bytes: 200 }));

@@ -271,6 +271,32 @@ Share listings then carry `preview` / `previewExpiresAt` (a 4-hour signed
 `dl` token for the preview file) plus `previewState`
 (`ready` | `queued` | `failed`) next to `dl`.
 
+### Image archive (`/api/admin/images/*`)
+
+Re-encode photos in chosen Drive folders (recursive) to a resolution cap
+and quality, with a dry run first. All Drive writes happen in the worker;
+`scripts/transcode-images.mjs` (workflow `transcode-images.yml`) does the
+pixel work with sharp + libraw + libheif + exiftool.
+
+- `POST /api/admin/images/plan` — options `{folderIds[], recursive, maxMp
+  (0|4|6|8|12|16|24), quality 50-95, format same|jpeg|webp|avif, metadata
+  keep|strip-gps|strip, minBytes, onlyIfSmaller, exclude (regex), types[],
+  mode copy|archive|replace}`. Walks the folders (metadata only) and stores
+  a job (`status: planned`) with a digest: files, bytes now → expected,
+  ETA, by type, skip reasons, largest files. One KV write.
+- `GET /api/admin/images/jobs` — last 10 jobs (plan file lists omitted) +
+  the active one.
+- `POST /api/admin/images/jobs/:id/start` (`{confirm: "REPLACE"}` required
+  for replace mode) / `pause` / `resume` / `cancel`. Start and resume
+  dispatch the workflow when `GITHUB_TOKEN` is set.
+- `GET /api/admin/images/jobs/:id/items` — processed files with outcome.
+- Runner: `GET …/:id/next?n=8`, `GET /api/admin/images/source/:fileId`,
+  `PUT …/:id/file/:fileId` (header `x-format`; the worker applies the mode -
+  new revision of the same id, move original to `_archive/<folder>/`, or
+  new file in `_compressed/<folder>/` - and verifies the stored size),
+  `POST …/:id/report` (batch; `stopped` marks the job paused, `finished`
+  marks it done). One KV write per report.
+
 ### `GET /api/admin/thumb/:fileId`
 
 Returns Drive file preview metadata for admin-side preview/open actions.

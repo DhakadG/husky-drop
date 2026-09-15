@@ -4,6 +4,33 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Image archive (PR #44)
+
+- New admin tab **Image archive** (`src/images.js`, `public/admin-images.js`,
+  `scripts/transcode-images.mjs`, `transcode-images.yml`): pick Drive
+  folders (browse or paste a link), recursive, presets (Web archive 8 MP
+  q82 / recompress only / print-safe 12 MP / smallest AVIF 6 MP), resolution
+  cap, quality, format (same / JPEG / WebP / AVIF), metadata (keep /
+  strip GPS / strip), skip-under size, exclude regex, per-type toggles
+  (JPEG, PNG, HEIC, TIFF, WebP, RAW), only-if-smaller. **Dry run** digest
+  from Drive metadata: files, size now → expected, saving, ETA, by type,
+  skip reasons, largest files. Modes for originals: copy to
+  `_compressed/`, move originals to `_archive/`, or replace in place as a
+  new revision (typed `REPLACE` confirmation; Drive keeps the old revision
+  ~30 days). Pause (finishes current file) / resume / cancel; the runner
+  reports every 8 files; a runner that hits its time budget leaves the job
+  paused for resume.
+- RAW handling: libraw (`dcraw_emu`) develop → TIFF → sharp; if libraw
+  does not know the body (new Sony bodies), the embedded full-size JPEG
+  preview is used instead; EXIF copied back with exiftool. HEIC via
+  libheif. Every stored file is verified (size, dimensions) before it
+  counts as done.
+- Video transcoder `pending` now lists the `_previews` folder first and
+  repairs the index from it, so a preview that exists in Drive is never
+  made twice.
+- Workflows on `actions/checkout@v5` + `setup-node@v5` (Node 24 runners).
+- `wrangler.jsonc` carries the observability block enabled in the dashboard.
+
 ## 2026-09-16 — Video previews admin tab (PR #43)
 
 - New admin tab **Video previews**: totals, per-share/per-folder coverage
