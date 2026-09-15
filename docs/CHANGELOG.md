@@ -4,6 +4,21 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — 720p video previews via GitHub Actions (PR #41)
+
+- `src/previews.js` + `.github/workflows/transcode-previews.yml` +
+  `scripts/transcode-previews.mjs`: a nightly (or manual) Action asks the
+  worker for share videos without a preview, streams each original through
+  ffmpeg (720p, H.264 CRF 27, ≤ 2.5 Mbps, faststart) and PUTs the result
+  back. The worker stores previews in a private `_previews` folder under
+  `DRIVE_PARENT_ID` (outside every shared folder, so "anyone with the link"
+  grants never cover them) and keeps `previews:index` in KV. Only
+  `ADMIN_TOKEN` leaves Cloudflare (as the `HUSKY_ADMIN_TOKEN` repo secret);
+  Google credentials stay in the worker.
+- Share listings add `preview`; hover playback and the viewer's first play
+  use it. New **HD** button in the viewer controls switches to the original
+  at the same timestamp.
+
 ## 2026-09-16 — Density slider v2, smooth playback bars (PR #39)
 
 - Gallery density is continuous: 1-9 in quarter steps, tile size

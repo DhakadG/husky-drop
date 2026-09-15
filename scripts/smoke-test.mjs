@@ -523,6 +523,12 @@ async function main() {
   assert.equal((await env.KV.get("stats:inbox", "json")).files, 0, "trashed upload leaves the file counter");
   res = await worker.fetch(request("/api/admin/uploads/inbox/drive-file-1", { method: "DELETE" }), env);
   assert.equal(res.status, 401, "trashing requires admin");
+
+  // Preview transcoder endpoints: admin only; an empty preview body is rejected before Drive is touched.
+  res = await worker.fetch(request("/api/admin/previews/pending"), env);
+  assert.equal(res.status, 401, "preview listing requires admin");
+  res = await worker.fetch(request("/api/admin/previews/drive-file-1", { method: "PUT", headers: { authorization: "Bearer test-admin" }, body: "" }), env);
+  assert.equal(res.status, 413, "empty preview body is rejected");
   // Put the delivered file back so the rest of the run sees the same totals.
   await env.KV.put("recent:inbox", JSON.stringify([{ n: "IMG.HEIC", s: 200, m: "image/heic", u: "Riya", f: "drive-file-1", si: "session-1", at: Date.now() }]));
   await env.KV.put("stats:inbox", JSON.stringify({ opens: 1, sessions: 1, files: 1, bytes: 200 }));

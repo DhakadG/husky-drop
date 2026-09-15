@@ -7753,3 +7753,20 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .folder-recent { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .folder-recent .mini { display: inline-flex; align-items: center; gap: 6px; }
 .drive-glyph { width: 14px; height: 14px; flex: 0 0 auto; }
+
+/* Viewer quality toggle: preview (720p) by default, HD = original */
+.pswp-video-controls [data-video-quality] {
+  min-width: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font: 700 11px var(--font-mono);
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: transparent;
+}
+.pswp-video-controls [data-video-quality][aria-pressed="true"] {
+  color: #0b1a2b;
+  background: #fff;
+  border-color: #fff;
+}
