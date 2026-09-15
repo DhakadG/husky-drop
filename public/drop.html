@@ -34,31 +34,67 @@
     </div>
   </section>
 
-  <section id="main" class="hidden">
-    <div id="resume-banner" class="resume-banner-v3 hidden"><svg class="ico" aria-hidden="true"><use href="/icons.svg#rotate-ccw"></use></svg><span><b>Interrupted before? It resumes.</b><small>Re-select the same files and they continue instead of restarting.</small></span></div>
+  <section id="main" class="hidden dv4">
+    <!-- Header: who is collecting, what this is, the few facts that matter. -->
+    <header class="dv4-head">
+      <img id="link-logo" class="link-logo hidden" alt="" />
+      <p class="eyebrow" id="collector-name">Your files are being collected</p>
+      <h1 id="label">Trip drop</h1>
+      <p id="welcome" class="dv4-welcome">Send original photos and videos here.</p>
+      <p class="dv4-facts" id="meta"></p>
+    </header>
 
-    <section class="panel collector-hero"><img id="link-logo" class="link-logo hidden" alt="" /><p class="eyebrow" id="collector-name">Your files are being collected</p><h1 id="label">Trip drop</h1><p id="welcome" class="hero-copy">Send original photos and videos here.</p><div class="meta-row" id="meta"></div></section>
+    <div id="resume-banner" class="dv4-notice info hidden"><svg class="ico" aria-hidden="true"><use href="/icons.svg#rotate-ccw"></use></svg><span><b>Interrupted before? It resumes.</b><small>Re-select the same files and they continue instead of restarting.</small></span></div>
 
-    <section class="drop-step name-step"><span class="step-number">1</span><div class="field"><label for="who">What should we call you?</label><input id="who" type="text" autocomplete="name" placeholder="e.g. Riya" maxlength="60" /><small>This name helps the collector find your files.</small></div></section>
-
-    <section class="drop-step upload-step"><span class="step-number">2</span><div class="grad-border dropzone-wrap"><div class="dropzone" id="zone" role="button" tabindex="0" aria-label="Add photos and videos"><span class="dropzone-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#cloud-upload"></use></svg></span><div class="big">Add photos, videos or folders</div><div class="sub">HEIC, MOV, RAW, whole folders and multi-GB files are welcome. Keep adding while uploads run.</div><button class="mini hidden" id="folder-btn" type="button">Add a whole folder</button></div></div></section>
+    <!-- The flow card: name, then files. Once a transfer starts the dropzone
+         steps aside for a slim "add more" row (see body[data-phase]). -->
+    <section class="panel dv4-flow">
+      <div class="dv4-name">
+        <label for="who">Your name</label>
+        <div class="dv4-name-input">
+          <input id="who" type="text" autocomplete="name" placeholder="e.g. Riya" maxlength="60" />
+          <span class="dv4-name-ok" aria-hidden="true"><svg class="ico" aria-hidden="true"><use href="/icons.svg#check"></use></svg></span>
+        </div>
+        <small>So the collector knows who sent what. Saved for next time.</small>
+      </div>
+      <div class="grad-border dropzone-wrap dv4-zone">
+        <div class="dropzone" id="zone" role="button" tabindex="0" aria-label="Add photos and videos">
+          <span class="dropzone-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#cloud-upload"></use></svg></span>
+          <div class="big">Drop photos, videos or folders here</div>
+          <div class="sub">Originals only - HEIC, MOV, RAW, multi-GB files. Keep adding while uploads run.</div>
+          <div class="dv4-zone-actions"><button class="btn" type="button" id="pick-files"><svg class="ico" aria-hidden="true"><use href="/icons.svg#image"></use></svg>Choose files</button><button class="btn ghost hidden" id="folder-btn" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#folder-plus"></use></svg>Choose a folder</button></div>
+        </div>
+      </div>
+      <div class="dv4-add-more hidden" id="add-more-bar"><span>Still uploading - you can keep adding.</span><button class="mini" id="add-more-files" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#plus"></use></svg>Add files</button><button class="mini hidden" id="add-more-folder" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#folder-plus"></use></svg>Add folder</button></div>
+    </section>
     <input id="picker" type="file" multiple class="hidden" /><input id="folderpicker" type="file" webkitdirectory multiple class="hidden" />
 
     <aside class="panel promo hidden" id="promo"><p class="eyebrow">message from collector</p><h2 id="promo-title"></h2><p id="promo-text"></p><div id="promo-video" class="promo-video hidden"></div><a id="promo-cta" class="btn ghost hidden" target="_blank" rel="noreferrer">Open</a></aside>
 
-    <section class="panel transfer-panel-v3 hidden" id="transfer-panel">
-      <div class="transfer-head-v3"><div class="progress-ring"><svg width="62" height="62" viewBox="0 0 62 62" aria-hidden="true"><circle cx="31" cy="31" r="26" fill="none" stroke="rgba(12,26,43,.08)" stroke-width="6"></circle><circle id="progress-ring-value" cx="31" cy="31" r="26" fill="none" stroke="url(#dropProgressGradient)" stroke-width="6" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="163.36"></circle><defs><linearGradient id="dropProgressGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f6bff"></stop><stop offset="1" stop-color="#15c0c9"></stop></linearGradient></defs></svg><b><span id="pct">0</span>%</b></div><div class="transfer-copy"><p class="eyebrow">transfer queue</p><h2 id="queue-title">Preparing files</h2><div class="muted" id="detail">waiting</div></div><div class="transfer-actions"><button class="mini" id="pause-all" type="button">Pause</button><button class="mini hidden" id="retry-all" type="button">Retry failed</button><button class="mini danger hidden" id="cancel-all" type="button">Cancel all</button></div></div>
+    <section class="panel transfer-panel-v3 dv4-transfer hidden" id="transfer-panel" aria-live="polite">
+      <div class="dv4-transfer-head">
+        <div class="progress-ring"><svg width="62" height="62" viewBox="0 0 62 62" aria-hidden="true"><circle cx="31" cy="31" r="26" fill="none" stroke="rgba(12,26,43,.08)" stroke-width="6"></circle><circle id="progress-ring-value" cx="31" cy="31" r="26" fill="none" stroke="url(#dropProgressGradient)" stroke-width="6" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="163.36"></circle><defs><linearGradient id="dropProgressGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f6bff"></stop><stop offset="1" stop-color="#15c0c9"></stop></linearGradient></defs></svg><b><span id="pct">0</span>%</b></div>
+        <div class="dv4-transfer-copy"><h2 id="queue-title">Preparing files</h2><div class="muted" id="detail">waiting</div></div>
+        <div class="dv4-transfer-actions"><button class="mini" id="pause-all" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#pause"></use></svg>Pause</button><button class="mini hidden" id="retry-all" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg>Retry failed</button><button class="mini danger hidden" id="cancel-all" type="button">Cancel all</button></div>
+      </div>
       <div class="trail total striped"><i id="totalbar"></i></div>
-      <div class="keep-open"><svg class="ico" aria-hidden="true"><use href="/icons.svg#info"></use></svg><span><b>Keep this page open until it finishes.</b> If it closes, return and re-select the same files to resume.</span></div>
-      <div id="offline-notice" class="offline-notice hidden" role="status"><svg class="ico" aria-hidden="true"><use href="/icons.svg#wifi-off"></use></svg><span><b>You're offline.</b> Uploads are paused and continue on their own when the connection is back.</span></div>
-      <div id="budget-notice" class="budget-notice hidden"><b>Upload budget reached.</b><span>This link auto-paused to protect the collector’s Drive limit. Files already delivered remain safe.</span></div>
-      <div class="filelist" id="list"></div><button class="mini show-all-files hidden" id="show-all-files" type="button"></button>
+      <div id="offline-notice" class="dv4-notice err hidden" role="status"><svg class="ico" aria-hidden="true"><use href="/icons.svg#wifi-off"></use></svg><span><b>You're offline.</b> Uploads are paused and continue on their own when the connection is back.</span></div>
+      <div id="budget-notice" class="dv4-notice warn hidden"><svg class="ico" aria-hidden="true"><use href="/icons.svg#circle-gauge"></use></svg><span><b>Upload budget reached.</b> This link auto-paused to protect the collector's Drive limit. Files already delivered are safe.</span></div>
+      <div class="dv4-notice warn keep-open"><svg class="ico" aria-hidden="true"><use href="/icons.svg#info"></use></svg><span><b>Keep this page open until it finishes.</b> If it closes, come back and re-select the same files to resume.</span></div>
+      <div class="filelist" id="list"></div>
+      <button class="mini show-all-files hidden" id="show-all-files" type="button"></button>
     </section>
 
-    <section id="done-card" class="grad-border done-card hidden"><div><span class="success-check"><svg class="ico" aria-hidden="true"><use href="/icons.svg#check"></use></svg></span><p class="eyebrow">delivered</p><h2 id="done-title">All files delivered ✓</h2><p id="done-recap" class="muted"></p><button class="btn ghost" id="add-more" type="button">Add more files</button></div></section>
+    <section id="done-card" class="grad-border done-card dv4-done hidden"><div><span class="success-check"><svg class="ico" aria-hidden="true"><use href="/icons.svg#check"></use></svg></span><p class="eyebrow">delivered</p><h2 id="done-title">All files delivered</h2><p id="done-recap" class="muted"></p><button class="btn ghost" id="add-more" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#plus"></use></svg>Add more files</button></div></section>
 
-    <section class="trust-strip" aria-label="Transfer promises"><div><svg class="ico" aria-hidden="true"><use href="/icons.svg#shield-check"></use></svg><span><b>Private link</b><small>Only people with this URL can upload.</small></span></div><div><svg class="ico" aria-hidden="true"><use href="/icons.svg#eye-off"></use></svg><span><b>Collector-only access</b><small>Nothing you send is public or shared onward.</small></span></div><div><svg class="ico" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg><span><b>Resumable</b><small>Re-pick interrupted files to continue.</small></span></div></section>
-    <footer class="drop-footer"><button class="mini report-btn" id="report-btn" type="button">Report a problem</button><span>Powered by losthusky/drop</span></footer>
+    <footer class="dv4-footer">
+      <ul class="dv4-trust trust-strip" aria-label="Transfer promises">
+        <li><svg class="ico" aria-hidden="true"><use href="/icons.svg#shield-check"></use></svg><span><b>Private link</b> - only people with this URL can upload.</span></li>
+        <li><svg class="ico" aria-hidden="true"><use href="/icons.svg#eye-off"></use></svg><span><b>Collector-only</b> - nothing you send is public or shared onward.</span></li>
+        <li><svg class="ico" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg><span><b>Resumable</b> - re-pick interrupted files to continue.</span></li>
+      </ul>
+      <div class="dv4-footer-row"><button class="mini report-btn" id="report-btn" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#circle-help"></use></svg>Report a problem</button><span>Powered by losthusky/drop</span></div>
+    </footer>
   </section>
 </main>
 <script src="/public.js"></script><script src="/adaptive-concurrency.js"></script><script src="/drop-trekker.js"></script><script src="/drop.js"></script>

@@ -4,6 +4,22 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Drop page v4 (PRs #22–#23)
+
+- **#22 hotfix.** `notifyEmail` import lost in the #18 split; every progress
+  tick on links with start emails threw in the background relay. Smoke test
+  now fails on programming errors surfaced via `console.error`.
+- **#23 drop v4.** One column, one rhythm: header (collector / label /
+  one-line facts instead of chips) → flow card (name with a live tick, then
+  the dropzone with explicit "Choose files / Choose a folder" buttons) →
+  transfer card → done card → footer (trust line + report). Once files are
+  queued the dropzone yields to a slim "Add files / Add folder" row. Row
+  errors are humanised (`humanError`): connection dropped, budget reached,
+  server hiccup, link closed - never a stack-trace fragment; retry countdown
+  carries the reason. Drive resumable sessions are minted for the browser's
+  `Origin` header (under `wrangler dev` request.url carries the route host,
+  so local uploads failed CORS).
+
 ## 2026-09-15 — Drop/share states (PRs #20–#21)
 
 - **#20 hotfix.** `chip()` on the drop page still used retired icon names and

@@ -5057,32 +5057,6 @@ table.uploads .empty-cell {
   .gate.shake, .gate[data-state="loading"] h1, .ico-spin { animation: none; }
 }
 
-.collector-hero {
-  position: relative;
-  overflow: hidden;
-  padding: 30px;
-  text-align: center;
-}
-.collector-hero::after {
-  content: "";
-  position: absolute;
-  width: 240px;
-  height: 240px;
-  right: -100px;
-  bottom: -150px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(21, 192, 201, 0.17), transparent 68%);
-}
-.collector-hero h1 {
-  margin: 7px 0;
-  font: 800 clamp(26px, 4.6vw, 42px) var(--font-display);
-  letter-spacing: -0.035em;
-  overflow-wrap: anywhere;
-  text-wrap: balance;
-}
-.collector-hero .meta-row {
-  justify-content: center;
-}
 .resume-banner-v3,
 .keep-open,
 .budget-notice {
@@ -5110,71 +5084,6 @@ table.uploads .empty-cell {
 .resume-banner-v3 small {
   margin-top: 2px;
   color: var(--ink-soft);
-}
-.drop-step {
-  position: relative;
-  margin-top: 16px;
-  padding-left: 48px;
-}
-.step-number {
-  position: absolute;
-  top: 7px;
-  left: 0;
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  color: #fff;
-  font: 700 13px var(--font-display);
-  background: var(--grad);
-  box-shadow: 0 10px 22px -10px rgba(47, 107, 255, 0.7);
-}
-.name-step {
-  max-width: 620px;
-  margin-left: auto;
-  margin-right: auto;
-}
-.drop-step.done .step-number {
-  background: var(--green);
-  box-shadow: 0 10px 22px -10px rgba(31, 178, 122, 0.7);
-}
-.drop-step.done .step-number::before {
-  content: "";
-  width: 12px;
-  height: 7px;
-  border-left: 2.5px solid #fff;
-  border-bottom: 2.5px solid #fff;
-  transform: translateY(-2px) rotate(-45deg);
-}
-.drop-step.done .step-number span,
-.drop-step.done .step-number { font-size: 0; }
-/* While a transfer runs the dropzone steps back: still there for "add more",
-   no longer the hero of the page. */
-body[data-phase="uploading"] .dropzone,
-body[data-phase="paused"] .dropzone,
-body[data-phase="offline"] .dropzone,
-body[data-phase="attention"] .dropzone { padding: 22px; }
-body[data-phase="uploading"] .dropzone .big,
-body[data-phase="paused"] .dropzone .big,
-body[data-phase="offline"] .dropzone .big,
-body[data-phase="attention"] .dropzone .big { font-size: 18px; }
-body[data-phase="uploading"] .dropzone .sub,
-body[data-phase="paused"] .dropzone .sub,
-body[data-phase="offline"] .dropzone .sub,
-body[data-phase="attention"] .dropzone .sub,
-body[data-phase="uploading"] .dropzone-icon,
-body[data-phase="paused"] .dropzone-icon,
-body[data-phase="offline"] .dropzone-icon,
-body[data-phase="attention"] .dropzone-icon { display: none; }
-body[data-phase="paused"] .transfer-panel-v3 { box-shadow: inset 4px 0 0 var(--amber); }
-body[data-phase="offline"] .transfer-panel-v3 { box-shadow: inset 4px 0 0 var(--red); }
-body[data-phase="attention"] .transfer-panel-v3 { box-shadow: inset 4px 0 0 var(--red); }
-body[data-phase="done"] .transfer-panel-v3 { box-shadow: inset 4px 0 0 var(--green); }
-.name-step .field small {
-  color: var(--muted);
-  font-size: 11px;
 }
 .dropzone-wrap {
   border-radius: 24px;
@@ -5297,71 +5206,222 @@ body[data-phase="done"] .transfer-panel-v3 { box-shadow: inset 4px 0 0 var(--gre
   width: 27px;
   height: 27px;
 }
-.trust-strip {
+/* ---------- Drop page v4: one column, one rhythm ----------
+   Header (who / what / facts) -> flow card (name, dropzone) -> transfer card
+   -> done card -> footer. body[data-phase] swaps the dropzone for a slim
+   "add more" row once a transfer is running. */
+.dv4 {
+  max-width: 760px;
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 9px;
+  gap: 16px;
+}
+.dv4-head {
+  text-align: center;
+  padding: 6px 0 4px;
+}
+.dv4-head .link-logo {
+  margin: 0 auto 14px;
+}
+.dv4-head h1 {
+  margin: 8px 0 6px;
+  font: 800 clamp(30px, 5vw, 46px) var(--font-display);
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.dv4-welcome {
+  margin: 0 auto;
+  max-width: 52ch;
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.dv4-facts {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font: 500 12.5px var(--font-mono);
+  letter-spacing: 0.01em;
+}
+.dv4-facts:empty { display: none; }
+
+.dv4-notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dv4-notice .ico { flex: 0 0 auto; margin: 2px 0 0; }
+.dv4-notice small { display: block; color: inherit; opacity: 0.8; font-size: 12px; }
+.dv4-notice.info { color: #1f3f8f; background: rgba(47, 107, 255, 0.1); }
+.dv4-notice.warn { color: #7a5410; background: rgba(217, 138, 20, 0.1); }
+.dv4-notice.err  { color: #8a2334; background: rgba(240, 85, 107, 0.1); }
+.dv4-transfer .dv4-notice { margin: 14px 0 0; }
+
+.dv4-flow {
+  padding: 22px;
+  display: grid;
+  gap: 18px;
+}
+.dv4-name label {
+  display: block;
+  margin-bottom: 6px;
+  font: 600 11px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dv4-name-input {
+  position: relative;
+}
+.dv4-name-input input {
+  width: 100%;
+  padding: 13px 44px 13px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font: 500 16px var(--font-body);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.dv4-name-input input:focus {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(47, 107, 255, 0.14);
+}
+.dv4-name-input input.invalid {
+  border-color: var(--red);
+  box-shadow: 0 0 0 4px rgba(240, 85, 107, 0.16);
+}
+.dv4-name-ok {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  transform: translateY(-50%) scale(0.6);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--green);
+  opacity: 0;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.dv4-name-ok .ico { width: 14px; height: 14px; margin: 0; stroke-width: 3; }
+.dv4-name.done .dv4-name-ok { opacity: 1; transform: translateY(-50%) scale(1); }
+.dv4-name small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dv4-zone .dropzone {
+  min-height: 0;
+  padding: 34px 24px 28px;
+  gap: 4px;
+}
+.dv4-zone .dropzone .sub { max-width: 46ch; }
+.dv4-zone-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
   margin-top: 18px;
 }
-.trust-strip > div {
+.dv4-add-more {
   display: flex;
-  gap: 9px;
-  border-radius: 15px;
-  padding: 13px;
-  background: rgba(255, 255, 255, 0.48);
-}
-.trust-strip svg {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  color: var(--accent);
-}
-.trust-strip b,
-.trust-strip small {
-  display: block;
-}
-.trust-strip small {
-  margin-top: 3px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 13px;
 }
-.drop-footer {
+.dv4-add-more span { flex: 1; min-width: 160px; }
+
+.dv4-transfer { margin: 0; }
+.dv4-transfer-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px 16px;
+}
+.dv4-transfer-copy h2 {
+  margin: 0 0 4px;
+  font: 700 18px var(--font-display);
+  letter-spacing: -0.01em;
+}
+.dv4-transfer-copy .muted { font-size: 13px; }
+.dv4-transfer-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (min-width: 640px) {
+  .dv4-transfer-head { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .dv4-transfer-actions { grid-column: auto; justify-content: flex-end; }
+}
+.dv4-transfer .trail.total { margin-top: 16px; }
+.dv4-transfer .filelist { margin-top: 14px; }
+.dv4-done { margin: 0; }
+
+.dv4-footer {
+  display: grid;
+  gap: 14px;
+  margin: 4px 0 40px;
+}
+.dv4-trust {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 18px;
+}
+.dv4-trust li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.dv4-trust li b { color: var(--ink-soft); font-weight: 600; }
+.dv4-trust .ico { flex: 0 0 auto; margin: 2px 0 0; color: var(--accent); }
+.dv4-footer-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 18px 0 36px;
+  gap: 10px;
   color: var(--muted);
-  font: 10.5px var(--font-mono);
+  font: 11px var(--font-mono);
+}
+
+/* Phase-driven layout: the zone yields to the transfer once files are queued. */
+body[data-phase]:not([data-phase="ready"]) .dv4-zone { display: none; }
+body[data-phase="ready"] .dv4-add-more { display: none; }
+body[data-phase="done"] .dv4-add-more { display: none; }
+body[data-phase="paused"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--amber); }
+body[data-phase="offline"] .dv4-transfer,
+body[data-phase="attention"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--red); }
+body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); }
+
+@media (max-width: 680px) {
+  .dv4 { gap: 12px; }
+  .dv4-flow, .dv4-transfer { padding: 16px; }
+  .dv4-trust { grid-template-columns: 1fr; }
+  .dv4-footer-row { flex-direction: column; align-items: flex-start; }
 }
 
 @media (max-width: 680px) {
   .drop-v3 {
     padding: 14px;
-  }
-  .collector-hero,
-  .transfer-panel-v3 {
-    padding: 17px;
-  }
-  .drop-step {
-    padding-left: 0;
-    padding-top: 42px;
-  }
-  .step-number {
-    top: 0;
-  }
-  .transfer-head-v3 {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-  .transfer-actions {
-    grid-column: 1 / -1;
-  }
-  .trust-strip {
-    grid-template-columns: 1fr;
-  }
-  .drop-footer {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 9px;
   }
 }
 /* ---------- Admin shell v3 ---------- */
@@ -7547,10 +7607,10 @@ body[data-phase="done"] .transfer-panel-v3 { box-shadow: inset 4px 0 0 var(--gre
     width: 34px;
     height: 34px;
   }
-  .drop-topbar .secure-pill {
+  .drop-topbar .status-pill {
     margin-left: auto;
   }
-  .collector-hero,
+  .dv4-flow,
   .transfer-panel-v3,
   .dropzone-wrap,
   .gate {
@@ -7562,7 +7622,7 @@ body[data-phase="done"] .transfer-panel-v3 { box-shadow: inset 4px 0 0 var(--gre
   .gate-card {
     padding: 26px 18px 22px;
   }
-  .collector-hero h1,
+  .dv4-head h1,
   .transfer-panel-v3 .file-row :is(b, span) {
     overflow-wrap: anywhere;
   }
