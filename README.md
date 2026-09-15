@@ -95,7 +95,7 @@ The Worker is the control plane:
 - Bounded DOM rendering and constant-time aggregate counters for 600+ file queues.
 - Resume records kept locally for roughly six days; the uploader must re-select files because browsers cannot silently reopen local files.
 
-For the deeper write-path and state model, read [Architecture](docs/ARCHITECTURE.md).
+For the deeper write-path and state model, read [Architecture](docs/ARCHITECTURE.md). What changed and why, newest first: [Changelog](docs/CHANGELOG.md).
 
 ## Security model
 
