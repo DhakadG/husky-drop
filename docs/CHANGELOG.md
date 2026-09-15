@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — drop.js client split (PR #33)
+
+- `public/drop.js` (1.36k, classic script) → ES modules: `drop.js` (boot,
+  gate, main page, pickers, addFiles) + `drop-state.js` (constants,
+  collections, and `st` for reassigned scalars) + `drop-queue.js` (upload
+  engine) + `drop-render.js` + `drop-live.js` + `drop-resume.js` +
+  `drop-report.js` + `drop-utils.js`. Identifier rewrite was tokenizer-aware
+  (strings/comments/keys untouched). Verified with real uploads from
+  localhost into Drive (5 files, incl. a 3 MB one), pause/offline toggles,
+  and the retry/attention path with a stubbed session.
+
 ## 2026-09-15 — Live tab + link detail (PR #31)
 
 - Live metric labels and the upload-history table header use the body face

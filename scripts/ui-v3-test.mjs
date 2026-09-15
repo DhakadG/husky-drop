@@ -109,15 +109,15 @@ assert.match(css, /\.viewer-chip\s*\{/, "plan 07 styles recent-viewer chips");
 assert.match(css, /\.share-mode-card\s*\{/, "plan 07 styles the Share Link mode choices");
 
 const dropHtml = await read("public/drop.html");
-const dropJs = await read("public/drop.js");
+const dropJs = (await Promise.all(["drop", "drop-state", "drop-queue", "drop-render", "drop-live", "drop-resume", "drop-report", "drop-utils"].map((n) => read(`public/${n}.js`)))).join("\n");
 assert.match(dropHtml, /id="collector-name"/, "plan 08 displays the real collector name");
 assert.match(dropHtml, /id="progress-ring-value"/, "plan 08 provides the transfer progress ring");
 assert.match(dropHtml, /id="budget-notice"/, "plan 08 provides the real budget-stop notice");
 assert.match(dropHtml, /id="done-card"/, "plan 08 provides the delivered-files recap");
 assert.match(dropHtml, /class="[^"]*trust-strip[^"]*"/, "plan 08 provides uploader trust guidance");
-assert.match(dropJs, /let queuePaused = false/, "plan 08 tracks queue pause state");
+assert.match(dropJs, /queuePaused: false/, "plan 08 tracks queue pause state");
 assert.match(dropJs, /function toggleQueuePause\(/, "plan 08 implements queue pause and resume");
-assert.match(dropJs, /paused:\s*queuePaused/, "plan 08 reports queue pause state to the live admin feed");
+assert.match(dropJs, /paused:\s*st\.queuePaused/, "plan 08 reports queue pause state to the live admin feed");
 assert.match(dropJs, /budgetHit/, "plan 08 handles real backend budget limits");
 assert.match(dropJs, /sessionId,\s*\n\s*\}\),?\s*\n\s*\}\)/, "completion logging includes the upload session id");
 assert.match(dropJs, /setState\(item, "done"\);\s*\n\s*sendLive\(true\)/, "final Drive verification forces a terminal live update");
