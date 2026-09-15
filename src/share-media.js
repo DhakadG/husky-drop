@@ -5,7 +5,7 @@
 import { cleanText, json, normalizeEvent, sha256 } from "./util.js";
 import {
   driveFileChunk,
-  driveFileMeta,
+  driveFileMetaCached,
   driveThumbnail,
   driveThumbnailSize,
   accessToken,
@@ -61,7 +61,7 @@ export async function shareFileInfo(request, env) {
   if (failure) return failure;
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
 
-  const meta = await driveFileMeta(env, parsed.fileId);
+  const meta = await driveFileMetaCached(env, parsed.fileId);
   if (!meta?.id) return json({ error: "file not found" }, 404);
   const driveImage = meta.imageMediaMetadata || {};
   let parsedExif = {};
@@ -163,7 +163,7 @@ export async function shareThumbnail(request, env, token, tier, ctx) {
   if (gate.error) return gate.error;
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
 
-  const meta = await driveFileMeta(env, parsed.fileId);
+  const meta = await driveFileMetaCached(env, parsed.fileId);
   if (!meta?.id || !meta.thumbnailLink) return json({ error: "thumbnail unavailable" }, 404);
   const revision = encodeURIComponent(meta.modifiedTime || "0");
   const cache = caches.default;
@@ -199,7 +199,7 @@ export async function shareDownload(request, env, token, ctx) {
   // signed in from browsing another gated share.
   const viewer = gate.viewer || (await getViewer(request, env));
 
-  const meta = await driveFileMeta(env, parsed.fileId);
+  const meta = await driveFileMetaCached(env, parsed.fileId);
   if (!meta?.id) return json({ error: "file not found" }, 404);
   // ?inline=1 serves the file for in-page viewing (lightbox images, <video>).
   const inline = new URL(request.url).searchParams.get("inline") === "1";
