@@ -251,6 +251,7 @@ husky-drop/
 │   ├── live.js           # Durable Object: sessions, hibernatable WebSockets
 │   ├── live-analytics.js # DO SQLite: rollups, telemetry, activity, share stats
 │   ├── live-digest.js    # per-session finished-upload email
+│   ├── live-completions.js # batched KV flush of Drive-verified completions
 │   ├── share.js          # public share endpoints: meta, listing, tracking
 │   ├── share-admin.js    # share CRUD + Drive permission revocation
 │   ├── share-token.js    # signed download tokens, download safety list

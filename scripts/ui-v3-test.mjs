@@ -15,7 +15,7 @@ assert.match(css, /\.brand-mark::after\s*\{[\s\S]*?content:\s*none/, "the retire
 assert.match(faviconSvg, /<path[^>]+fill="#fff"/, "favicon contains the banner-derived white droplet");
 
 const workerSource = (await Promise.all(["worker", "drop-api", "admin-api"].map((n) => read(`src/${n}.js`)))).join(" ");
-const liveSource = await read("src/live.js");
+const liveSource = (await Promise.all(["live", "live-completions"].map((n) => read(`src/${n}.js`)))).join(" ");
 const shareSource = await read("src/share-admin.js");
 const storeSource = await read("src/store.js");
 assert.match(workerSource, /\/api\/admin\/events/, "plan 09 registers activity pagination");

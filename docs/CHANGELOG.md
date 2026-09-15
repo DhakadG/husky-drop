@@ -25,7 +25,8 @@ the way they are. Goal-by-goal status for the September round lives in
   (SQLite tables) + `live-digest.js` (`DigestQueue`), per the 500-line rule.
 - **#18 split.** `share.js` (1434) → `share.js` / `share-admin.js` /
   `share-token.js` / `share-media.js` / `share-zip.js`; `worker.js` (1113) →
-  `worker.js` / `drop-api.js` / `admin-api.js`. Every `src/` file is now
+  `worker.js` / `drop-api.js` / `admin-api.js`; `live.js` hands completions
+  to `live-completions.js` (`CompletionQueue`). Every `src/` file is now
   under 500 lines. `shareSigningKey` gets the same fail-loud secret rule as
   `auth.js` (it still had the `"dev"` fallback).
 
