@@ -1201,7 +1201,7 @@ input.invalid {
 /* ---------- Stat grid ---------- */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -5739,6 +5739,8 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   display: block;
   margin: 2px 0 0;
   font: 500 12.5px var(--font-body);
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted);
 }
 
