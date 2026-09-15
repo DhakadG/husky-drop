@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — share.js client split (PR #28)
+
+- `public/share.js` (3.5k lines) → `share.js` (gate, navigation, rendering,
+  cards, layout; 950) + `share-state.js` (shared state with live bindings +
+  setters) + `share-viewer.js` (PhotoSwipe/Swiper; 1.9k) + `share-preview.js`
+  + `share-select.js` + `share-download.js` + `share-beacon.js` +
+  `share-utils.js`. Imports are exact (ESLint `no-unused-vars`/`no-undef`/
+  `no-import-assign` on the modules, no page globals except public.js
+  helpers). Two dead functions found and removed (`waitForVideoDuration`,
+  `formatShortDate`).
+
 ## 2026-09-15 — Drop/share list cards (PR #27)
 
 - Card order is head → stats → actions; actions are a footer row behind a
