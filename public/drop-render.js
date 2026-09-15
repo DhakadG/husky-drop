@@ -159,7 +159,8 @@ export function renderSummary() {
   $("done-card").classList.toggle("hidden", !completed);
   if (completed) {
     $("done-title").textContent = totals.done === 1 ? "Your file is delivered" : `All ${totals.done} files delivered`;
-    $("done-recap").textContent = `${fmtBytes(totals.bytes)} saved to the collector’s Drive.`;
+    const videos = doneRecent.filter((it) => /^video\//.test(it.file.type || "")).length;
+    $("done-recap").textContent = `${fmtBytes(totals.bytes)} saved to the collector’s Drive.${videos ? " Videos get a streaming copy overnight so they play instantly when shared." : ""}`;
   }
 
   const failed = totals.error + totals.warning + totals.canceled;

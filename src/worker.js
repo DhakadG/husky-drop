@@ -73,7 +73,17 @@ import {
   cleanupInactiveRecords,
   linkFolder,
 } from "./admin-api.js";
-import { listPendingPreviews, previewSource, putPreview, reindexPreviews } from "./previews.js";
+import {
+  deletePreview,
+  listPendingPreviews,
+  previewSource,
+  previewsOverview,
+  putPreview,
+  reindexPreviews,
+  reportPreviewRun,
+  retryFailedPreviews,
+  startPreviewRun,
+} from "./previews.js";
 
 export { LiveTracker } from "./live.js";
 
@@ -229,9 +239,14 @@ async function api(request, env, url, ctx) {
     if (p.startsWith("/api/admin/previews/")) {
       const rest = p.slice("/api/admin/previews/".length);
       if (m === "GET" && rest === "pending") return listPendingPreviews(request, env);
+      if (m === "GET" && rest === "overview") return previewsOverview(request, env);
+      if (m === "POST" && rest === "report") return reportPreviewRun(request, env);
+      if (m === "POST" && rest === "run") return startPreviewRun(request, env);
+      if (m === "POST" && rest === "retry") return retryFailedPreviews(request, env);
       if (m === "POST" && rest === "reindex") return reindexPreviews(request, env);
       if (m === "GET" && rest.startsWith("source/")) return previewSource(request, env, rest.slice(7));
       if (m === "PUT" && rest) return putPreview(request, env, rest);
+      if (m === "DELETE" && rest) return deletePreview(env, rest);
     }
     if (m === "DELETE" && p.startsWith("/api/admin/uploads/")) {
       const [uploadSlug, fileId] = p.slice("/api/admin/uploads/".length).split("/");

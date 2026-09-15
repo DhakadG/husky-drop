@@ -2,14 +2,16 @@
 // (.github/workflows/transcode-previews.yml) pulls videos that have no
 // preview yet, runs ffmpeg, and PUTs a 720p MP4 back here. The worker stores
 // it in a private "_previews" folder under DRIVE_PARENT_ID (never inside a
-// shared folder, so folder-level "anyone with link" grants never reach it)
-// and keeps a fileId -> previewId map in KV.
+// shared folder, so folder-level "anyone with link" grants never reach it).
 //
-// Share pages get `preview` next to `dl`: hover playback and the viewer's
-// first play use it; the viewer's HD button switches to the original.
+// KV footprint is deliberately one key, `previews:index`:
+//   { files: {origId: {id, size, at}}, failed: {origId: {error, at, tries}},
+//     runs: [last 20 run summaries], queue: {folderIds, fileIds, limit} }
+// PUT does not touch KV; the Action reports in batches and the worker merges
+// each report with a single write. Overview scans live in isolate memory.
 
-import { accessToken, driveCreateFolder, driveFindFolder, driveListFolder } from "./drive.js";
-import { json, shareState } from "./util.js";
+import { accessToken, driveCreateFolder, driveFindFolder, driveListFolder, driveTrashFile } from "./drive.js";
+import { json, shareState, cleanText } from "./util.js";
 import { signShareTokenWithExpiry } from "./share-token.js";
 
 const INDEX_KEY = "previews:index";
@@ -17,17 +19,31 @@ const FOLDER_KEY = "previews:folder";
 const FOLDER_NAME = "_previews";
 const PREVIEW_TTL = 4 * 3600;
 const MAX_PREVIEW_BYTES = 90 * 1024 * 1024; // Workers request-body ceiling with margin
+const MAX_TRIES = 3;
+const RUNS_KEPT = 20;
+const CRON_UTC = { hour: 21, minute: 30 }; // keep in sync with the workflow schedule
+const WORKFLOW = "transcode-previews.yml";
+const isVideo = (f) => /^video\//.test(f?.mimeType || f?.mime || "");
 
 export async function previewIndex(env) {
-  return (await env.KV.get(INDEX_KEY, "json")) || {};
+  const raw = (await env.KV.get(INDEX_KEY, "json")) || {};
+  // First version stored the file map flat.
+  const files = raw.files || (raw.runs || raw.failed ? {} : raw);
+  return { files, failed: raw.failed || {}, runs: raw.runs || [], queue: raw.queue || null };
 }
+const saveIndex = (env, index) => env.KV.put(INDEX_KEY, JSON.stringify(index));
 
-// `preview` + `previewExpiresAt` for a listed file, or nothing.
+// Listing fields for one file: `preview` (4h token) when ready, else the
+// state so share pages can say "optimising soon" / "failed".
 export async function previewFields(env, slug, file, index) {
-  const entry = index[file.id];
-  if (!entry || !/^video\//.test(file.mimeType || "")) return {};
-  const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", slug, entry.id, PREVIEW_TTL);
-  return { preview: `/api/share/dl/${token}`, previewExpiresAt: expiresAt };
+  if (!isVideo(file)) return {};
+  const entry = index.files[file.id];
+  if (entry) {
+    const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", slug, entry.id, PREVIEW_TTL);
+    return { preview: `/api/share/dl/${token}`, previewExpiresAt: expiresAt, previewState: "ready" };
+  }
+  const failed = index.failed[file.id];
+  return { previewState: failed && failed.tries >= MAX_TRIES ? "failed" : "queued" };
 }
 
 async function previewFolderId(env) {
@@ -39,37 +55,121 @@ async function previewFolderId(env) {
   return folder.id;
 }
 
-// Videos in active shares that have no preview yet. Walks each share's
-// folders (depth 3) and stops at `limit`.
-export async function listPendingPreviews(request, env) {
-  const limit = Math.max(1, Math.min(100, Number(new URL(request.url).searchParams.get("limit")) || 20));
-  const index = await previewIndex(env);
+// ---- share tree scan (Drive reads only; memoised per isolate for 60s) ----
+let scanMemo = { at: 0, tree: null };
+async function scanShares(env, fresh = false) {
+  if (!fresh && scanMemo.tree && Date.now() - scanMemo.at < 60_000) return scanMemo.tree;
   const slugs = (await env.KV.get("shares:index", "json")) || [];
+  const folders = []; // {slug, label, folderId, name, depth, videos: [{id,name,size,mime}]}
   const seen = new Set();
-  const pending = [];
-  const walk = async (folderId, depth) => {
-    if (pending.length >= limit || depth > 3 || seen.has(folderId)) return;
+  const walk = async (slug, label, folderId, name, depth) => {
+    if (depth > 3 || seen.has(folderId)) return;
     seen.add(folderId);
+    const node = { slug, label, folderId, name, depth, videos: [] };
+    folders.push(node);
     let pageToken = "";
     do {
       const page = await driveListFolder(env, folderId, pageToken);
       for (const f of page.files || []) {
-        if (pending.length >= limit) return;
-        if (f.mimeType === "application/vnd.google-apps.folder") await walk(f.id, depth + 1);
-        else if (/^video\//.test(f.mimeType || "") && !index[f.id] && !seen.has(f.id)) {
-          seen.add(f.id);
-          pending.push({ id: f.id, name: f.name, size: Number(f.size) || 0, mime: f.mimeType });
-        }
+        if (f.mimeType === "application/vnd.google-apps.folder") await walk(slug, label, f.id, f.name, depth + 1);
+        else if (isVideo(f)) node.videos.push({ id: f.id, name: f.name, size: Number(f.size) || 0, mime: f.mimeType });
       }
       pageToken = page.nextPageToken || "";
-    } while (pageToken && pending.length < limit);
+    } while (pageToken);
   };
   for (const slug of slugs) {
     const share = await env.KV.get(`share:${slug}`, "json");
     if (shareState(share) !== "active") continue;
-    for (const id of share.folderIds || []) await walk(id, 0);
+    for (const id of share.folderIds || []) await walk(slug, share.label || slug, id, share.label || slug, 0);
   }
-  return json({ pending, indexed: Object.keys(index).length });
+  scanMemo = { at: Date.now(), tree: folders };
+  return folders;
+}
+
+function fileState(index, id) {
+  if (index.files[id]) return "ready";
+  const failed = index.failed[id];
+  return failed && failed.tries >= MAX_TRIES ? "failed" : "pending";
+}
+
+// ---- GitHub Actions bridge (optional: needs GITHUB_TOKEN secret) ----
+function ghConfigured(env) {
+  return !!env.GITHUB_TOKEN;
+}
+async function gh(env, path, init = {}) {
+  const repo = env.GITHUB_REPO || "DhakadG/husky-drop";
+  return fetch(`https://api.github.com/repos/${repo}/actions/${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "husky-drop-worker",
+      ...(init.headers || {}),
+    },
+  });
+}
+async function activeRun(env) {
+  if (!ghConfigured(env)) return null;
+  const r = await gh(env, `workflows/${WORKFLOW}/runs?per_page=3`);
+  if (!r.ok) return null;
+  const { workflow_runs: runs = [] } = await r.json();
+  const live = runs.find((run) => ["queued", "in_progress", "waiting"].includes(run.status));
+  return live ? { id: live.id, status: live.status, startedAt: Date.parse(live.run_started_at || live.created_at), url: live.html_url } : null;
+}
+function nextScheduledRun(now = Date.now()) {
+  const next = new Date(now);
+  next.setUTCHours(CRON_UTC.hour, CRON_UTC.minute, 0, 0);
+  if (next.getTime() <= now) next.setUTCDate(next.getUTCDate() + 1);
+  return next.getTime();
+}
+
+// ---- admin: overview ----
+export async function previewsOverview(request, env) {
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+  const [index, tree, active] = await Promise.all([previewIndex(env), scanShares(env, fresh), activeRun(env)]);
+  const totals = { videos: 0, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
+  const folders = tree.map((node) => {
+    const row = { slug: node.slug, label: node.label, folderId: node.folderId, name: node.name, depth: node.depth, videos: node.videos.length, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
+    for (const v of node.videos) {
+      const state = fileState(index, v.id);
+      row[state] += 1;
+      row.bytes += v.size;
+      row.previewBytes += index.files[v.id]?.size || 0;
+    }
+    for (const key of ["videos", "ready", "pending", "failed", "bytes", "previewBytes"]) totals[key] += row[key];
+    return row;
+  });
+  const names = new Map(tree.flatMap((node) => node.videos.map((v) => [v.id, v])));
+  const failed = Object.entries(index.failed).map(([id, f]) => ({ id, name: names.get(id)?.name || id, ...f }));
+  return json({
+    totals,
+    folders,
+    failed,
+    runs: index.runs,
+    queue: index.queue,
+    active,
+    nextRunAt: nextScheduledRun(),
+    dispatchConfigured: ghConfigured(env),
+    scannedAt: scanMemo.at,
+  });
+}
+
+// ---- Action: what to do next ----
+// Queue (explicit folders/files from the admin) first, then everything else.
+// Files that failed MAX_TRIES times are skipped until retried from the admin.
+export async function listPendingPreviews(request, env) {
+  const limit = Math.max(1, Math.min(300, Number(new URL(request.url).searchParams.get("limit")) || 20));
+  const index = await previewIndex(env);
+  const tree = await scanShares(env, true);
+  const byId = new Map(tree.flatMap((node) => node.videos.map((v) => [v.id, v])));
+  const eligible = (id) => !index.files[id] && (index.failed[id]?.tries || 0) < MAX_TRIES;
+  const ordered = [];
+  const push = (v) => v && eligible(v.id) && !ordered.some((o) => o.id === v.id) && ordered.push(v);
+  const queue = index.queue || {};
+  for (const id of queue.fileIds || []) push(byId.get(id));
+  for (const node of tree) if ((queue.folderIds || []).includes(node.folderId)) node.videos.forEach(push);
+  for (const node of tree) node.videos.forEach(push);
+  return json({ pending: ordered.slice(0, Math.max(limit, Number(queue.limit) || 0)), indexed: Object.keys(index.files).length });
 }
 
 // Stream the original to the transcoder.
@@ -85,7 +185,8 @@ export async function previewSource(request, env, fileId) {
   return new Response(r.body, { headers: { "content-type": r.headers.get("content-type") || "application/octet-stream" } });
 }
 
-// Store one finished preview and record it in the index.
+// Store one finished preview in Drive. No KV write here: the Action reports
+// the batch and `reportPreviewRun` records it.
 export async function putPreview(request, env, fileId) {
   const id = String(fileId || "").replace(/[^a-zA-Z0-9_-]/g, "");
   if (!id) return json({ error: "bad file id" }, 400);
@@ -98,8 +199,7 @@ export async function putPreview(request, env, fileId) {
   const meta = { name: `${id}.mp4`, parents: [await previewFolderId(env)], appProperties: { previewOf: id } };
   const boundary = `hd-${crypto.randomUUID()}`;
   const head = `--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\ncontent-type: video/mp4\r\n\r\n`;
-  const tail = `\r\n--${boundary}--`;
-  const payload = new Blob([head, body, tail]);
+  const payload = new Blob([head, body, `\r\n--${boundary}--`]);
   const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,size&supportsAllDrives=true", {
     method: "POST",
     headers: { authorization: `Bearer ${tok}`, "content-type": `multipart/related; boundary=${boundary}` },
@@ -107,23 +207,113 @@ export async function putPreview(request, env, fileId) {
   });
   if (!r.ok) return json({ error: "Drive upload failed: " + (await r.text()).slice(0, 200) }, 502);
   const created = await r.json();
-
-  const index = await previewIndex(env);
-  index[id] = { id: created.id, size: Number(created.size) || body.byteLength, at: Date.now() };
-  await env.KV.put(INDEX_KEY, JSON.stringify(index));
-  return json({ ok: true, previewId: created.id, indexed: Object.keys(index).length }, 201);
+  return json({ ok: true, previewId: created.id, size: Number(created.size) || body.byteLength }, 201);
 }
 
-// Rebuild the index from the _previews folder (recovery after a KV wipe).
+// Batch report from the Action: {runId, trigger, startedAt, finishedAt?,
+// done: [{id, name, size, previewId, previewSize, ms}], skipped: [{id, name, error}]}.
+// One KV write per report; the script reports every few files and at the end.
+export async function reportPreviewRun(request, env) {
+  const b = await request.json().catch(() => null);
+  if (!b || !b.runId) return json({ error: "runId required" }, 400);
+  const index = await previewIndex(env);
+  const now = Date.now();
+  for (const d of b.done || []) {
+    if (!d.id || !d.previewId) continue;
+    index.files[d.id] = { id: d.previewId, size: Number(d.previewSize) || 0, at: now };
+    delete index.failed[d.id];
+  }
+  for (const s of b.skipped || []) {
+    if (!s.id) continue;
+    const prev = index.failed[s.id] || { tries: 0 };
+    index.failed[s.id] = { error: cleanText(s.error || "failed", 200), at: now, tries: prev.tries + 1 };
+  }
+  const runId = String(b.runId).slice(0, 40);
+  const existing = index.runs.find((r) => r.id === runId);
+  const run = existing || { id: runId, trigger: cleanText(b.trigger || "schedule", 20), startedAt: Number(b.startedAt) || now, done: 0, skipped: 0, bytes: 0, previewBytes: 0, items: [] };
+  run.done += (b.done || []).length;
+  run.skipped += (b.skipped || []).length;
+  for (const d of b.done || []) {
+    run.bytes += Number(d.size) || 0;
+    run.previewBytes += Number(d.previewSize) || 0;
+  }
+  run.items = [...run.items, ...(b.done || []).map((d) => ({ id: d.id, name: cleanText(d.name || d.id, 120), ok: true, ms: Number(d.ms) || 0, size: Number(d.size) || 0, previewSize: Number(d.previewSize) || 0 })), ...(b.skipped || []).map((s) => ({ id: s.id, name: cleanText(s.name || s.id, 120), ok: false, error: cleanText(s.error || "", 200) }))].slice(-300);
+  if (b.finishedAt) {
+    run.finishedAt = Number(b.finishedAt) || now;
+    run.pendingLeft = Number(b.pendingLeft) || 0;
+    index.queue = null; // an explicit request has been served
+  }
+  if (!existing) index.runs.unshift(run);
+  index.runs = index.runs.slice(0, RUNS_KEPT);
+  await saveIndex(env, index);
+  return json({ ok: true, indexed: Object.keys(index.files).length });
+}
+
+// ---- admin actions ----
+// Queue specific folders/files (or everything) and start the workflow now.
+export async function startPreviewRun(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const index = await previewIndex(env);
+  const folderIds = (b.folderIds || []).map((id) => cleanText(id, 120)).filter(Boolean).slice(0, 50);
+  const fileIds = (b.fileIds || []).map((id) => cleanText(id, 120)).filter(Boolean).slice(0, 500);
+  const limit = Math.max(1, Math.min(300, Number(b.limit) || 40));
+  if (b.retryFailed) index.failed = {};
+  index.queue = { folderIds, fileIds, limit, at: Date.now() };
+  await saveIndex(env, index);
+  if (!ghConfigured(env)) return json({ ok: true, queued: true, dispatched: false, reason: "GITHUB_TOKEN not set - the nightly run will pick the queue up" }, 202);
+  if (await activeRun(env)) return json({ ok: true, queued: true, dispatched: false, reason: "a run is already in progress" }, 202);
+  const r = await gh(env, `workflows/${WORKFLOW}/dispatches`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ref: "main", inputs: { limit: String(limit) } }),
+  });
+  if (r.status !== 204) return json({ ok: false, queued: true, dispatched: false, reason: `GitHub refused: ${r.status} ${(await r.text()).slice(0, 120)}` }, 502);
+  return json({ ok: true, queued: true, dispatched: true }, 202);
+}
+
+export async function retryFailedPreviews(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const index = await previewIndex(env);
+  const ids = (b.fileIds || []).map(String);
+  if (ids.length) for (const id of ids) delete index.failed[id];
+  else index.failed = {};
+  await saveIndex(env, index);
+  return json({ ok: true, failed: Object.keys(index.failed).length });
+}
+
+// Remove one preview (Drive trash + index) so the next run regenerates it.
+export async function deletePreview(env, fileId) {
+  const id = cleanText(fileId, 120);
+  const index = await previewIndex(env);
+  const entry = index.files[id];
+  if (!entry) return json({ error: "no preview for this file" }, 404);
+  await driveTrashFile(env, entry.id);
+  delete index.files[id];
+  await saveIndex(env, index);
+  return json({ ok: true });
+}
+
+// Called when an original is trashed: drop its preview too (no-op otherwise).
+export async function forgetPreview(env, fileId) {
+  const index = await previewIndex(env);
+  const entry = index.files[fileId];
+  if (!entry) return;
+  await driveTrashFile(env, entry.id).catch(() => {});
+  delete index.files[fileId];
+  await saveIndex(env, index);
+}
+
+// Rebuild the file map from the _previews folder (recovery after a KV wipe).
 export async function reindexPreviews(request, env) {
   const folderId = await previewFolderId(env);
   const tok = await accessToken(env);
-  const index = {};
+  const index = await previewIndex(env);
+  index.files = {};
   let pageToken = "";
   do {
     const params = new URLSearchParams({
       q: `'${folderId}' in parents and trashed=false`,
-      fields: "nextPageToken,files(id,size,appProperties)",
+      fields: "nextPageToken,files(id,size,appProperties,createdTime)",
       pageSize: "1000",
       supportsAllDrives: "true",
       includeItemsFromAllDrives: "true",
@@ -134,10 +324,10 @@ export async function reindexPreviews(request, env) {
     const page = await r.json();
     for (const f of page.files || []) {
       const of = f.appProperties?.previewOf;
-      if (of) index[of] = { id: f.id, size: Number(f.size) || 0, at: Date.now() };
+      if (of) index.files[of] = { id: f.id, size: Number(f.size) || 0, at: Date.parse(f.createdTime) || Date.now() };
     }
     pageToken = page.nextPageToken || "";
   } while (pageToken);
-  await env.KV.put(INDEX_KEY, JSON.stringify(index));
-  return json({ ok: true, indexed: Object.keys(index).length });
+  await saveIndex(env, index);
+  return json({ ok: true, indexed: Object.keys(index.files).length });
 }

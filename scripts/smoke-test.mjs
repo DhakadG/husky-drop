@@ -529,6 +529,12 @@ async function main() {
   assert.equal(res.status, 401, "preview listing requires admin");
   res = await worker.fetch(request("/api/admin/previews/drive-file-1", { method: "PUT", headers: { authorization: "Bearer test-admin" }, body: "" }), env);
   assert.equal(res.status, 413, "empty preview body is rejected");
+  res = await worker.fetch(request("/api/admin/previews/report", { method: "POST", headers: { authorization: "Bearer test-admin", "content-type": "application/json" }, body: JSON.stringify({ runId: "r1", trigger: "manual", startedAt: 1, done: [{ id: "vid-1", name: "a.mp4", size: 10, previewId: "prev-1", previewSize: 2, ms: 5 }], skipped: [{ id: "vid-2", name: "b.mp4", error: "ffmpeg exited 1" }], finishedAt: 2 }) }), env);
+  assert.equal(res.status, 200, "run report accepted");
+  const previewIndex = await env.KV.get("previews:index", "json");
+  assert.equal(previewIndex.files["vid-1"].id, "prev-1", "report indexes finished previews");
+  assert.equal(previewIndex.failed["vid-2"].tries, 1, "report counts failures");
+  assert.equal(previewIndex.runs[0].done, 1, "report keeps the run summary");
   // Put the delivered file back so the rest of the run sees the same totals.
   await env.KV.put("recent:inbox", JSON.stringify([{ n: "IMG.HEIC", s: 200, m: "image/heic", u: "Riya", f: "drive-file-1", si: "session-1", at: Date.now() }]));
   await env.KV.put("stats:inbox", JSON.stringify({ opens: 1, sessions: 1, files: 1, bytes: 200 }));

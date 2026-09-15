@@ -85,6 +85,10 @@
           <svg class="ico" aria-hidden="true"><use href="/icons.svg#activity"></use></svg>
           <span class="tab-label">Activity</span>
         </button>
+        <button class="tab" data-tab="previews" type="button">
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#film"></use></svg>
+          <span class="tab-label">Video previews</span>
+        </button>
         <div class="side-divider" role="presentation"></div>
         <button class="tab tab-create" data-tab="create" type="button">
           <svg class="ico" aria-hidden="true"><use href="/icons.svg#plus"></use></svg>
@@ -181,6 +185,12 @@
       <section id="tab-shares" class="tab-pane hidden">
         <div class="pane-head"><div><p class="eyebrow">outbound galleries</p><h1 class="pane-title">Share links</h1><span class="muted">Private /s/ links that give selected people read access to Drive folders.</span></div><button class="btn" data-goto-tab="create-share" type="button">+ New share link</button></div>
         <div id="share-rows" class="share-card-list" aria-live="polite"></div>
+      </section>
+
+      <!-- VIDEO PREVIEWS: transcoder coverage, runs, controls -->
+      <section id="tab-previews" class="tab-pane hidden">
+        <div class="pane-head"><div><p class="eyebrow">streaming copies</p><h1 class="pane-title">Video previews</h1><span class="muted">720p copies of share videos, made by the nightly GitHub Actions job. Hover playback and first play use them; HD stays one tap away.</span></div></div>
+        <div id="previews-body" aria-live="polite"><div class="empty-state"><p class="muted">Loading preview status…</p></div></div>
       </section>
 
       <!-- CREATE SHARE LINK: a separate tab pane inside the shared /admin document -->
@@ -339,6 +349,7 @@
 <section class="admin-mobile-more" id="admin-mobile-more" role="dialog" aria-modal="true" aria-labelledby="admin-mobile-more-title" tabindex="-1" hidden>
   <header><div><p class="eyebrow">Dashboard</p><b id="admin-mobile-more-title">More</b></div><button class="dialog-close" id="admin-mobile-more-close" type="button" aria-label="Close more menu">×</button></header>
   <button class="admin-more-card" type="button" data-mobile-tab="activity"><span>Activity</span><small>Search views, transfers and downloads</small></button>
+  <button class="admin-more-card" type="button" data-mobile-tab="previews"><span>Video previews</span><small>Transcoder coverage and runs</small></button>
   <button class="admin-more-card" type="button" data-mobile-tab="create"><span>New drop link</span><small>Collect original files into Drive</small></button>
   <button class="admin-more-card" type="button" data-mobile-tab="create-share"><span>New share link</span><small>Publish a private Drive gallery</small></button>
   <button class="admin-more-card danger" type="button" id="admin-mobile-lock"><span>Lock dashboard</span><small>End this admin session</small></button>

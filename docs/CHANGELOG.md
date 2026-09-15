@@ -4,6 +4,24 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Video previews admin tab (PR #43)
+
+- New admin tab **Video previews**: totals, per-share/per-folder coverage
+  with progress bars, failed files with retry, last 20 runs with per-file
+  detail, next scheduled run, active GitHub run link, "Run now" (limit),
+  "Process selected" folders, per-folder "process". Polls every 20 s only
+  while a run is active.
+- KV thrift: everything lives in one key (`previews:index` = files +
+  failed + runs + queue). `PUT` no longer writes KV; the Action reports in
+  batches of 8 (one write each) and once at the end. The Drive coverage
+  walk is memoised in isolate memory, never cached in KV.
+- `GITHUB_TOKEN` secret (optional) lets the worker dispatch the workflow
+  and read the active run; without it "Run now" queues for the schedule.
+- Share viewer shows "optimising…" / "original" next to the controls when
+  a video has no preview yet; the drop page's delivered card mentions the
+  overnight streaming copy for videos. Trashing an original trashes its
+  preview.
+
 ## 2026-09-16 — 720p video previews via GitHub Actions (PR #41)
 
 - `src/previews.js` + `.github/workflows/transcode-previews.yml` +

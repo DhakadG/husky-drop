@@ -249,10 +249,27 @@ Used by `.github/workflows/transcode-previews.yml` (Bearer `ADMIN_TOKEN`).
 - `PUT /api/admin/previews/:fileId` (body: MP4, ≤ 90 MB) — stores the preview
   in the private `_previews` folder under `DRIVE_PARENT_ID` with
   `appProperties.previewOf`, and records it in KV `previews:index`.
-- `POST /api/admin/previews/reindex` — rebuilds the index from the folder.
+- `POST /api/admin/previews/report` — batch results from the Action
+  (`{runId, trigger, startedAt, done[], skipped[], finishedAt?, pendingLeft?}`);
+  one KV write per report merges the file map, failure counts and run
+  history into the single `previews:index` key.
+- `GET /api/admin/previews/overview[?fresh=1]` — totals, per-folder coverage
+  for every active share, failed files, last 20 runs, the queue, the active
+  GitHub run (when `GITHUB_TOKEN` is set) and `nextRunAt`. The Drive walk is
+  memoised per isolate for 60 s; `fresh=1` bypasses it. No KV writes.
+- `POST /api/admin/previews/run` `{limit?, folderIds?, fileIds?, retryFailed?}`
+  — records the queue (served first by `pending`) and dispatches the
+  workflow; 202 with `dispatched:false` + `reason` when it cannot.
+- `POST /api/admin/previews/retry` `{fileIds?}` — clears failure counts
+  (all when empty).
+- `DELETE /api/admin/previews/:fileId` — trashes the preview so it is
+  regenerated. Trashing an original via `/api/admin/uploads` also drops
+  its preview.
+- `POST /api/admin/previews/reindex` — rebuilds the file map from the folder.
 
 Share listings then carry `preview` / `previewExpiresAt` (a 4-hour signed
-`dl` token for the preview file) next to `dl`.
+`dl` token for the preview file) plus `previewState`
+(`ready` | `queued` | `failed`) next to `dl`.
 
 ### `GET /api/admin/thumb/:fileId`
 
@@ -269,9 +286,14 @@ Secrets:
 - optional `RESEND_API_KEY`
 - optional `NOTIFY_TO`
 - optional `NOTIFY_FROM`
+- optional `GITHUB_TOKEN` — fine-grained PAT (Actions: read & write on this
+  repo) so the admin "Run now" button can dispatch the preview transcoder
+  and show the active run. Without it, queued work waits for the schedule.
 
 Vars:
 
 - optional `DRIVE_PARENT_ID`
+- optional `GITHUB_REPO` — `owner/repo` for the transcoder workflow
+  (default `DhakadG/husky-drop`).
 - optional `LINK_SLUGS` — comma-separated existing slugs for admin overview
   recovery/fast-path when KV list quota is exhausted.

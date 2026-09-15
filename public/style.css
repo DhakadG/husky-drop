@@ -7771,7 +7771,23 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   background: #fff;
   border-color: #fff;
 }
-/* No preview for this file: collapse the HD slot so the row stays five-up */
-.pswp-video-controls:has([data-video-quality].hidden) {
-  grid-template-columns: 40px auto minmax(72px, 1fr) auto 40px;
+.pswp-video-note {
+  font: 600 10.5px var(--font-mono);
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  cursor: help;
 }
+
+/* ---------- Admin: video previews tab ---------- */
+.previews-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.previews-limit { width: 64px; min-height: 36px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.previews-state { margin: 4px 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.previews-bar { display: inline-block; vertical-align: middle; width: 90px; height: 6px; border-radius: 999px; background: rgba(12, 26, 43, 0.08); overflow: hidden; }
+.previews-bar i { display: block; height: 100%; border-radius: inherit; background: var(--grad); }
+.previews-folders tr[data-state="done"] td { color: var(--muted); }
+.previews-folders tr[data-state="failed"] td:nth-child(7) { color: var(--red); font-weight: 700; }
+.previews-run-items { margin-top: 4px; }
+.previews-run-items summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+.previews-run-items ul { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; display: grid; gap: 3px; max-height: 240px; overflow: auto; }
+.previews-run-items li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
