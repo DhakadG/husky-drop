@@ -4,6 +4,26 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-15 — Realtime feed + auth hardening (PRs #12–#16)
+
+- **#12 auth.** HMAC keys no longer fall back to a constant when
+  `ADMIN_TOKEN` is unset (`requireSecret` throws). Admin Google sign-in
+  requires `ADMIN_TOKEN`; `email_verified` is enforced; Google failures are
+  logged with status + body.
+- **#13 worker hot path.** `/api/progress` and `/api/opened` ack before the
+  Durable Object relays run (`ctx.waitUntil`, concurrent). No KV read per
+  progress tick when the DO is configured. `sessionId` is required on
+  `/api/progress` and `/api/session`. Drive quota preflight cached 30 s per
+  isolate. `/api/drop/track` writes in one wave.
+- **#14 LiveTracker.** Admin sockets get coalesced `patch` deltas instead of
+  a full snapshot per tick; sorted snapshot cached. Hibernatable WebSockets
+  (`state.acceptWebSocket`, attachment carries the session id);
+  `recentDone` persisted; wake sends a fresh snapshot. Rate limiter evicts
+  only expired buckets; folder-id cache TTL 6 h; `/events-days` one query.
+- **#15 admin lists.** Link/share records read with `Promise.all`.
+- **#16 split.** `live.js` (960 lines) → `live.js` + `live-analytics.js`
+  (SQLite tables) + `live-digest.js` (`DigestQueue`), per the 500-line rule.
+
 ## 2026-09-15 — Housekeeping
 
 - Repository trimmed to a single `main` branch on GitHub. All September

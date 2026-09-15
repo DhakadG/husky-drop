@@ -23,8 +23,13 @@ Claude's initial v2 plan used KV heartbeats every 15 seconds. This workspace
 uses a Durable Object instead:
 
 - The uploader opens `GET /api/live/upload/:slug` as a WebSocket.
-- The admin opens `GET /api/admin/live?token=...` as a WebSocket.
-- `LiveTracker` stores active sessions in memory and broadcasts snapshots.
+- The admin opens `GET /api/admin/live` as a WebSocket (cookie auth).
+- `LiveTracker` stores active sessions in memory. A new admin socket gets a
+  full `snapshot`; afterwards it receives coalesced `patch` deltas (changed /
+  removed sessions, at most one every 200 ms) that `admin.js` merges by id.
+- Sockets use the Durable Object hibernation API, so an idle dashboard does
+  not keep the DO in memory. Per-socket state (role, slug, session id) lives
+  in the socket attachment.
 - `/api/progress` exists only as a fallback and also updates the Durable Object
   in memory.
 - KV is not used for repeated progress snapshots.
@@ -49,16 +54,22 @@ Drive owns the resumable upload session.
 
 ## Durable Object State
 
-`LiveTracker` keeps:
+`LiveTracker` (`src/live.js`) keeps:
 
 - Active upload sessions by session ID (with derived speed + ETA).
-- Connected admin WebSockets.
-- In-memory locks for per-uploader Drive folder creation.
-- In-memory first-seen guards for upload session start events.
-- Pending completion batches awaiting a KV flush (see below).
-- Last update timestamps.
+- In-memory locks and a 6 h cache for Drive folder creation.
+- In-memory first-seen guards for upload session start events (the KV
+  `started:*` key is the fallback after a hibernation wake).
+- Pending completion / open batches awaiting a KV flush (see below).
+- "Finished this hour" summaries, persisted in DO storage across wakes.
 
-Sessions are pruned after 2 minutes without updates.
+Two helpers own the rest: `Analytics` (`src/live-analytics.js`) for the
+SQLite tables (day rollups, telemetry, activity feed, share counters) and
+`DigestQueue` (`src/live-digest.js`) for the per-session finished email.
+
+Sessions are pruned after 2 minutes without updates. Everything in memory is
+rebuilt from the next event after hibernation; the alarm re-arms every 4 s
+while anything is pending, which keeps the DO awake until it is flushed.
 Folder locks prevent parallel file-session requests from creating duplicate
 uploader folders when the same person uploads multiple files at once. The KV
 `started:*` guard remains as durable backup, but the Durable Object handles
