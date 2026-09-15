@@ -372,6 +372,7 @@ async function main() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         linkId: "spiti",
+        sessionId: "session-pin",
         pin: "0000",
         filename: "IMG_0001.MOV",
         size: 1024,
@@ -385,7 +386,7 @@ async function main() {
     request("/api/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ linkId: "spiti", pin: "4821", filename: "x.bin", size: 0 }),
+      body: JSON.stringify({ linkId: "spiti", sessionId: "session-zero", pin: "4821", filename: "x.bin", size: 0 }),
     }),
     env
   );
@@ -447,6 +448,16 @@ async function main() {
     env
   );
   assert.equal(res.status, 200, "progress endpoint works (request bug fixed)");
+
+  res = await worker.fetch(
+    request("/api/progress", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ linkId: "inbox", uploader: "Riya", sent: 1, total: 2 }),
+    }),
+    env
+  );
+  assert.equal(res.status, 400, "progress without a sessionId is refused instead of minting a phantom session");
 
   res = await worker.fetch(
     request("/api/complete", {
@@ -557,7 +568,7 @@ async function main() {
     request("/api/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ linkId: "inbox", filename: "a.jpg", size: 10 }),
+      body: JSON.stringify({ linkId: "inbox", sessionId: "session-paused", filename: "a.jpg", size: 10 }),
     }),
     env
   );
@@ -579,7 +590,7 @@ async function main() {
     request("/api/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ linkId: "inbox", filename: "c.jpg", size: 10 }),
+      body: JSON.stringify({ linkId: "inbox", sessionId: "session-budget", filename: "c.jpg", size: 10 }),
     }),
     env
   );
@@ -966,7 +977,7 @@ async function main() {
     const dropMeta = await res.json();
     assert.equal(dropMeta.requiresAuth, true);
     assert.equal(dropMeta.viewer, null);
-    res = await worker.fetch(publicJsonRequest("/api/session", { linkId: "authenticated-drop", filename: "photo.jpg", size: 10 }), driveEnv);
+    res = await worker.fetch(publicJsonRequest("/api/session", { linkId: "authenticated-drop", sessionId: "session-auth", filename: "photo.jpg", size: 10 }), driveEnv);
     assert.equal(res.status, 401, "drop upload session cannot bypass required sign-in");
     res = await worker.fetch(request("/api/link/authenticated-drop", { headers: { cookie: viewerCookie } }), driveEnv);
     assert.equal((await res.json()).viewer?.email, "viewer@example.com", "drop meta resolves the signed-in viewer");

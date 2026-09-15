@@ -144,12 +144,12 @@ async function api(request, env, url, ctx) {
     return getPublicLink(request, env, p.slice("/api/link/".length));
   }
   if (m === "POST" && p === "/api/verify") return verifyPin(request, env);
-  if (m === "POST" && p === "/api/opened") return logOpened(request, env);
-  if (m === "POST" && p === "/api/progress") return logProgress(request, env);
+  if (m === "POST" && p === "/api/opened") return logOpened(request, env, ctx);
+  if (m === "POST" && p === "/api/progress") return logProgress(request, env, ctx);
   if (m === "POST" && p === "/api/session") return createSession(request, env);
   if (m === "POST" && p === "/api/complete") return logComplete(request, env);
   if (m === "POST" && p === "/api/client-error") return logClientError(request, env);
-  if (m === "POST" && p === "/api/drop/track") return dropTrack(request, env);
+  if (m === "POST" && p === "/api/drop/track") return dropTrack(request, env, ctx);
 
   // Public share-link endpoints (gallery + redirect modes).
   if (m === "GET" && p.startsWith("/api/share/meta/")) {
@@ -371,6 +371,25 @@ async function ensureLinkFolder(env, link) {
   return ensureLinkFolderDirect(env, link.slug);
 }
 
+// Fire-and-forget side work (telemetry, live relays): the client only needs
+// the ack, so finish it after the response when the runtime lets us.
+function background(ctx, promise, what) {
+  const guarded = promise.catch((err) => console.error(`${what} failed`, err.message));
+  if (!ctx?.waitUntil) return guarded;
+  ctx.waitUntil(guarded);
+  return Promise.resolve();
+}
+
+// ponytail: isolate-local 30s cache; a batch of hundreds of photos preflighted
+// one Drive quota call per file and could trip Google's per-user rate limit.
+let quotaCache = { free: null, at: 0 };
+async function cachedQuotaFree(env) {
+  if (Date.now() - quotaCache.at < 30_000) return quotaCache.free;
+  const free = quotaFree(await driveQuota(env));
+  quotaCache = { free, at: Date.now() };
+  return free;
+}
+
 // ---- Public drop-link endpoints ----
 
 function publicLink(link, quota, env) {
@@ -453,28 +472,24 @@ async function verifyPin(request, env) {
   return json({ ok: true });
 }
 
-async function logOpened(request, env) {
+async function logOpened(request, env, ctx) {
   const b = await request.json().catch(() => ({}));
   const link = await env.KV.get(`link:${b.linkId}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
   if (linkState(link) === "expired") return json({ error: "this link has expired" }, 410);
   const record = normalizeEvent({ type: "open", slug: link.slug, label: link.label }, request);
-  if (env.LIVE_TRACKER) {
-    await liveStub(env)
-      .fetch("https://live.internal/open", {
+  const work = env.LIVE_TRACKER
+    ? liveStub(env).fetch("https://live.internal/open", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ slug: link.slug, record }),
       })
-      .catch(() => {});
-  } else {
-    await bumpStats(env, link.slug, { opens: 1 });
-    await mergeEventsKV(env, [record]);
-  }
+    : bumpStats(env, link.slug, { opens: 1 }).then(() => mergeEventsKV(env, [record]));
+  await background(ctx, work, "open relay");
   return json({ ok: true });
 }
 
-async function logProgress(request, env) {
+async function logProgress(request, env, ctx) {
   const b = await request.json().catch(() => ({}));
   const link = await env.KV.get(`link:${b.linkId}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
@@ -483,28 +498,37 @@ async function logProgress(request, env) {
   if (authFailure) return authFailure;
   const failure = await gatePin(request, env, link, b.pin);
   if (failure) return failure;
-  const sessionId = cleanText(b.sessionId || "", 100) || `${Date.now()}-${randomSlug(5)}`;
-  await recordSessionStart(env, link, cleanText(b.uploader || "anonymous", 60), sessionId, request);
-  await liveProgress(env, {
-    type: "progress",
-    sessionId,
-    slug: link.slug,
-    label: link.label,
-    uploader: b.uploader,
-    sent: b.sent,
-    total: b.total,
-    files: b.files,
-    state: b.final ? "done" : "uploading",
-  });
+  // Session dedupe, budgets and digests all key off sessionId; a silent
+  // per-tick fallback would turn a client regression into phantom sessions.
+  const sessionId = cleanText(b.sessionId || "", 80);
+  if (!sessionId) return json({ error: "sessionId required" }, 400);
+  const uploader = cleanText(b.uploader || "anonymous", 60);
+  // Independent DO calls: run together, and after the ack where possible.
+  const relay = Promise.all([
+    recordSessionStart(env, link, uploader, sessionId, request),
+    liveProgress(env, {
+      type: "progress",
+      sessionId,
+      slug: link.slug,
+      label: link.label,
+      uploader,
+      sent: b.sent,
+      total: b.total,
+      files: b.files,
+      state: b.final ? "done" : "uploading",
+    }),
+  ]);
+  await background(ctx, relay, "progress relay");
   return json({ ok: true });
 }
 
 async function createSession(request, env) {
   const b = await request.json().catch(() => ({}));
-  const { linkId, pin, filename, size, mimeType, uploaderName, sessionId, relativePath, queueCount, queueBytes } = b;
+  const { linkId, pin, filename, size, mimeType, uploaderName, relativePath, queueCount, queueBytes } = b;
+  const sessionId = cleanText(b.sessionId || "", 80);
 
-  if (!linkId || !filename || !Number.isFinite(size) || size <= 0) {
-    return json({ error: "linkId, filename and size are required" }, 400);
+  if (!linkId || !filename || !sessionId || !Number.isFinite(size) || size <= 0) {
+    return json({ error: "linkId, filename, size and sessionId are required" }, 400);
   }
   const link = await env.KV.get(`link:${linkId}`, "json");
   if (!link) return json({ error: "link not found" }, 404);
@@ -527,8 +551,7 @@ async function createSession(request, env) {
     if (settings.maxTotalBytes && stats.bytes + size > settings.maxTotalBytes) breach = "byte budget reached";
     if (settings.maxTotalFiles && stats.files >= settings.maxTotalFiles) breach = "file budget reached";
     if (settings.maxSessions && stats.sessions >= settings.maxSessions) {
-      const started = sessionId ? await env.KV.get(`started:${link.slug}:${cleanText(sessionId, 80)}`) : null;
-      if (!started) breach = "session budget reached";
+      if (!(await env.KV.get(`started:${link.slug}:${sessionId}`))) breach = "session budget reached";
     }
     if (breach) {
       if (!link.disabled) {
@@ -543,7 +566,7 @@ async function createSession(request, env) {
 
   // Drive space preflight: refuse files that cannot fit in the account.
   if (env.GOOGLE_CLIENT_ID) {
-    const free = quotaFree(await driveQuota(env));
+    const free = await cachedQuotaFree(env);
     if (free != null && size > Math.max(0, free - QUOTA_RESERVE)) {
       return json({ error: "not enough free Google Drive space for this file" }, 507);
     }
@@ -602,10 +625,9 @@ async function createSession(request, env) {
   return json({ sessionUri });
 }
 
-async function recordSessionStart(env, link, uploader, sessionId, request, firstFile) {
-  const id = cleanText(sessionId || "", 80) || `${Date.now()}-${randomSlug(5)}`;
-  const guardKey = `started:${link.slug}:${id}`;
-  if (await env.KV.get(guardKey)) return;
+// Runs on every progress tick. The Durable Object answers "seen before?"
+// from memory, so the KV guard is only consulted on the no-DO path.
+async function recordSessionStart(env, link, uploader, id, request, firstFile) {
   if (env.LIVE_TRACKER) {
     const res = await liveStub(env).fetch("https://live.internal/session-start", {
       method: "POST",
@@ -615,6 +637,8 @@ async function recordSessionStart(env, link, uploader, sessionId, request, first
     const d = await res.json().catch(() => ({ first: true }));
     if (!d.first) return;
   } else {
+    const guardKey = `started:${link.slug}:${id}`;
+    if (await env.KV.get(guardKey)) return;
     await env.KV.put(guardKey, "1", { expirationTtl: 24 * 3600 });
   }
   await bumpStats(env, link.slug, { sessions: 1 });
@@ -693,7 +717,7 @@ async function logClientError(request, env) {
   return json({ ok: true });
 }
 
-async function dropTrack(request, env) {
+async function dropTrack(request, env, ctx) {
   const rl = await rateLimitRemote(env, `dtrack:${clientIp(request)}`, 90, 60);
   if (!rl.allowed) return retryJson("slow down", rl.retryAfter);
   const b = await request.json().catch(() => ({}));
@@ -711,18 +735,19 @@ async function dropTrack(request, env) {
       }))
     : [];
   if (!events.length) return json({ ok: true });
-  await storeTelemetry(env, {
+  // Pure analytics with no result dependencies: one wave, after the ack.
+  const work = [storeTelemetry(env, {
     kind: "drop",
     slug,
     sessionId,
     at: Date.now(),
     startedAt: Number(b.startedAt) || 0,
     events,
-  });
+  })];
 
   const clicks = events.filter((event) => event.t === "click");
   if (clicks.length) {
-    await logEvent(env, {
+    work.push(logEvent(env, {
       type: "drop-clicks",
       slug,
       label: link.label,
@@ -730,13 +755,13 @@ async function dropTrack(request, env) {
       count: clicks.length,
       message: `${clicks.length} interaction${clicks.length === 1 ? "" : "s"}; last: ${clicks.at(-1).name}`,
       sessionId,
-    }, request);
+    }, request));
   }
   const progressEvents = events.filter((event) => event.t === "upload_progress");
   if (progressEvents.length) {
     const last = progressEvents.at(-1);
     const data = last.data || {};
-    await logEvent(env, {
+    work.push(logEvent(env, {
       type: "drop-upload_progress",
       slug,
       label: link.label,
@@ -745,7 +770,7 @@ async function dropTrack(request, env) {
       count: progressEvents.length,
       message: `${Number(data.percent) || 0}% sent`,
       sessionId: cleanText(data.uploadSessionId || sessionId, 80),
-    }, request);
+    }, request));
   }
   const visible = new Set(["upload_start", "upload_session_created", "upload_resumed", "upload_retry", "upload_bytes_complete", "upload_complete", "upload_error", "network_offline", "network_online", "client_error", "session_end"]);
   for (const event of events.filter((item) => visible.has(item.t))) {
@@ -755,7 +780,7 @@ async function dropTrack(request, env) {
       : event.t === "session_end"
         ? `browser session ${Math.round((Number(data.elapsedMs) || 0) / 1000)}s`
         : cleanText(event.t.replaceAll("_", " "), 160);
-    await logEvent(env, {
+    work.push(logEvent(env, {
       type: `drop-${event.t}`,
       slug,
       label: link.label,
@@ -763,8 +788,9 @@ async function dropTrack(request, env) {
       bytes: Number(data.size) || 0,
       message,
       sessionId: cleanText(data.uploadSessionId || sessionId, 80),
-    }, request);
+    }, request));
   }
+  await background(ctx, Promise.all(work), "drop telemetry");
   return json({ ok: true });
 }
 

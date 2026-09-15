@@ -89,7 +89,8 @@ Body:
 }
 ```
 
-Returns `{sessionUri}`. Validates link, PIN, and file size before any Google
+Returns `{sessionUri}`. Validates link, PIN, file size and `sessionId` (one
+stable id per browser session, required, 400 without it) before any Google
 call. If `settings.perUploaderFolders` is enabled, the Worker finds or creates
 `<chosen folder>/<uploaderName>/` and parents the file there.
 
@@ -132,7 +133,8 @@ Compatibility fallback for heartbeat-style clients:
 ```
 
 This validates the PIN, starts a session event if needed, and forwards the
-snapshot to the Durable Object. It does not store progress snapshots in KV.
+snapshot to the Durable Object. `sessionId` is required (400 without it); the
+relay runs after the `{ok:true}` ack. It does not store progress snapshots in KV.
 
 ### `POST /api/complete`
 
