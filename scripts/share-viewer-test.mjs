@@ -10,7 +10,7 @@ try {
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const [shareJs, shareHtml, shareCss, shareFx, publicJs, viewerEngine, shareBackend, worker, drive, pkg] = await Promise.all([
-  read("public/share.js"),
+  Promise.all(["share", "share-state", "share-utils", "share-beacon", "share-download", "share-preview", "share-viewer", "share-select"].map((n) => read(`public/${n}.js`))).then((parts) => parts.join("\n")),
   read("public/share.html"),
   read("public/style.css"),
   read("public/share-fx.js"),

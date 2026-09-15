@@ -1,0 +1,348 @@
+import { createVideoWarmLease } from "./share-video-session.js";
+import { canHoverPreview, fx, previewVideos, selected, videoWarmLeases } from "./share-state.js";
+import { fmtDur } from "./share-utils.js";
+import { ensureFreshDownload, tokenFresh } from "./share-download.js";
+import { inlineUrl, scheduleLayout } from "./share.js";
+
+// Hover preview: play by default, deliberate scrubbing, buffered bar.
+// ---- Hover preview: play by default, deliberate scrubbing, buffered bar ----
+//
+// One state machine per card (idle -> playing -> scrubbing). Desktop scrub
+// reads e.shiftKey live on every pointermove instead of tracking a global
+// "is Shift down" flag - a global flag goes stale the moment a keyup is
+// missed (losing focus, a browser shortcut, alt-tabbing while the key is
+// down), which is exactly what caused scrubbing to get stuck on. Reading
+// the key state directly off each event is self-correcting: the very next
+// mouse move always reflects reality.
+
+export function installHoverPreview(fig, file) {
+  if (!/^video\//.test(file.mime)) return;
+  let scrubRaf = 0;
+  let startPromise = null;
+  const state = { scrubbing: false, hovering: false };
+
+  const requestPreview = () => {
+    if (!startPromise) {
+      startPromise = startHoverPreview(fig, file, { reset: true, isCurrent: () => state.hovering }).finally(() => {
+        startPromise = null;
+      });
+    }
+    return startPromise;
+  };
+
+  const beginScrub = () => {
+    const video = previewVideos.get(file.id);
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0 || !fig.classList.contains("previewing")) return false;
+    state.scrubbing = true;
+    video.pause();
+    fig.classList.add("scrubbing");
+    fx.setScrubbing(true, fig);
+    return true;
+  };
+
+  // Always sets --scrub-x (and the timestamp badge) in the same synchronous
+  // step that turns scrubbing on, so the playhead/badge never has a frame
+  // where it's showing at its CSS default (dead center) before JS catches up.
+  const scrubTo = (clientX) => {
+    const video = previewVideos.get(file.id);
+    if (!video || !video.duration) return;
+    const r = fig.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(0.999, (clientX - r.left) / r.width));
+    const t = pct * video.duration;
+    fig.style.setProperty("--scrub-x", `${pct * 100}%`);
+    updateScrubBadge(fig, video, t);
+    if (!scrubRaf) {
+      scrubRaf = requestAnimationFrame(() => {
+        scrubRaf = 0;
+        if (Math.abs(video.currentTime - t) > 0.08) {
+          if (video.fastSeek) video.fastSeek(t);
+          else video.currentTime = t;
+        }
+      });
+    }
+  };
+
+  const endScrub = ({ resume = true, stopPreview = false } = {}) => {
+    if (!state.scrubbing) return;
+    cancelAnimationFrame(scrubRaf);
+    scrubRaf = 0;
+    state.scrubbing = false;
+    fig.classList.remove("scrubbing");
+    fig.style.removeProperty("--scrub-x");
+    fx.setScrubbing(false, fig);
+    const video = previewVideos.get(file.id);
+    if (stopPreview) stopHoverPreview(fig, file, { removeBar: true });
+    else if (resume && video && fig.classList.contains("previewing")) video.play().catch(() => {});
+  };
+
+  if (canHoverPreview) {
+    fig.addEventListener("pointerenter", (e) => {
+      if (selected.size || e.pointerType !== "mouse") return;
+      state.hovering = true;
+      void requestPreview();
+    });
+
+    // The single desktop mouse handler: Shift held -> scrub; Shift not held
+    // while a scrub was in progress -> resume normal playback. No separate
+    // "shift mode" flag to fall out of sync with the key.
+    fig.addEventListener("pointermove", (e) => {
+      if (selected.size || e.pointerType !== "mouse") return;
+      if (e.shiftKey) {
+        if (!fig.classList.contains("previewing")) return requestPreview();
+        if (!state.scrubbing && !beginScrub()) return;
+        scrubTo(e.clientX);
+      } else if (state.scrubbing) {
+        endScrub({ resume: true });
+      }
+    });
+
+    fig.addEventListener("pointerleave", (e) => {
+      if (e.pointerType !== "mouse") return;
+      state.hovering = false;
+      endScrub({ resume: false });
+      stopHoverPreview(fig, file);
+    });
+  }
+
+}
+
+async function startHoverPreview(fig, file, opts = {}) {
+  if (!fig.isConnected || selected.size) return;
+  const lease = videoWarmLease(file);
+  lease.claim("preview");
+  try {
+    const video = await getPreviewVideo(file);
+    if (!fig.isConnected || selected.size || opts.isCurrent?.() === false) {
+      lease.release("preview");
+      return;
+    }
+    if (opts.reset) resetPreviewTime(video);
+    const media = fig.querySelector(".g-media") || fig.querySelector(".file-ico");
+    const hadThumb = !!file.thumb;
+    video.className = "g-video-preview";
+    video.controls = false;
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    if (media && video.parentNode !== media) {
+      // Keep the still thumbnail visible underneath until the video can
+      // actually play, instead of a black frame while it buffers.
+      fig.classList.add("buffering");
+      video.style.opacity = "0";
+      media.appendChild(video);
+      attachBufferBar(media, video, fig);
+    }
+    revealPreviewWhenReady(fig, file, video, hadThumb);
+    fig.classList.add("previewing");
+    await video.play().catch(() => {});
+  } catch {
+    lease.release("preview");
+    // Some browser/codec combinations refuse hover preview; click playback still works.
+  }
+}
+
+export function stopHoverPreview(fig, file, opts = {}) {
+  videoWarmLease(file).release("preview");
+  const video = previewVideos.get(file.id);
+  if (!video) return;
+  video.pause();
+  fig.classList.remove("previewing", "buffering");
+  if (opts.removeBar) {
+    fig.querySelector(".buffer-bar")?.remove();
+    fig._scrubBadge = null;
+  }
+}
+
+function resetPreviewTime(video) {
+  const reset = () => {
+    try {
+      video.currentTime = 0;
+    } catch {}
+  };
+  if (video.readyState >= 1) reset();
+  else video.addEventListener("loadedmetadata", reset, { once: true });
+}
+
+function revealPreviewWhenReady(fig, file, video, hadThumb) {
+  let revealed = false;
+  const reveal = () => {
+    if (revealed) return;
+    revealed = true;
+    if (!hadThumb) promoteVideoFrameAsThumb(file, fig, video);
+    video.style.opacity = "";
+    fig.classList.remove("buffering");
+    updateScrubBadge(fig, video);
+  };
+  if (video.readyState >= 2) reveal();
+  else {
+    fig.classList.add("buffering");
+    video.style.opacity = "0";
+    video.addEventListener("loadeddata", reveal, { once: true });
+    video.addEventListener("canplay", reveal, { once: true });
+  }
+}
+
+// Captures a representative frame and keeps it as this file's thumbnail for
+// the rest of the session, so a no-thumbnail tile doesn't go blank again the
+// moment the pointer leaves it. Seeks a little into the clip first - frame 0
+// is frequently black or still fading in right after a cut - and falls back
+// to whatever frame is already showing if the seek doesn't settle quickly.
+// Runs once per file (guarded by file.thumb / _sessionThumbFailed) and never
+// blocks the live hover preview, which keeps playing throughout.
+function promoteVideoFrameAsThumb(file, fig, video) {
+  if (file.thumb || file._sessionThumbFailed || !video.videoWidth || !video.videoHeight) return;
+
+  const capture = () => {
+    try {
+      const maxW = 720;
+      const scale = Math.min(1, maxW / video.videoWidth);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      file.thumb = canvas.toDataURL("image/jpeg", 0.78);
+      file.aspect = video.videoWidth / video.videoHeight;
+
+      const img = document.createElement("img");
+      img.loading = "eager";
+      img.decoding = "async";
+      img.alt = file.name;
+      img.src = file.thumb;
+
+      const host = video.parentElement;
+      if (host?.classList.contains("file-ico")) {
+        const mediaBox = document.createElement("div");
+        mediaBox.className = "g-media session-thumb";
+        mediaBox.appendChild(img);
+        host.replaceWith(mediaBox);
+        mediaBox.appendChild(video);
+        attachBufferBar(mediaBox, video, fig);
+      } else if (host?.classList.contains("g-media") && !host.querySelector("img")) {
+        host.prepend(img);
+      }
+      fig.classList.remove("plain");
+      fig.dataset.cursor = "video";
+      scheduleLayout();
+    } catch {
+      file._sessionThumbFailed = true;
+    }
+  };
+
+  const target = Math.min(1, (video.duration || 0) * 0.1);
+  if (!target || video.currentTime >= target - 0.05) {
+    capture();
+    return;
+  }
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    video.removeEventListener("seeked", finish);
+    capture();
+  };
+  const timer = setTimeout(finish, 600);
+  video.addEventListener("seeked", finish, { once: true });
+  try {
+    if (video.fastSeek) video.fastSeek(target);
+    else video.currentTime = target;
+  } catch {
+    finish();
+  }
+}
+
+// Small buffered/played bar pinned to the bottom of a hovering video tile -
+// there are no native controls in hover mode, so this is the only feedback
+// for "how much of this video has loaded" while scrubbing.
+function attachBufferBar(host, video, fig) {
+  const existing = host.querySelector(".buffer-bar");
+  if (existing) {
+    fig._scrubBadge = existing.querySelector(".scrub-time");
+    return;
+  }
+  const bar = document.createElement("div");
+  bar.className = "buffer-bar";
+  bar.innerHTML = `<i class="buffered"></i><i class="played"></i><em class="scrub-time"></em>`;
+  host.appendChild(bar);
+  const buffered = bar.querySelector(".buffered");
+  const played = bar.querySelector(".played");
+  fig._scrubBadge = bar.querySelector(".scrub-time");
+  const paint = () => {
+    const d = video.duration || 0;
+    let buf = 0;
+    for (let i = 0; i < video.buffered.length; i++) buf = Math.max(buf, video.buffered.end(i));
+    buffered.style.width = d ? `${Math.min(100, (buf / d) * 100)}%` : "0%";
+    played.style.width = d ? `${Math.min(100, (video.currentTime / d) * 100)}%` : "0%";
+    updateScrubBadge(fig, video);
+  };
+  for (const ev of ["progress", "timeupdate", "loadedmetadata", "seeking"]) video.addEventListener(ev, paint);
+  fig?.addEventListener("pointerleave", () => bar.remove(), { once: true });
+}
+
+function updateScrubBadge(fig, video, time = video.currentTime) {
+  const badge = fig?._scrubBadge;
+  if (!badge || !video.duration) return;
+  badge.textContent = `${fmtDur(time)} / ${fmtDur(video.duration)}`;
+}
+
+export async function probeVideoMetadata(file) {
+  if (!/^video\//.test(file.mime) || file.aspect) return;
+  try {
+    const video = await getPreviewVideo(file);
+    if (video.videoWidth && video.videoHeight) {
+      file.aspect = video.videoWidth / video.videoHeight;
+      scheduleLayout();
+    }
+  } catch {
+    // Keep the stable placeholder ratio.
+  } finally {
+    videoWarmLease(file).scheduleRelease();
+  }
+}
+
+async function getPreviewVideo(file) {
+  let video = previewVideos.get(file.id);
+  const lease = videoWarmLease(file);
+  let source = lease.sourceFor((candidate) => tokenFresh(file) && candidate === inlineUrl(file));
+  if (!source) {
+    await ensureFreshDownload(file);
+    source = lease.remember(inlineUrl(file));
+  }
+  if (!video) {
+    video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.addEventListener("loadedmetadata", () => {
+      if (!file.aspect && video.videoWidth && video.videoHeight) {
+        file.aspect = video.videoWidth / video.videoHeight;
+        scheduleLayout();
+      }
+    });
+    previewVideos.set(file.id, video);
+  }
+  if (video.getAttribute("src") !== source) {
+    video.src = source;
+    video.load();
+  }
+  return video;
+}
+
+export function videoWarmLease(file) {
+  let lease = videoWarmLeases.get(file.id);
+  if (lease) return lease;
+  lease = createVideoWarmLease({
+    onRelease: (source) => {
+      const video = previewVideos.get(file.id);
+      if (!video || video.getAttribute("src") !== source) return;
+      video.removeAttribute("src");
+      video.load();
+      video.preload = "metadata";
+    },
+  });
+  videoWarmLeases.set(file.id, lease);
+  return lease;
+}

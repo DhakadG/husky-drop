@@ -39,7 +39,8 @@ export default [
   },
   {
     files: ["public/share*.js"],
-    languageOptions: { ecmaVersion: 2024, sourceType: "module", globals: PAGE_GLOBALS },
-    rules: RULES,
+    // modules import their helpers explicitly; no classic-script globals here
+    languageOptions: { ecmaVersion: 2024, sourceType: "module", globals: { ...PAGE_GLOBALS, $: "off" } },
+    rules: { ...RULES, "no-import-assign": "error", "no-unused-vars": ["error", { args: "none", caughtErrors: "none", vars: "all" }] },
   },
 ];

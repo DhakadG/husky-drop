@@ -12,7 +12,7 @@ const htmlPaths = [
 ];
 const [css, shareJs, ...pages] = await Promise.all([
   read("public/style.css"),
-  read("public/share.js"),
+  Promise.all(["share", "share-viewer", "share-select", "share-preview"].map((n) => read(`public/${n}.js`))).then((parts) => parts.join("\n")),
   ...htmlPaths.map(read),
 ]);
 const shareHtml = pages[htmlPaths.indexOf("public/share.html")];
