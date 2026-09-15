@@ -18,15 +18,21 @@
 <div class="bg-fx" aria-hidden="true"><i></i><i></i><i></i></div>
 <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="true"></div>
 <main class="drop-shell drop-v3">
-  <header class="topbar drop-topbar"><a class="brand" href="/"><i class="brand-mark"></i>losthusky<span class="brand-slash">/</span>drop</a><div class="status-pill secure-pill" id="ws-state"><i aria-hidden="true"></i>secure drop</div></header>
+  <header class="topbar drop-topbar"><a class="brand" href="/"><i class="brand-mark"></i>losthusky<span class="brand-slash">/</span>drop</a><div class="status-pill" id="ws-state" data-state="checking" role="status">checking link</div></header>
 
-  <section id="loading" class="panel edge-card"><span class="edge-icon"><svg class="ico ico-spin" aria-hidden="true"><use href="/icons.svg#loader-circle"></use></svg></span><p class="eyebrow">loading link</p><h1>Finding this drop…</h1></section>
-
-  <section id="gone" class="panel edge-card hidden"><span class="edge-icon warn"><svg class="ico" aria-hidden="true"><use href="/icons.svg#circle-alert"></use></svg></span><p class="eyebrow">closed</p><h1>This link is not available.</h1><p class="muted">It expired, was deleted, or the URL is incomplete.</p><a class="btn ghost" href="/">Back to losthusky/drop</a></section>
-
-  <section id="auth-gate" class="grad-border edge-gate hidden"><div class="edge-card-inner"><span class="edge-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#user-round"></use></svg></span><p class="eyebrow">identified upload</p><h1 id="auth-label">Sign in before uploading</h1><p class="muted">The collector requires a Google account so every delivery can be attributed correctly. Your password is never shared.</p><button class="btn google-btn" id="auth-go" type="button">Continue with Google</button><div class="msg-err" id="auth-err"></div></div></section>
-
-  <section id="pin-gate" class="grad-border edge-gate hidden"><div class="edge-card-inner"><span class="edge-icon"><svg class="ico" aria-hidden="true"><use href="/icons.svg#lock-keyhole"></use></svg></span><p class="eyebrow">protected drop</p><h1 id="pin-label">Password required</h1><p class="muted">Enter the code the collector shared with you.</p><div class="field"><label for="pin">Password / PIN</label><input id="pin" type="text" class="code-input" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter shared code" /></div><button class="btn" id="pin-go">Open secure drop</button><div class="msg-err" id="pin-err"></div></div></section>
+  <!-- One gate card for every pre-upload state: loading, closed (expired /
+       paused / budget / missing), sign-in and PIN. drop.js fills it via
+       showGate(); the [data-state] drives tone, skeleton and which body shows. -->
+  <section id="gate" class="gate" data-state="loading">
+    <div class="gate-card">
+      <span class="gate-icon" id="gate-icon"><svg class="ico ico-spin" aria-hidden="true"><use href="/icons.svg#loader-circle"></use></svg></span>
+      <p class="eyebrow" id="gate-eyebrow">loading</p>
+      <h1 id="gate-title">Finding this drop…</h1>
+      <p class="muted" id="gate-sub">One moment.</p>
+      <div class="gate-body" id="gate-body"></div>
+      <div class="msg-err" id="gate-err" role="alert"></div>
+    </div>
+  </section>
 
   <section id="main" class="hidden">
     <div id="resume-banner" class="resume-banner-v3 hidden"><svg class="ico" aria-hidden="true"><use href="/icons.svg#rotate-ccw"></use></svg><span><b>Interrupted before? It resumes.</b><small>Re-select the same files and they continue instead of restarting.</small></span></div>
@@ -44,6 +50,7 @@
       <div class="transfer-head-v3"><div class="progress-ring"><svg width="62" height="62" viewBox="0 0 62 62" aria-hidden="true"><circle cx="31" cy="31" r="26" fill="none" stroke="rgba(12,26,43,.08)" stroke-width="6"></circle><circle id="progress-ring-value" cx="31" cy="31" r="26" fill="none" stroke="url(#dropProgressGradient)" stroke-width="6" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="163.36"></circle><defs><linearGradient id="dropProgressGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f6bff"></stop><stop offset="1" stop-color="#15c0c9"></stop></linearGradient></defs></svg><b><span id="pct">0</span>%</b></div><div class="transfer-copy"><p class="eyebrow">transfer queue</p><h2 id="queue-title">Preparing files</h2><div class="muted" id="detail">waiting</div></div><div class="transfer-actions"><button class="mini" id="pause-all" type="button">Pause</button><button class="mini hidden" id="retry-all" type="button">Retry failed</button><button class="mini danger hidden" id="cancel-all" type="button">Cancel all</button></div></div>
       <div class="trail total striped"><i id="totalbar"></i></div>
       <div class="keep-open"><svg class="ico" aria-hidden="true"><use href="/icons.svg#info"></use></svg><span><b>Keep this page open until it finishes.</b> If it closes, return and re-select the same files to resume.</span></div>
+      <div id="offline-notice" class="offline-notice hidden" role="status"><svg class="ico" aria-hidden="true"><use href="/icons.svg#wifi-off"></use></svg><span><b>You're offline.</b> Uploads are paused and continue on their own when the connection is back.</span></div>
       <div id="budget-notice" class="budget-notice hidden"><b>Upload budget reached.</b><span>This link auto-paused to protect the collector’s Drive limit. Files already delivered remain safe.</span></div>
       <div class="filelist" id="list"></div><button class="mini show-all-files hidden" id="show-all-files" type="button"></button>
     </section>

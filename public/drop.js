@@ -70,48 +70,106 @@ init();
 
 async function init() {
   installErrorReporting();
-  const r = await fetch(`/api/link/${encodeURIComponent(slug)}`);
-  $("loading").classList.add("hidden");
-  if (!r.ok) return showGone();
+  let r;
+  try {
+    r = await fetch(`/api/link/${encodeURIComponent(slug)}`);
+  } catch {
+    return showGone("offline", "Can't reach the drop.", "Check your connection and reload.", { icon: "wifi-off", tone: "warn", retry: true });
+  }
+  if (r.status === 404) return showGone("closed", "This link is not available.", "It expired, was deleted, or the URL is incomplete.");
+  if (!r.ok) return showGone("hiccup", "Something went wrong on our side.", "Reload in a moment; nothing you sent is lost.", { tone: "warn", retry: true });
   link = await r.json();
   if (link.expired) return showGone("expired", "This drop has closed.", "Ask the collector for a new link.");
   if (link.paused && link.budgetHit) return showGone("budget reached", "This drop reached its upload budget.", "Files already delivered are safe. Ask the collector to raise the limit or reopen the link.");
-  if (link.paused) return showGone("paused", "This link is paused right now.", "Ask the collector to reopen it or try again later.");
+  if (link.paused) return showGone("paused", "This link is paused right now.", "Ask the collector to reopen it or try again later.", { icon: "pause" });
   document.title = `${link.label} - LostHusky's DropBox`;
   applyTheme(link.theme || {});
   applySettings(link.settings || {});
   logOpenOnce();
   loadResumeRecords().catch(() => {});
 
-  if (link.requiresAuth && !link.viewer) {
-    $("auth-label").textContent = link.label;
-    const signinError = new URLSearchParams(location.search).get("signinError");
-    if (signinError) $("auth-err").textContent = signinError;
-    $("auth-go").addEventListener("click", () => {
-      location.href = `/api/auth/login?kind=drop&slug=${encodeURIComponent(slug)}`;
-    });
-    $("auth-gate").classList.remove("hidden");
-    return;
-  }
-
+  if (link.requiresAuth && !link.viewer) return showSignIn();
   if (link.requiresPin) {
     if (pin && (await verifyPinValue(pin))) return showMain();
-    $("pin-label").textContent = link.label;
-    $("pin").inputMode = link.pinDigits === false ? "text" : "numeric";
-    $("pin-gate").classList.remove("hidden");
-    $("pin-go").addEventListener("click", tryPin);
-    $("pin").addEventListener("keydown", (e) => e.key === "Enter" && tryPin());
-  } else {
-    showMain();
+    return showPinGate();
   }
+  showMain();
 }
 
-function showGone(eyebrow = "closed", title = "This link is not available.", sub = "It expired, was deleted, or the URL is incomplete.") {
-  const gone = $("gone");
-  gone.querySelector(".eyebrow").textContent = eyebrow;
-  gone.querySelector("h1").textContent = title;
-  gone.querySelector(".muted").textContent = sub;
-  gone.classList.remove("hidden");
+// ---- Gate: the single card every pre-upload state renders into ----
+
+function showGate(state, { icon = "circle-alert", tone = "", eyebrow = "", title = "", sub = "", body = "" }) {
+  const gate = $("gate");
+  gate.dataset.state = state;
+  gate.dataset.tone = tone;
+  $("gate-icon").innerHTML = uiIcon(icon, state === "loading" ? "ico-spin" : "ico");
+  $("gate-eyebrow").textContent = eyebrow;
+  $("gate-title").textContent = title;
+  $("gate-sub").textContent = sub;
+  $("gate-body").innerHTML = body;
+  $("gate-err").textContent = "";
+  gate.classList.remove("hidden");
+  $("main").classList.add("hidden");
+  setConnection(state === "loading" ? "checking" : state === "closed" ? "closed" : "secure");
+}
+
+function showGone(eyebrow, title, sub, { icon = "circle-alert", tone = "err", retry = false } = {}) {
+  showGate("closed", {
+    icon, tone, eyebrow, title, sub,
+    body: retry
+      ? `<button class="btn" id="gate-retry" type="button">${uiIcon("refresh-cw")}Try again</button><a class="btn ghost" href="/">Back to losthusky/drop</a>`
+      : `<a class="btn ghost" href="/">${uiIcon("arrow-left")}Back to losthusky/drop</a>`,
+  });
+  $("gate-retry")?.addEventListener("click", () => location.reload());
+}
+
+function showSignIn() {
+  showGate("signin", {
+    icon: "user-round",
+    eyebrow: link.ownerName ? `${link.ownerName} is collecting` : "identified upload",
+    title: link.label,
+    sub: "Sign in with Google so your files are labelled with your name. We only read your name and email; nothing is posted or shared.",
+    body: `<button class="btn google-btn" id="auth-go" type="button">${uiIcon("google-g", "ico-brand")}Continue with Google</button>`,
+  });
+  const signinError = new URLSearchParams(location.search).get("signinError");
+  if (signinError) $("gate-err").textContent = signinError;
+  $("auth-go").addEventListener("click", () => {
+    $("auth-go").disabled = true;
+    $("auth-go").innerHTML = `${uiIcon("loader-circle", "ico-spin")}Opening Google…`;
+    location.href = `/api/auth/login?kind=drop&slug=${encodeURIComponent(slug)}`;
+  });
+}
+
+function showPinGate() {
+  const digits = link.pinDigits !== false;
+  showGate("pin", {
+    icon: "lock-keyhole",
+    eyebrow: link.ownerName ? `${link.ownerName} is collecting` : "protected drop",
+    title: link.label,
+    sub: digits ? "Enter the code the collector shared with you." : "Enter the password the collector shared with you.",
+    body: `<label class="gate-field"><span>${digits ? "Drop code" : "Password"}</span><span class="gate-input"><input id="pin" type="password" inputmode="${digits ? "numeric" : "text"}" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" placeholder="${digits ? "• • • •" : "Enter password"}" aria-describedby="gate-err" /><button class="icon-btn" id="pin-eye" type="button" aria-label="show code" aria-pressed="false">${uiIcon("eye")}</button></span></label><button class="btn" id="pin-go" type="button">${uiIcon("log-in")}Open drop</button>`,
+  });
+  const input = $("pin");
+  input.focus();
+  $("pin-eye").addEventListener("click", () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    $("pin-eye").setAttribute("aria-pressed", String(show));
+    $("pin-eye").setAttribute("aria-label", show ? "hide code" : "show code");
+    $("pin-eye").innerHTML = uiIcon(show ? "eye-off" : "eye");
+    input.focus();
+  });
+  input.addEventListener("input", () => { $("gate-err").textContent = ""; });
+  $("pin-go").addEventListener("click", tryPin);
+  input.addEventListener("keydown", (e) => e.key === "Enter" && tryPin());
+}
+
+// Topbar pill: the one place the page says how it is doing.
+function setConnection(state, text) {
+  const pill = $("ws-state");
+  const labels = { checking: "checking link", secure: "secure drop", live: "live progress", offline: "offline", paused: "paused", closed: "link closed" };
+  pill.dataset.state = state;
+  pill.textContent = text || labels[state] || state;
 }
 
 function applySettings(settings) {
@@ -145,33 +203,66 @@ async function logOpenOnce() {
 }
 
 async function tryPin() {
-  const candidate = $("pin").value.trim();
-  if (!(await verifyPinValue(candidate))) return;
+  const input = $("pin");
+  const candidate = input.value.trim();
+  if (!candidate) {
+    $("gate-err").textContent = "Enter the code first.";
+    input.focus();
+    return;
+  }
+  const go = $("pin-go");
+  go.disabled = true;
+  go.innerHTML = `${uiIcon("loader-circle", "ico-spin")}Checking…`;
+  const ok = await verifyPinValue(candidate);
+  go.disabled = false;
+  go.innerHTML = `${uiIcon("log-in")}Open drop`;
+  if (!ok) {
+    input.select();
+    $("gate").classList.remove("shake");
+    void $("gate").offsetWidth;
+    $("gate").classList.add("shake");
+    return;
+  }
   pin = candidate;
   sessionStorage.setItem(`lhdb_pin_${slug}`, pin);
-  $("pin-gate").classList.add("hidden");
   showMain();
 }
 
 async function verifyPinValue(candidate) {
-  $("pin-err").textContent = "";
-  const r = await fetch("/api/verify", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ linkId: slug, pin: candidate }),
-  });
+  const err = $("gate-err");
+  if (err) err.textContent = "";
+  let r;
+  try {
+    r = await fetch("/api/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ linkId: slug, pin: candidate }),
+    });
+  } catch {
+    if (err) err.textContent = "You're offline. Check the connection and try again.";
+    return false;
+  }
   if (r.ok) return true;
   const d = await r.json().catch(() => ({}));
+  if (!err) return false;
   if (r.status === 429) {
-    startCountdown($("pin-err"), Number(d.retryAfter || r.headers.get("retry-after") || 60));
+    startCountdown(err, Number(d.retryAfter || r.headers.get("retry-after") || 60));
+  } else if (r.status === 410) {
+    showGone("expired", "This drop has closed.", "Ask the collector for a new link.");
+  } else if (r.status === 403 && /paused/i.test(d.error || "")) {
+    showGone("paused", "This link is paused right now.", "Ask the collector to reopen it or try again later.", { icon: "pause" });
   } else {
-    $("pin-err").textContent = d.error || "Wrong password.";
+    err.textContent = r.status === 403 ? "That code didn't match. Check with the collector and try again." : d.error || "Couldn't check the code. Try again.";
   }
   return false;
 }
 
 function showMain() {
+  $("gate").classList.add("hidden");
   $("main").classList.remove("hidden");
+  setConnection("secure");
+  document.body.dataset.phase = "ready";
+  syncNameStep();
   $("label").textContent = link.label;
   $("collector-name").textContent = link.ownerName ? `${link.ownerName} is collecting` : "Your files are being collected";
   $("welcome").textContent = link.theme?.welcome || "Send original photos and videos here.";
@@ -247,6 +338,9 @@ function showMain() {
     if (item.state === "error") retryItem(item);
   });
 
+  $("who").addEventListener("input", syncNameStep);
+  window.addEventListener("offline", () => setNetworkPaused(true));
+  window.addEventListener("online", () => setNetworkPaused(false));
   $("retry-all").addEventListener("click", retryAll);
   $("cancel-all").addEventListener("click", cancelAll);
   $("pause-all").addEventListener("click", toggleQueuePause);
@@ -410,6 +504,32 @@ function toggleQueuePause() {
   if (!queuePaused) pump();
 }
 
+// Step 1 shows a tick once there is a name, so the page reads as progress.
+function syncNameStep() {
+  const step = document.querySelector(".name-step");
+  if (step) step.classList.toggle("done", !!$("who").value.trim());
+}
+
+// Going offline pauses the queue without touching the user's own pause; back
+// online re-queues what failed meanwhile and resumes.
+let networkPaused = false;
+function setNetworkPaused(offline) {
+  if (networkPaused === offline) return;
+  networkPaused = offline;
+  $("offline-notice").classList.toggle("hidden", !offline);
+  if (offline) {
+    setConnection("offline");
+    toast("You're offline", "Uploads pause here and resume on their own.", "warn");
+  } else {
+    setConnection(liveSocket && liveSocket.readyState === 1 ? "live" : "secure");
+    toast("Back online", "Resuming where you left off.", "ok");
+    retryAll();
+    pump();
+  }
+  sendLive(true);
+  schedulePaint();
+}
+
 function setState(item, next) {
   if (item.state === next) return;
   totals[item.state]--;
@@ -458,7 +578,7 @@ function activeWeight() {
 }
 
 function pump() {
-  if (queuePaused) {
+  if (queuePaused || networkPaused) {
     sendLive(true);
     schedulePaint();
     return;
@@ -1053,6 +1173,7 @@ function renderSummary() {
   const inFlight = totals.queued + totals.uploading;
   $("queue-title").textContent = !inFlight && totals.count ? `Delivered ${landed} of ${totals.count} files` : queuePaused ? `Paused — ${landed} of ${totals.count} files delivered` : `Uploading — ${landed} of ${totals.count} files`;
   const completed = totals.count > 0 && totals.done === totals.count;
+  document.body.dataset.phase = !totals.count ? "ready" : completed ? "done" : networkPaused ? "offline" : queuePaused ? "paused" : totals.error ? "attention" : "uploading";
   // Nothing left to protect once everything landed: drop the "keep this page
   // open" banner and the pause button instead of nagging under a green tick.
   document.querySelector(".keep-open")?.classList.toggle("hidden", !inFlight);
@@ -1111,7 +1232,7 @@ function connectLive() {
     liveSocket = new WebSocket(`${protocol}//${location.host}/api/live/upload/${encodeURIComponent(slug)}`);
     liveSocket.onopen = () => {
       liveReconnectDelay = 1000;
-      $("ws-state").textContent = "live progress";
+      if (!networkPaused) setConnection("live");
       if (!liveConnectedOnce) {
         liveConnectedOnce = true;
         toast("Live progress connected", "The admin dashboard can see this transfer.", "ok");
@@ -1119,14 +1240,14 @@ function connectLive() {
       sendLive(true);
     };
     liveSocket.onclose = () => {
-      $("ws-state").textContent = "progress offline";
+      if (!networkPaused) setConnection("secure");
       if (totals.uploading > 0 || totals.queued > 0) {
         setTimeout(connectLive, liveReconnectDelay);
         liveReconnectDelay = Math.min(15000, liveReconnectDelay * 2);
       }
     };
   } catch {
-    $("ws-state").textContent = "progress offline";
+    if (!networkPaused) setConnection("secure");
   }
 }
 
