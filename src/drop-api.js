@@ -293,9 +293,12 @@ export async function createSession(request, env) {
   }
   const tok = await accessToken(env);
   // The browser talks to Drive directly, so the resumable session must be
-  // minted for the page origin the browser actually has. Under `wrangler dev`
-  // request.url carries the configured route host, not localhost.
-  const origin = request.headers.get("origin") || new URL(request.url).origin;
+  // CORS-bound to the page origin the browser actually has. Under
+  // `wrangler dev` both request.url and the Origin header carry the
+  // configured route host, so the client states its origin; it only affects
+  // which browser page may PUT to a session that page already owns.
+  const pageOrigin = cleanText(b.pageOrigin || "", 200);
+  const origin = /^https?:\/\/[\w.-]+(?::\d+)?$/.test(pageOrigin) ? pageOrigin : request.headers.get("origin") || new URL(request.url).origin;
 
   const appProperties = { uploader, dropLink: linkId };
   const relPath = cleanText(relativePath || "", 200);

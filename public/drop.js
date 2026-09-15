@@ -710,6 +710,10 @@ function sessionBody(item) {
     relativePath: link.settings?.perUploaderFolders ? "" : item.relativePath || "",
     queueCount: totals.count,
     queueBytes: totals.bytes,
+    // The Drive resumable session is CORS-bound to this page's origin; the
+    // Worker cannot always see it (wrangler dev rewrites Host and Origin to
+    // the configured route), so the browser states it explicitly.
+    pageOrigin: location.origin,
   });
 }
 
@@ -1188,7 +1192,7 @@ function renderSummary() {
   $("pause-all").classList.toggle("hidden", !inFlight);
   $("done-card").classList.toggle("hidden", !completed);
   if (completed) {
-    $("done-title").textContent = `All ${totals.done} files delivered`;
+    $("done-title").textContent = totals.done === 1 ? "Your file is delivered" : `All ${totals.done} files delivered`;
     $("done-recap").textContent = `${fmtBytes(totals.bytes)} saved to the collector’s Drive.`;
   }
 
