@@ -2,6 +2,17 @@
 import assert from "node:assert/strict";
 import worker from "../src/worker.js";
 
+// Background relays (ctx.waitUntil paths) swallow exceptions into
+// console.error, so a missing import there never fails a request. Collect
+// them and fail the run on anything that smells like a programming error.
+const programmingErrors = [];
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  const text = args.map(String).join(" ");
+  if (/is not defined|is not a function|ReferenceError|TypeError|Cannot read/.test(text)) programmingErrors.push(text);
+  originalConsoleError(...args);
+};
+
 class FakeKV {
   constructor() {
     this.values = new Map();
@@ -413,6 +424,10 @@ async function main() {
       folderId: "folder-456",
       settings: { concurrency: 4, chunkMB: 32, adaptiveConcurrency: true, perUploaderFolders: true, maxTotalFiles: 2 },
       theme: { accentColor: "#ff8800", welcome: "Send everything here." },
+      // Start/complete notifications on: the first progress tick renders the
+      // start email even when Resend is unconfigured (regression: #18 dropped
+      // the notifyEmail import and every /api/progress 500'd).
+      notify: { enabled: true, start: true, complete: true },
     }),
     env
   );
@@ -1125,6 +1140,7 @@ async function main() {
   res = await worker.fetch(request("/api/admin/overview"), env);
   assert.equal(res.status, 401, "no cookie/bearer = unauthorized");
 
+  assert.deepEqual(programmingErrors, [], "background relays raised programming errors");
   console.log("smoke tests passed (v2)");
 }
 
