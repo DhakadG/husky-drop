@@ -2618,8 +2618,8 @@ body.selecting .g-check {
 }
 .g-play svg {
   /* scales with the tile: dense grids get a small glyph, big tiles a big one */
-  width: clamp(18px, 20cqw, 44px);
-  height: clamp(18px, 20cqw, 44px);
+  width: clamp(16px, 16cqw, 40px);
+  height: clamp(16px, 16cqw, 40px);
   fill: rgba(255, 255, 255, 0.92);
   stroke: rgba(255, 255, 255, 0.92);
   filter: drop-shadow(0 4px 12px rgba(8, 16, 28, 0.55));
