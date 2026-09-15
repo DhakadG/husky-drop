@@ -772,8 +772,8 @@ async function dropTrack(request, env) {
 
 async function listLinks(env) {
   const links = await getAllLinks(env);
-  const out = [];
-  for (const link of links) out.push(adminLink(link, await env.KV.get(`stats:${link.slug}`, "json")));
+  const stats = await Promise.all(links.map((link) => env.KV.get(`stats:${link.slug}`, "json")));
+  const out = links.map((link, i) => adminLink(link, stats[i]));
   out.sort((a, b) => b.createdAt - a.createdAt);
   return json({ links: out });
 }

@@ -138,20 +138,16 @@ export async function getShareIndex(env) {
 
 export async function getAllShares(env) {
   const slugs = await getShareIndex(env);
-  const shares = [];
-  for (const slug of slugs) {
-    const share = await env.KV.get(`share:${slug}`, "json");
-    if (share) shares.push(share);
-  }
-  return shares;
+  const shares = await Promise.all(slugs.map((slug) => env.KV.get(`share:${slug}`, "json")));
+  return shares.filter(Boolean);
 }
 
 export async function listShares(env) {
-  const shares = await getAllShares(env);
-  const deltas = await liveShareStats(env);
+  const [shares, deltas] = await Promise.all([getAllShares(env), liveShareStats(env)]);
+  const stats = await Promise.all(shares.map((share) => env.KV.get(`sstats:${share.slug}`, "json")));
   const out = [];
-  for (const share of shares) {
-    const base = (await env.KV.get(`sstats:${share.slug}`, "json")) || {};
+  for (const [i, share] of shares.entries()) {
+    const base = stats[i] || {};
     const delta = deltas.get(share.slug) || {};
     out.push(adminShare(share, {
       opens: (Number(base.opens) || 0) + (Number(delta.opens) || 0),
