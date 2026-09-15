@@ -4556,10 +4556,11 @@ table.uploads .empty-cell {
 .hero-v3 h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(34px, 5.6vw, 54px);
+  font-size: clamp(32px, 5.2vw, 54px);
   font-weight: 800;
   letter-spacing: -0.035em;
-  line-height: 1.04;
+  line-height: 1.06;
+  text-wrap: balance;
 }
 .hero-v3-sub {
   margin: 0;
@@ -4742,10 +4743,12 @@ table.uploads .empty-cell {
 }
 .strip-item > svg {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  margin: 2px 0 0;
+  width: 36px;
+  height: 36px;
+  padding: 9px;
+  border-radius: 12px;
   color: var(--accent);
+  background: rgba(47, 107, 255, 0.1);
 }
 .strip-item b {
   font-size: 14px;
@@ -4765,7 +4768,7 @@ table.uploads .empty-cell {
   padding-top: 8px;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--faint);
+  color: var(--muted);
 }
 .foot-v3 div {
   display: flex;
