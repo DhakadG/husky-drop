@@ -129,7 +129,7 @@ const sql = {
   },
 };
 const state = {
-  storage: { sql, getAlarm: async () => null, setAlarm: async () => {} },
+  storage: { sql, getAlarm: async () => null, setAlarm: async () => {}, get: async () => undefined, put: async () => {} },
   blockConcurrencyWhile(task) { this.ready = Promise.resolve().then(task); },
 };
 const tracker = new LiveTracker(state, { KV: new ReadOnlyKV() });
@@ -204,3 +204,30 @@ digestTracker.noteDigest("sess-1", { done: true, uploader: "typed name" });
 assert.equal(digestTracker.digests.get("sess-1").uploader, "Priya", "verified uploader name beats the browser's progress frame");
 assert.equal(digestTracker.digestReady(digestTracker.digests.get("sess-1"), Date.now() + 9_000), true, "a done session sends after the short settle window");
 console.log("digest decision checks passed");
+
+// Admin sockets receive one coalesced delta per burst of progress ticks, not a
+// full re-sorted snapshot per tick, and a dropped uploader socket is reported
+// through the attachment that survives hibernation.
+const adminSends = [];
+const adminSocket = { send: (payload) => adminSends.push(JSON.parse(payload)) };
+const liveState = {
+  storage: { sql, getAlarm: async () => null, setAlarm: async () => {}, get: async () => undefined, put: async () => {} },
+  blockConcurrencyWhile(task) { this.ready = Promise.resolve().then(task); },
+  getWebSockets: (tag) => (tag === "admin" ? [adminSocket] : []),
+};
+const feed = new LiveTracker(liveState, { KV: new ReadOnlyKV() });
+await liveState.ready;
+adminSends.length = 0;
+for (let tick = 0; tick < 3; tick++) {
+  feed.recordProgress({ sessionId: "s1", slug: "inbox", sent: tick, total: 10 });
+  feed.recordProgress({ sessionId: "s2", slug: "inbox", sent: tick, total: 10 });
+}
+await new Promise((resolve) => setTimeout(resolve, 300));
+assert.equal(adminSends.length, 1, "six progress ticks inside the coalesce window become one admin patch");
+assert.equal(adminSends[0].type, "patch");
+assert.deepEqual(adminSends[0].updated.map((s) => s.id).sort(), ["s1", "s2"], "the patch carries only the sessions that changed");
+let attachment = { role: "upload", slug: "inbox", sessionId: "s1" };
+feed.webSocketClose({ deserializeAttachment: () => attachment, close() {} });
+await new Promise((resolve) => setTimeout(resolve, 300));
+assert.equal(adminSends.at(-1).updated[0]?.state, "stale", "a dropped uploader socket marks its session stale via the hibernation attachment");
+console.log("live feed patch checks passed");

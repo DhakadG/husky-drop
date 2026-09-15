@@ -310,9 +310,18 @@ function connectLive() {
       if (msg.type === "snapshot") {
         liveActive = msg.active || [];
         liveRecent = msg.recent || [];
-        renderLive();
-        if (currentDetailSlug) renderDetailLive(currentDetailSlug);
+      } else if (msg.type === "patch") {
+        // Deltas keyed by session id; the server only resends what changed.
+        const byId = new Map(liveActive.map((s) => [s.id, s]));
+        for (const s of msg.updated || []) byId.set(s.id, s);
+        for (const id of msg.removed || []) byId.delete(id);
+        liveActive = [...byId.values()].sort((a, b) => b.lastSeen - a.lastSeen);
+        if (msg.recent) liveRecent = msg.recent;
+      } else {
+        return;
       }
+      renderLive();
+      if (currentDetailSlug) renderDetailLive(currentDetailSlug);
     };
   } catch {
     $("live-state").textContent = "live updates off";
