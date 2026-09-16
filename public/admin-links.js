@@ -14,8 +14,8 @@ import { rememberFolder, renderRecentFolders } from "./admin-folders.js";
 // ---- Drop links table ----
 
 export function renderLinks(links) {
-  const active = links.filter((link) => link.state !== "expired");
-  const expired = links.filter((link) => link.state === "expired");
+  const active = links.filter((link) => !["expired", "archived"].includes(link.state));
+  const expired = links.filter((link) => ["expired", "archived"].includes(link.state));
   reconcile($("rows"), active, (link) => link.slug, makeLinkCard, updateLinkCard);
   reconcile($("expired-rows"), expired, (link) => link.slug, makeLinkCard, updateLinkCard);
   setEmpty($("rows"), active.length === 0, "No active drop links yet.");
@@ -38,7 +38,7 @@ function updateLinkCard(article, link) {
   article.innerHTML = `
     <div class="link-card-head">
       <div><button class="link-card-title" data-open-detail="${escAttr(link.slug)}" type="button">${esc(link.label)}</button><div class="link-meta"><code>/d/${esc(link.slug)}</code><span>·</span><span>${esc(expires)}</span><span>·</span><span>${link.settings.adaptiveConcurrency ? `auto 2–8× parallel` : `${link.settings.concurrency}× parallel`}</span><span>·</span><span>${link.settings.chunkMB} MB chunks</span><span>·</span><span>${link.settings.perUploaderFolders ? "per-uploader folders" : "single folder"}</span></div></div>
-      <span class="link-status ${escAttr(link.state || "active")}">${esc(access)}${link.state === "expired" ? " · expired" : link.disabled ? " · paused" : ""}</span>
+      <span class="link-status ${escAttr(link.state || "active")}">${esc(access)}${link.state === "expired" ? " · expired" : link.archived ? " · archived" : link.disabled ? " · paused" : ""}</span>
     </div>
     <div class="link-stat-grid">
       ${linkStat("Opens", link.stats.opens || 0)}
@@ -52,6 +52,7 @@ function updateLinkCard(article, link) {
       ${linkActionButton("folder", "Open Drive folder", `data-open-folder="${escAttr(link.slug)}"`)}
       ${linkActionButton(link.disabled ? "play" : "pause", link.disabled ? "Resume" : "Pause", `data-pause-link="${escAttr(link.slug)}" data-paused="${link.disabled ? "1" : "0"}"`)}
       ${linkActionButton("chevron-right", "Details", `data-open-detail="${escAttr(link.slug)}"`)}
+      ${linkActionButton(link.archived ? "rotate-ccw" : "inbox", link.archived ? "Unarchive" : "Archive", `data-archive-link="${escAttr(link.slug)}" data-archived="${link.archived ? "1" : "0"}"`)}
       ${linkActionButton("trash-2", "Delete", `data-del-link="${escAttr(link.slug)}" data-del-label="${escAttr(link.label)}"`, true)}
     </div>`;
 }
@@ -308,6 +309,10 @@ export function resetCreateFlow() {
   $("drop-create-form").classList.remove("hidden");
   showCreateStep(1);
   $("f-label").focus();
+}
+export async function toggleLinkArchive(slug, archived) {
+  await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ archived: !archived }) });
+  refreshAll();
 }
 export async function toggleLinkPause(slug, isPaused) {
   await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, {

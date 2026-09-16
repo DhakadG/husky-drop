@@ -10,9 +10,10 @@ const cookie = (n) => document.cookie.match(new RegExp(`(?:^|; )${n}=([^;]*)`))?
 export async function identify({ slug = "", sessionId = "", linkedId = "", kind = "" } = {}) {
   let fp = cookie("hd_fp");
   let fpEvent = "";
-  // Pro runs every visit: the event id lets the worker pull the server-side
-  // verdict (VPN, proxy, tampering, velocity...) for this exact page load.
-  try {
+  // Pro (metered) runs only for visitors who are NOT signed in - those are
+  // the ones we need a verdict for. Signed-in devices are already known via
+  // the account + hd_did cookie; the free OSS agent fills hd_fp if missing.
+  if (!linkedId) try {
     const pro = await import(`https://fpjscdn.net/v4/${FP_PRO_KEY}`).then((m) => m.start({ region: FP_PRO_REGION }));
     // linkedId = the signed-in account (when known); tag = what they opened.
     const r = await pro.get({ linkedId: linkedId || undefined, tag: { slug, kind, sessionId } });

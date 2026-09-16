@@ -101,6 +101,8 @@ window.uiIcon = uiIcon;
 // key across renders instead of rebuilding the DOM every time.
 function reconcile(container, items, keyOf, createEl, updateEl) {
   const map = container._rows || (container._rows = new Map());
+  // Static skeleton placeholders from the HTML go away on the first real render.
+  for (const skel of container.querySelectorAll(":scope > .skel, :scope > .skel-list")) skel.remove();
   const seen = new Set();
   let prev = null;
   for (const item of items) {

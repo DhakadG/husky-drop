@@ -9,8 +9,21 @@ import { confirmAction, renderShareFolderSelection, shareEditSelectedFolders, sh
 export function renderShares(shares) {
   const box = $("share-rows");
   if (!box) return;
-  reconcile(box, shares, (share) => share.slug, makeShareCard, updateShareCard);
-  setEmpty(box, shares.length === 0, "No share links yet.");
+  const live = shares.filter((s) => !s.archived);
+  const archived = shares.filter((s) => s.archived);
+  reconcile(box, live, (share) => share.slug, makeShareCard, updateShareCard);
+  setEmpty(box, live.length === 0, "No share links yet.");
+  let arc = $("share-archived");
+  if (!arc) {
+    arc = document.createElement("details");
+    arc.id = "share-archived";
+    arc.className = "people-unknown";
+    arc.innerHTML = `<summary></summary><div class="share-card-list"></div>`;
+    box.after(arc);
+  }
+  arc.classList.toggle("hidden", archived.length === 0);
+  arc.querySelector("summary").textContent = `Archived · ${archived.length}`;
+  reconcile(arc.querySelector("div"), archived, (share) => share.slug, makeShareCard, updateShareCard);
 }
 
 function makeShareCard() {
@@ -35,6 +48,7 @@ function updateShareCard(article, share) {
       ${shareActionButton("sliders-horizontal", "Edit", `data-edit-share="${escAttr(share.slug)}"`)}
       ${shareActionButton("user-round", share.requireAuth ? "Sign-in on" : "Sign-in off", `data-toggle-share-auth="${escAttr(share.slug)}" data-auth="${share.requireAuth ? "1" : "0"}"`)}
       ${shareActionButton(share.disabled ? "play" : "pause", share.disabled ? "Resume" : "Pause", `data-pause-share="${escAttr(share.slug)}" data-paused="${share.disabled ? "1" : "0"}"`)}
+      ${shareActionButton(share.archived ? "rotate-ccw" : "inbox", share.archived ? "Unarchive" : "Archive", `data-archive-share="${escAttr(share.slug)}" data-archived="${share.archived ? "1" : "0"}"`)}
       ${shareActionButton("trash-2", "Delete", `data-del-share="${escAttr(share.slug)}" data-del-label="${escAttr(share.label)}"`, true)}
     </div>`;
 }
@@ -61,6 +75,10 @@ export async function toggleSharePause(slug, isPaused) {
   refreshAll();
 }
 
+export async function toggleShareArchive(slug, archived) {
+  await fetch(`/api/admin/shares/${encodeURIComponent(slug)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ archived: !archived }) });
+  refreshAll();
+}
 export async function deleteShare(slug, label) {
   if (!(await confirmAction({
     title: `Delete ${label}?`,

@@ -124,7 +124,7 @@ function publicLink(link, quota, env) {
     pinDigits: link.pinDigits !== false,
     requiresAuth: !!link.requireAuth && !!env.GOOGLE_CLIENT_ID,
     expiresAt: link.expiresAt || null,
-    expired: state === "expired",
+    expired: state === "expired" || state === "archived",
     paused: state === "paused",
     budgetHit: state === "paused" && /^(byte|file|session) budget reached$/.test(link.disabledReason || ""),
     state,

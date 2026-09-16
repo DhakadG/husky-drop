@@ -47,6 +47,7 @@ import {
   showCreateStep,
   toggleExpiredLinks,
   toggleLinkPause,
+  toggleLinkArchive,
   confirmAction,
 } from "./admin-links.js";
 import {
@@ -57,6 +58,7 @@ import {
   renderShares,
   saveShareEditor,
   syncShareEditMode,
+  toggleShareArchive,
   toggleShareAuth,
   toggleSharePause,
 } from "./admin-shares.js";
@@ -505,6 +507,10 @@ export function handleAdminAction(e) {
   if (pause) return toggleLinkPause(pause.dataset.pauseLink, pause.dataset.paused === "1");
   const del = e.target.closest("[data-del-link]");
   if (del) return deleteLink(del.dataset.delLink, del.dataset.delLabel);
+  const arc = e.target.closest("[data-archive-link]");
+  if (arc) return toggleLinkArchive(arc.dataset.archiveLink, arc.dataset.archived === "1");
+  const sarc = e.target.closest("[data-archive-share]");
+  if (sarc) return toggleShareArchive(sarc.dataset.archiveShare, sarc.dataset.archived === "1");
   const spause = e.target.closest("[data-pause-share]");
   if (spause) return toggleSharePause(spause.dataset.pauseShare, spause.dataset.paused === "1");
   const sauth = e.target.closest("[data-toggle-share-auth]");

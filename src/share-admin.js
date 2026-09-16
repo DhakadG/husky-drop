@@ -34,6 +34,7 @@ export function adminShare(share, stats = {}) {
   return {
     slug: share.slug,
     label: share.label,
+    archived: !!share.archived,
     mode: share.mode,
     folderIds: share.folderIds || [],
     folderNames: share.folderNames || [],
@@ -181,6 +182,7 @@ export async function patchShare(request, env, slug) {
     const days = clamp(Number(b.expiresDays) || 0, 0, MAX_EXPIRY_DAYS);
     share.expiresAt = days > 0 ? Date.now() + days * 86400_000 : null;
   }
+  if ("archived" in b) share.archived = !!b.archived;
   if ("disabled" in b) {
     share.disabled = !!b.disabled;
     // Pausing a redirect share revokes Drive access; resuming re-grants it.
