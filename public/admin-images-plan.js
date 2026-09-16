@@ -120,6 +120,7 @@ export async function trialEncode(row, cfg, onStage) {
   const format = outputFormat(row.t, cfg);
   const mime = format === "png" ? "image/png" : format === "webp" ? "image/webp" : "image/jpeg"; // avif: not encodable in browsers - shown as JPEG
   const out = await new Promise((resolve) => canvas.toBlob(resolve, mime, cfg.quality / 100));
+  const before = { blob, w: bitmap.width, h: bitmap.height };
   bitmap.close?.();
-  return { before: { blob, w: bitmap.width, h: bitmap.height }, after: { blob: out, w, h, mime }, note: format === "avif" ? "AVIF cannot be encoded in the browser - JPEG shown; the runner's AVIF will be ~40% smaller." : "Browser encoder; the runner's mozjpeg lands ~15% smaller at the same quality." };
+  return { before, after: { blob: out, w, h, mime }, note: format === "avif" ? "AVIF cannot be encoded in the browser - JPEG shown; the runner's AVIF will be ~40% smaller." : "Browser encoder; the runner's mozjpeg lands ~15% smaller at the same quality." };
 }
