@@ -86,6 +86,19 @@ The Worker is the control plane:
 4. The Durable Object reconciles live sessions, derives throughput and ETA, batches completion writes, and stores daily SQLite rollups.
 5. Google Drive remains the durable source of file truth; the app keeps only the metadata needed for operation and analytics.
 
+### Admin observability
+
+- **People** — one profile per visitor. A first visit sets an anonymous
+  `hd_did` device cookie; once that device signs in with Google, every past
+  and future event from it is attributed to the account. Profiles list drop
+  links used, shares viewed, devices, places, and a timeline.
+- **Activity** — each session is tagged `drop` or `share`, grouped by Google
+  account → device → typed name, with a link to the person's profile.
+- **Alerts & log** — client-side crashes on drop/share pages are posted with
+  stack, breadcrumbs, and a state snapshot; they land in the system log and
+  e-mail the admin (one mail per page per 15 min). Runner, image job, cron,
+  and preview events log to the same place.
+
 ### Transfer behavior
 
 - Automatic or fixed parallelism from 1–8 active files.
@@ -254,6 +267,8 @@ husky-drop/
 │   ├── auth.js           # Google sign-in and admin session cookies
 │   ├── drive.js          # Drive OAuth, folders, quota, file metadata
 │   ├── live.js           # Durable Object: sessions, hibernatable WebSockets
+│   ├── live-diagnostics.js # DO routes for People profiles and the system log
+│   ├── people.js         # visitor identity: device cookie + Google account stitching
 │   ├── live-analytics.js # DO SQLite: rollups, telemetry, activity, share stats
 │   ├── live-digest.js    # per-session finished-upload email
 │   ├── live-completions.js # batched KV flush of Drive-verified completions

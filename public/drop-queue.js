@@ -22,7 +22,7 @@ import {
 } from "./drop-state.js";
 import { setConnection } from "./drop.js";
 import { saveResumeRecord, deleteResumeRecord } from "./drop-resume.js";
-import { reportError } from "./drop-report.js";
+import { crumb, reportError } from "./drop-report.js";
 import { schedulePaint, humanError } from "./drop-render.js";
 import { sendLive, acquireWakeLock, releaseWakeLock } from "./drop-live.js";
 import { toast, sleep } from "./drop-utils.js";
@@ -32,6 +32,7 @@ import { toast, sleep } from "./drop-utils.js";
 export function toggleQueuePause() {
   st.queuePaused = !st.queuePaused;
   $("pause-all").innerHTML = `${uiIcon(st.queuePaused ? "play" : "pause")}${st.queuePaused ? "Resume" : "Pause"}`;
+  crumb(st.queuePaused ? "queue paused" : "queue resumed");
   $("pause-all").classList.toggle("active", st.queuePaused);
   sendLive(true);
   schedulePaint();
@@ -48,6 +49,7 @@ export function syncNameStep() {
 export function setNetworkPaused(offline) {
   if (st.networkPaused === offline) return;
   st.networkPaused = offline;
+  crumb(offline ? "network offline" : "network back");
   $("offline-notice").classList.toggle("hidden", !offline);
   if (offline) {
     setConnection("offline");
@@ -217,6 +219,7 @@ async function uploadFile(item) {
     }
     item.stat = humanError(err);
     setState(item, "error");
+    crumb(`upload failed: ${item.file.name} - ${err?.message || err}`);
     reportError("upload", err, item.file.name);
     window.dropTrekker?.track("upload_error", item.file.name, { size: item.file.size, status: err.status || 0, message: String(err.message || err).slice(0, 120), retries: item.retries || 0, uploadSessionId: sessionId });
     toast("Couldn't upload a file", `${item.file.name}: ${humanError(err)}`, "err");

@@ -319,6 +319,14 @@ pixel work with sharp + libraw + libheif + exiftool.
   chunked outcome switch for finished copy/archive jobs.
 - `GET /api/admin/logs?limit&area&level&before` — app log rows from the
   Durable Object (`{id, at, level, area, message, detail}`).
+- `GET /api/admin/people?days` — visitor profiles from the last N days
+  (default 90). Key is `email:<addr>`, `device:<hd_did>`, or `name:<typed>`.
+- `GET /api/admin/people/:key` — that person's events, newest first.
+
+Pages under `/d/` and `/s/` set an anonymous `hd_did` cookie (random 24 hex,
+HttpOnly, 400 days). Events carry it as `d` and the signed-in Google e-mail
+as `e`; the Durable Object's `identities` table links the two so a device's
+older anonymous events are attributed once it signs in.
 
 ### `GET /api/admin/thumb/:fileId`
 

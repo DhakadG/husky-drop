@@ -27,6 +27,7 @@ import {
   sha256,
 } from "./util.js";
 import { driveUploadsForLink } from "./drive.js";
+import { getViewer } from "./auth.js";
 
 export function liveStub(env) {
   return env.LIVE_TRACKER.get(env.LIVE_TRACKER.idFromName("global"));
@@ -133,6 +134,12 @@ export async function bumpShareStats(env, slug, delta) {
 // poll and one write per event, which busts the free tier's 1k writes/day and
 // 1k lists/day caps.
 export async function logEvent(env, event, request) {
+  if (!event.email && request?.headers && env?.GOOGLE_CLIENT_ID) {
+    try {
+      const viewer = await getViewer(request, env);
+      if (viewer?.email) event = { ...event, email: viewer.email };
+    } catch {}
+  }
   const record = normalizeEvent(event, request);
   if (env.LIVE_TRACKER) {
     await liveStub(env)

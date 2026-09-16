@@ -85,6 +85,10 @@
           <svg class="ico" aria-hidden="true"><use href="/icons.svg#activity"></use></svg>
           <span class="tab-label">Activity</span>
         </button>
+        <button class="tab" data-tab="people" type="button">
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#users-round"></use></svg>
+          <span class="tab-label">People</span>
+        </button>
         <button class="tab" data-tab="previews" type="button">
           <svg class="ico" aria-hidden="true"><use href="/icons.svg#film"></use></svg>
           <span class="tab-label">Video previews</span>
@@ -95,7 +99,8 @@
         </button>
         <button class="tab" data-tab="logs" type="button">
           <svg class="ico" aria-hidden="true"><use href="/icons.svg#terminal"></use></svg>
-          <span class="tab-label">System log</span>
+          <span class="tab-label">Alerts &amp; log</span>
+          <span class="nav-badge nav-badge-alert hidden" id="alerts-badge">0</span>
         </button>
         <div class="side-divider" role="presentation"></div>
         <button class="tab tab-create" data-tab="create" type="button">
@@ -121,7 +126,7 @@
       <!-- OVERVIEW: the at-a-glance page -->
       <section id="tab-overview" class="tab-pane">
         <div class="pane-head"><h1 class="pane-title">Overview</h1><span class="muted">What people sent, what they looked at, and who is uploading right now</span></div>
-        <div class="stat-grid" id="stats"></div>
+        <div class="stat-grid" id="stats"><div class="stat-card v3 skel" style="--i:0"></div><div class="stat-card v3 skel" style="--i:1"></div><div class="stat-card v3 skel" style="--i:2"></div><div class="stat-card v3 skel" style="--i:3"></div><div class="stat-card v3 skel" style="--i:4"></div></div>
         <section class="panel">
           <div class="section-title">
             <h2>Last 30 days</h2>
@@ -143,7 +148,7 @@
                 <button class="mini" data-goto-tab="live" type="button">open live view</button>
               </div>
             </div>
-            <div id="live-mini" class="live-list"></div>
+            <div id="live-mini" class="live-list"><div class="skel-list"><div class="skel-card" style="--i:0"><span class="skel-avatar"></span><span class="skel-lines"><i style="width:50%"></i><i style="width:70%"></i></span></div></div></div>
           </section>
           <section class="panel">
             <div class="section-title">
@@ -152,7 +157,7 @@
                 <button class="mini" data-goto-tab="activity" type="button">see all</button>
               </div>
             </div>
-            <div id="events-mini" class="event-list"></div>
+            <div id="events-mini" class="event-list"><div class="skel-list"><div class="skel-card" style="--i:0"><span class="skel-avatar"></span><span class="skel-lines"><i style="width:45%"></i><i style="width:60%"></i></span></div><div class="skel-card" style="--i:1"><span class="skel-avatar"></span><span class="skel-lines"><i style="width:55%"></i><i style="width:65%"></i></span></div></div></div>
           </section>
         </div>
       </section>
@@ -207,9 +212,16 @@
         <div id="images-body"></div>
       </section>
 
+      <!-- PEOPLE: one profile per visitor -->
+      <section id="tab-people" class="tab-pane hidden">
+        <div class="pane-head"><div><p class="eyebrow">who</p><h1 class="pane-title">People</h1><span class="muted">Everyone who opened a drop or share in the last 90 days, stitched across devices by Google account. Uploads, views, downloads, devices, places - and every link they touched.</span></div><div class="section-tools"><input id="people-search" class="ia-input img-wide" placeholder="Search name, e-mail, place, link" aria-label="search people"><select id="people-sort" class="sort-select" aria-label="sort"><option value="recent">most recent</option><option value="uploads">most uploaded</option><option value="views">most viewed</option><option value="errors">most errors</option></select><button class="mini" id="people-refresh" type="button"><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg> refresh</button></div></div>
+        <div id="people-body"></div>
+      </section>
+
       <!-- SYSTEM LOG: what the transcoders, rules and admin actions did -->
       <section id="tab-logs" class="tab-pane hidden">
-        <div class="pane-head"><div><p class="eyebrow">diagnostics</p><h1 class="pane-title">System log</h1><span class="muted">Every job start/finish, failed file, rule run, Drive error and email attempt. Kept in the live tracker's database (last 3000 lines), not in KV.</span></div><div class="section-tools"><select id="logs-area" class="sort-select" aria-label="area"><option value="">all areas</option><option value="images">image archive</option><option value="previews">video previews</option><option value="rules">rules</option><option value="drive">drive</option><option value="email">email</option></select><select id="logs-level" class="sort-select" aria-label="level"><option value="">all levels</option><option value="warn">warnings + errors</option><option value="error">errors only</option></select><button class="mini" id="logs-refresh" type="button"><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg> refresh</button></div></div>
+        <div class="pane-head"><div><p class="eyebrow">diagnostics</p><h1 class="pane-title">Alerts &amp; log</h1><span class="muted">Client crashes from uploader and viewer devices (with stack, page state and last actions), job start/finish, failed files, rule runs, Drive errors, e-mail attempts. Kept in the live tracker's database (last 3000 lines), not in KV.</span></div><div class="section-tools"><select id="logs-area" class="sort-select" aria-label="area"><option value="">all areas</option><option value="client">client errors</option><option value="images">image archive</option><option value="previews">video previews</option><option value="rules">rules</option><option value="drive">drive</option><option value="email">email</option></select><select id="logs-level" class="sort-select" aria-label="level"><option value="">all levels</option><option value="warn">warnings + errors</option><option value="error">errors only</option></select><button class="mini" id="logs-refresh" type="button"><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg> refresh</button></div></div>
+        <div id="alerts-strip" class="alerts-strip"></div>
         <div id="logs-body" class="logs-body"></div>
       </section>
 
@@ -371,7 +383,8 @@
   <button class="admin-more-card" type="button" data-mobile-tab="activity"><span>Activity</span><small>Search views, transfers and downloads</small></button>
   <button class="admin-more-card" type="button" data-mobile-tab="previews"><span>Video previews</span><small>Transcoder coverage and runs</small></button>
   <button class="admin-more-card" type="button" data-mobile-tab="images"><span>Image archive</span><small>Re-encode photos to save Drive space</small></button>
-  <button class="admin-more-card" type="button" data-mobile-tab="logs"><span>System log</span><small>Jobs, rules, Drive errors</small></button>
+  <button class="admin-more-card" type="button" data-mobile-tab="people"><span>People</span><small>Who uploaded and viewed what</small></button>
+  <button class="admin-more-card" type="button" data-mobile-tab="logs"><span>Alerts &amp; log</span><small>Client crashes, jobs, rules, Drive errors</small></button>
   <button class="admin-more-card" type="button" data-mobile-tab="create"><span>New drop link</span><small>Collect original files into Drive</small></button>
   <button class="admin-more-card" type="button" data-mobile-tab="create-share"><span>New share link</span><small>Publish a private Drive gallery</small></button>
   <button class="admin-more-card danger" type="button" id="admin-mobile-lock"><span>Lock dashboard</span><small>End this admin session</small></button>

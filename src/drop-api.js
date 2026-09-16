@@ -1,6 +1,7 @@
 // Public drop-link endpoints: link metadata, PIN checks, Drive resumable
 // session minting, progress/completion relays and uploader telemetry. File
 // bytes never pass through here - the browser talks to Drive directly.
+import { appLog } from "./applog.js";
 
 import {
   APP_NAME,
@@ -410,16 +411,30 @@ export async function logClientError(request, env) {
   const rl = await rateLimitRemote(env, `cerr:${clientIp(request)}`, 5, 60);
   if (!rl.allowed) return retryJson("slow down", rl.retryAfter);
   const b = await request.json().catch(() => ({}));
-  await logEvent(
-    env,
-    {
-      type: "clienterror",
-      slug: cleanText(b.linkId || "", 60),
-      uploader: cleanText(b.uploader || "", 60),
-      message: cleanText(`${b.name || ""} ${b.message || ""} ${b.stack || ""}`, 160),
-    },
-    request,
-  );
+  const slug = cleanText(b.linkId || "", 60);
+  const message = cleanText(`${b.name || ""} ${b.message || ""}`, 160);
+  await logEvent(env, { type: "clienterror", slug, uploader: cleanText(b.uploader || "", 60), message }, request);
+  const detail = {
+    stack: cleanText(b.stack || "", 1200),
+    at: cleanText(b.where || "", 200),
+    url: cleanText(b.url || "", 200),
+    ua: cleanText(request.headers.get("user-agent") || "", 200),
+    uploader: cleanText(b.uploader || "", 60),
+    state: b.state && typeof b.state === "object" ? JSON.parse(cleanText(JSON.stringify(b.state), 600)) : undefined,
+    crumbs: Array.isArray(b.crumbs) ? b.crumbs.slice(-25).map((c) => cleanText(String(c), 160)) : [],
+    client: extractClientInfo(request),
+  };
+  appLog(env, null, { level: "error", area: "client", message: `${b.url ? cleanText(b.url, 80) : "page"}: ${message}`, detail });
+  // One e-mail per page per 15 minutes so a crash loop cannot flood the inbox.
+  const mail = await rateLimitRemote(env, `cerr-mail:${slug || cleanText(b.url || "", 60)}`, 1, 15 * 60);
+  if (mail.allowed) {
+    await sendNotify(env, {
+      subject: `Client error on ${slug ? `/d/${slug}` : cleanText(b.url || "a page", 60)}: ${message.slice(0, 80)}`,
+      category: "client-error",
+      html: `<p><b>${escapeHtml(message)}</b></p><p style="color:#4a5b70">${escapeHtml(detail.url)} · ${escapeHtml(detail.ua)}${detail.uploader ? ` · uploader ${escapeHtml(detail.uploader)}` : ""}${detail.client?.l ? ` · ${escapeHtml(detail.client.l)}` : ""}</p>${detail.at ? `<p>at ${escapeHtml(detail.at)}</p>` : ""}${detail.stack ? `<pre style="font-size:11px;white-space:pre-wrap;background:#f3f6fa;padding:8px;border-radius:6px">${escapeHtml(detail.stack)}</pre>` : ""}${detail.state ? `<p style="font-size:12px"><b>State</b> ${escapeHtml(JSON.stringify(detail.state))}</p>` : ""}${detail.crumbs.length ? `<p style="font-size:12px"><b>Last actions</b></p><ol style="font-size:12px;margin:0;padding-left:18px">${detail.crumbs.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ol>` : ""}<p style="font-size:12px;color:#8a97a8">Full entry in <a href="https://dropbox.losthusky.qzz.io/admin/logs">System log</a>.</p>`,
+      text: `${message}\n${detail.url}\n${detail.at}\n${detail.stack}`,
+    });
+  }
   return json({ ok: true });
 }
 

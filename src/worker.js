@@ -16,6 +16,7 @@ import {
   ADMIN_SESSION_TTL,
   SECURITY_HEADERS,
   cleanText,
+  deviceIdFrom,
   clientIp,
   escapeHtml,
   getCookie,
@@ -87,6 +88,7 @@ import {
 import { imageSources, planImageJob, scanImages } from "./images.js";
 import { convertImageJob, deleteImageRule, listImageRules, runDueRules, runImageRule, upsertImageRule } from "./images-rules.js";
 import { adminLogs } from "./applog.js";
+import { adminPeople, adminPerson } from "./people.js";
 import {
   controlImageJob,
   imageJobItems,
@@ -113,8 +115,8 @@ export default {
       if (p === "/") return servePage(env, url, "/index.html");
       if (p === "/privacy") return servePage(env, url, "/privacy.html");
       if (p === "/terms") return servePage(env, url, "/terms.html");
-      if (p.startsWith("/d/")) return servePage(env, url, "/drop.html");
-      if (p.startsWith("/s/")) return servePage(env, url, "/share.html");
+      if (p.startsWith("/d/")) return withDeviceId(request, await servePage(env, url, "/drop.html"));
+      if (p.startsWith("/s/")) return withDeviceId(request, await servePage(env, url, "/share.html"));
       if (p === "/admin" || p.startsWith("/admin/")) return servePage(env, url, "/admin.html");
       return secureAsset(await env.ASSETS.fetch(request));
     } catch (err) {
@@ -123,6 +125,17 @@ export default {
     }
   },
 };
+
+// First visit from a browser gets a random device id cookie (13 months).
+// It is anonymous on its own; the admin's People view links it to the
+// Google account the device signs in with later.
+function withDeviceId(request, response) {
+  if (deviceIdFrom(request)) return response;
+  const did = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const out = new Response(response.body, response);
+  out.headers.append("set-cookie", `hd_did=${did}; Path=/; Max-Age=${400 * 86400}; HttpOnly; Secure; SameSite=Lax`);
+  return out;
+}
 
 async function servePage(env, url, assetPath) {
   const res = await env.ASSETS.fetch(new Request(url.origin + assetPath));
@@ -227,6 +240,8 @@ async function api(request, env, url, ctx) {
     if (!sameOriginOk(request, url)) return json({ error: "bad origin" }, 403);
     if (m === "GET" && p === "/api/admin/me") return json({ ok: true });
     if (m === "GET" && p === "/api/admin/logs") return adminLogs(env, url);
+    if (m === "GET" && p === "/api/admin/people") return adminPeople(env, url);
+    if (m === "GET" && p.startsWith("/api/admin/people/")) return adminPerson(env, decodeURIComponent(p.slice("/api/admin/people/".length)));
     if (m === "GET" && p === "/api/admin/overview") return adminOverview(env);
     if (m === "POST" && p === "/api/admin/maintenance/cleanup") return cleanupInactiveRecords(request, env);
     if (m === "GET" && p === "/api/admin/timeseries") return adminTimeseries(env, url);

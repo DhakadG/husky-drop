@@ -4,6 +4,28 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — People, alerts, admin motion (PR #53)
+
+- **People tab.** Visitors are stitched into one profile by Google account,
+  falling back to a new anonymous `hd_did` device cookie, then the typed
+  uploader name. The DO keeps an `identities` table (device → email) so a
+  device that signs in later is attributed retroactively on read; nothing
+  extra hits KV.
+- **Activity** rows say whether they came from a drop link or a share and
+  group by the same identity key; sessions link to the person's profile.
+- **Alerts & log.** Client errors from drop/share pages now carry stack,
+  breadcrumbs (last ~25 actions), a state snapshot (queue counts, online,
+  paused, connection type) and land in the system log under `client`; the
+  admin gets one e-mail per page per 15 min. The tab shows an alerts strip
+  and a nav badge for errors in the last 24 h.
+- **Motion.** Pane transitions, staggered list entrance, skeletons on the
+  overview/people/logs, stat tick on change; all off under
+  `prefers-reduced-motion`.
+- **Fixes.** Sidebar lock/status row is a two-column grid so the button no
+  longer collapses; `.ico` baseline fixed at the root.
+- Diagnostics routes (`/people`, `/person`, `/log`, `/logs`) moved out of
+  `live.js` into `live-diagnostics.js` to keep it under 500 lines.
+
 ## 2026-09-16 — HDR DNG fallback (PR #52)
 
 - Runner tries `darktable-cli` when libraw and the embedded preview both
