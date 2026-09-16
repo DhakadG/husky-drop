@@ -11,7 +11,7 @@
 // Copy and archive jobs can be undone from the admin; replace cannot.
 
 import { accessToken, driveCreateFolder, driveFindFolder, driveTrashFile } from "./drive.js";
-import { json, cleanText } from "./util.js";
+import { json, cleanText, escapeHtml } from "./util.js";
 import { loadJobs, publicJob, saveJobs } from "./images.js";
 import { appLog } from "./applog.js";
 import { sendNotify } from "./store.js";
@@ -75,7 +75,10 @@ export async function controlImageJob(request, env, ctx, jobId, action) {
     job.status = "pausing"; // the runner finishes the current file, then stops
   } else if (action === "resume") {
     if (!["paused", "pausing"].includes(job.status)) return json({ error: `job is ${job.status}` }, 409);
-    if (jobs.some((j) => j !== job && ACTIVE.includes(j.status))) job.status = "queued";
+    // "pausing" = runner still alive; it sees "running" on its next poll, so
+    // dispatching again would start a second runner on the same files.
+    if (job.status === "pausing") job.status = "running";
+    else if (jobs.some((j) => j !== job && ACTIVE.includes(j.status))) job.status = "queued";
     else {
       job.status = "running";
       dispatchNow = true;
@@ -119,6 +122,8 @@ async function subfolder(env, name, parentId) {
 }
 // _archive/<root>/<sub>/... mirrors the source tree so two folders that
 // share a leaf name never merge. Folder ids memoised per isolate.
+// ponytail: isolate-lifetime cache, no expiry; a folder deleted by hand
+// outside the app stays cached until the isolate recycles.
 const folderMemo = new Map();
 async function mirrorPath(env, base, relativePath) {
   let parent = env.DRIVE_PARENT_ID || undefined;
@@ -247,10 +252,10 @@ async function emailJobDigest(env, job) {
   const failed = job.items.filter((i) => !i.ok && !i.soft).slice(0, 15);
   const names = new Map(job.files.map((f) => [f.id, f.name]));
   const subject = `Image archive done: ${p.done} files, ${fmtMb(p.bytesIn)} → ${fmtMb(p.bytesOut)}${p.failed ? ` (${p.failed} failed)` : ""}`;
-  const html = `<h2 style="margin:0 0 8px">${job.roots.map((r) => r.name).join(", ")}</h2>
+  const html = `<h2 style="margin:0 0 8px">${escapeHtml(job.roots.map((r) => r.name).join(", "))}</h2>
     <p style="margin:0 0 12px;color:#4a5b70">${job.options.mode} · ${job.options.maxMp ? `${job.options.maxMp} MP` : "full resolution"} · ${job.options.targetBytes ? `~${fmtMb(job.options.targetBytes)} target` : `quality ${job.options.quality}`} · ${job.options.format}</p>
     <table style="border-collapse:collapse;font-size:14px"><tr><td style="padding:4px 12px 4px 0">Processed</td><td><b>${p.done}</b> of ${job.files.length}</td></tr><tr><td style="padding:4px 12px 4px 0">Size</td><td><b>${fmtMb(p.bytesIn)} → ${fmtMb(p.bytesOut)}</b> (saved ${fmtMb(saved)}, ${p.bytesIn ? Math.round((saved / p.bytesIn) * 100) : 0}%)</td></tr><tr><td style="padding:4px 12px 4px 0">Failed / skipped</td><td>${p.failed} / ${p.skipped}</td></tr><tr><td style="padding:4px 12px 4px 0">Took</td><td>${Math.round(((job.finishedAt || Date.now()) - job.startedAt) / 60000)} min</td></tr></table>
-    ${failed.length ? `<p style="margin:12px 0 4px"><b>Failed</b></p><ul style="margin:0;padding-left:18px;font-size:13px">${failed.map((i) => `<li>${names.get(i.id) || i.id} — ${i.error}</li>`).join("")}</ul>` : ""}
+    ${failed.length ? `<p style="margin:12px 0 4px"><b>Failed</b></p><ul style="margin:0;padding-left:18px;font-size:13px">${failed.map((i) => `<li>${escapeHtml(names.get(i.id) || i.id)} — ${escapeHtml(i.error)}</li>`).join("")}</ul>` : ""}
     ${job.outputs?.length ? `<p style="margin:12px 0 0"><a href="https://drive.google.com/drive/folders/${job.outputs[0]}">Open the output folder</a></p>` : ""}
     <p style="margin:12px 0 0;font-size:12px;color:#8a97a8">Job ${job.id} · <a href="https://dropbox.losthusky.qzz.io/admin/images">Image archive</a></p>`;
   await sendNotify(env, { subject, html, text: subject, category: "image-archive", idempotencyKey: `img-digest-${job.id}` });
@@ -272,6 +277,7 @@ export async function undoImageJob(env, ctx, jobId) {
   if (!job) return json({ error: "job not found" }, 404);
   if (job.options.mode === "replace") return json({ error: "replace jobs cannot be undone here - restore the previous revision from Drive's version history" }, 409);
   if (["running", "pausing"].includes(job.status)) return json({ error: "pause or cancel the job first" }, 409);
+  if (["planned", "queued"].includes(job.status)) return json({ error: "job has not run yet - nothing to undo" }, 409);
   const tok = await accessToken(env);
   const files = new Map(job.files.map((f) => [f.id, f]));
   const pending = job.items.filter((i) => i.ok && !i.undone);
