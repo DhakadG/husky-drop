@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libraw-bin libheif-examples libimage-exiftool-perl
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libraw-bin libheif-examples libimage-exiftool-perl darktable
       - run: npm install --no-save --no-audit --no-fund sharp
       - run: node scripts/transcode-images.mjs
         env:
