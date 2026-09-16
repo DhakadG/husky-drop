@@ -5,23 +5,25 @@
 // hd_fp cookie so every later request carries it without extra plumbing.
 const FP_PRO_KEY = "Ju77MjhZRhdHsc51ifga";
 const FP_PRO_REGION = "ap";
-// One "hello" per page load sends the id plus client details the admin can
-// use to tell devices apart.
 const cookie = (n) => document.cookie.match(new RegExp(`(?:^|; )${n}=([^;]*)`))?.[1] || "";
 
 export async function identify({ slug = "", sessionId = "" } = {}) {
   let fp = cookie("hd_fp");
+  let fpEvent = "";
+  // Pro runs every visit: the event id lets the worker pull the server-side
+  // verdict (VPN, proxy, tampering, velocity...) for this exact page load.
+  try {
+    const pro = await import(`https://fpjscdn.net/v4/${FP_PRO_KEY}`).then((m) => m.start({ region: FP_PRO_REGION }));
+    const r = await pro.get();
+    fpEvent = r.event_id || "";
+    fp = r.visitor_id || fp;
+  } catch {}
   if (!fp) {
     try {
-      const pro = await import(`https://fpjscdn.net/v4/${FP_PRO_KEY}`).then((m) => m.start({ region: FP_PRO_REGION }));
-      fp = (await pro.get()).visitor_id;
-    } catch {
-      try {
-        fp = window.FingerprintJS ? (await (await window.FingerprintJS.load()).get()).visitorId : "";
-      } catch {}
-    }
-    if (fp) document.cookie = `hd_fp=${fp}; Path=/; Max-Age=${400 * 86400}; Secure; SameSite=Lax`;
+      fp = window.FingerprintJS ? (await (await window.FingerprintJS.load()).get()).visitorId : "";
+    } catch {}
   }
+  if (fp) document.cookie = `hd_fp=${fp}; Path=/; Max-Age=${400 * 86400}; Secure; SameSite=Lax`;
   const c = navigator.connection || {};
   const ua = navigator.userAgentData;
   const meta = {
@@ -38,6 +40,6 @@ export async function identify({ slug = "", sessionId = "" } = {}) {
     standalone: matchMedia("(display-mode: standalone)").matches,
     ref: document.referrer.slice(0, 120),
   };
-  fetch("/api/hello", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fp, slug, sessionId, meta }), keepalive: true }).catch(() => {});
+  fetch("/api/hello", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fp, fpEvent, slug, sessionId, meta }), keepalive: true }).catch(() => {});
   return fp;
 }

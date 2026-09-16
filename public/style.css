@@ -8106,3 +8106,4 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .people-suggest .section-title { margin-bottom: 6px; }
 .people-suggest .section-title h2 { font-size: 14px; }
 .people-suggest li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.kind-tag.risk { background: rgba(240, 85, 107, 0.12); color: var(--red); }
