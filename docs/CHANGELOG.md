@@ -4,6 +4,30 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Image archive v4 (PR #48)
+
+- Flow is now scan → tune → start. `POST /api/admin/images/scan` returns
+  compact per-file rows once; the recipe is estimated in the browser
+  instantly (impact card, per-folder "will process", per-preset totals).
+- Sources: one-click chips for share and drop-link folders; folder tree
+  table with per-folder tick boxes (→ `excludeFolderIds`), images / size /
+  type badges / already-done counts.
+- Recipe: size-target preset, 2 MP step, processing speed 1–8 (runner
+  pool; `parallel` in options), protections: skip RAW with `.xmp` sidecar
+  (edited in Lightroom/darktable), skip files modified in the last N days,
+  largest-first ordering, live regex validation, existing outputs in
+  `_compressed` / `_archive` detected by name so re-runs never duplicate.
+- **Try it on one photo**: encodes a scanned JPEG/PNG/WebP in the browser
+  (largest or random) with a before/after wipe slider and a 1:1 toggle.
+- Jobs: queue (start while one runs → queued, auto-started by the
+  finishing job's last report), live rate and ETA, **undo** for copy and
+  archive jobs (chunked), output-folder links, per-file `via`
+  (libraw / embedded preview / libheif) and final quality badges, failed
+  filter.
+- Runner: worker pool (default 4), per-worker temp dirs, reports `via`,
+  `q`, output `parent`.
+- `src/images.js` split into planning + `src/images-run.js`.
+
 ## 2026-09-16 — Image archive: size target, sturdier runner (PR #46)
 
 - Optional **size target per photo** (Advanced): the runner re-encodes at

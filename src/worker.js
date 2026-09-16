@@ -84,16 +84,17 @@ import {
   retryFailedPreviews,
   startPreviewRun,
 } from "./previews.js";
+import { imageSources, planImageJob, scanImages } from "./images.js";
 import {
   controlImageJob,
   imageJobItems,
   imageSource,
   listImageJobs,
   nextImageBatch,
-  planImageJob,
   putImageResult,
   reportImageBatch,
-} from "./images.js";
+  undoImageJob,
+} from "./images-run.js";
 
 export { LiveTracker } from "./live.js";
 
@@ -261,6 +262,8 @@ async function api(request, env, url, ctx) {
     if (p.startsWith("/api/admin/images/")) {
       const seg = p.slice("/api/admin/images/".length).split("/");
       if (m === "POST" && seg[0] === "plan") return planImageJob(request, env);
+      if (m === "POST" && seg[0] === "scan") return scanImages(request, env);
+      if (m === "GET" && seg[0] === "sources") return imageSources(env);
       if (m === "GET" && seg[0] === "jobs" && !seg[1]) return listImageJobs(env);
       if (m === "GET" && seg[0] === "source" && seg[1]) return imageSource(request, env, seg[1]);
       if (seg[0] === "jobs" && seg[1]) {
@@ -270,6 +273,7 @@ async function api(request, env, url, ctx) {
         if (m === "POST" && seg[2] === "report") return reportImageBatch(request, env, jobId);
         if (m === "PUT" && seg[2] === "file" && seg[3]) return putImageResult(request, env, jobId, seg[3]);
         if (m === "POST" && ["start", "pause", "resume", "cancel"].includes(seg[2])) return controlImageJob(request, env, jobId, seg[2]);
+        if (m === "POST" && seg[2] === "undo") return undoImageJob(env, jobId);
       }
     }
     if (m === "DELETE" && p.startsWith("/api/admin/uploads/")) {

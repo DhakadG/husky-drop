@@ -278,17 +278,29 @@ and quality, with a dry run first. All Drive writes happen in the worker;
 `scripts/transcode-images.mjs` (workflow `transcode-images.yml`) does the
 pixel work with sharp + libraw + libheif + exiftool.
 
+- `GET /api/admin/images/sources` — folders the app already knows (shares,
+  drop links) for one-click picking.
+- `POST /api/admin/images/scan` `{folderIds[]}` — walks the folders
+  (metadata only, no KV) and returns compact rows (`id, n, f, t, s, w, h,
+  m, x, c, a` = name, folder index, type, size, width, height, modified,
+  has .xmp sidecar, copy exists in `_compressed`, exists in `_archive`) plus
+  the folder tree, so the admin estimates any recipe instantly.
 - `POST /api/admin/images/plan` — options `{folderIds[], recursive, maxMp
   (0|4|6|8|12|16|24), quality 50-95, format same|jpeg|webp|avif, metadata
-  keep|strip-gps|strip, minBytes, onlyIfSmaller, exclude (regex), types[],
-  mode copy|archive|replace}`. Walks the folders (metadata only) and stores
+  keep|strip-gps|strip, minBytes, targetBytes, onlyIfSmaller, exclude
+  (regex), types[], excludeFolderIds[], skipRecentDays, skipSidecar,
+  largestFirst, parallel 1-8, mode copy|archive|replace}`. Walks the folders (metadata only) and stores
   a job (`status: planned`) with a digest: files, bytes now → expected,
   ETA, by type, skip reasons, largest files. One KV write.
 - `GET /api/admin/images/jobs` — last 10 jobs (plan file lists omitted) +
   the active one.
 - `POST /api/admin/images/jobs/:id/start` (`{confirm: "REPLACE"}` required
   for replace mode) / `pause` / `resume` / `cancel`. Start and resume
-  dispatch the workflow when `GITHUB_TOKEN` is set.
+  dispatch the workflow when `GITHUB_TOKEN` is set; while another job runs
+  the job is `queued` and starts from the finishing job's final report.
+- `POST /api/admin/images/jobs/:id/undo` — copy jobs: trash the copies;
+  archive jobs: move originals back and trash the copies. Chunked (60 per
+  call, returns `remaining`). Replace jobs: 409.
 - `GET /api/admin/images/jobs/:id/items` — processed files with outcome.
 - Runner: `GET …/:id/next?n=8`, `GET /api/admin/images/source/:fileId`,
   `PUT …/:id/file/:fileId` (header `x-format`; the worker applies the mode -
