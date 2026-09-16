@@ -15,6 +15,11 @@ export const IDENTITY_SCHEMA = `CREATE TABLE IF NOT EXISTS identities (
   email TEXT NOT NULL,
   name TEXT,
   last_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS aliases (
+  key TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  at INTEGER NOT NULL
 )`;
 
 const SHARE_TYPES = /^share/;
@@ -27,12 +32,28 @@ export function rememberIdentity(sql, record) {
   sql.exec("INSERT INTO identities (did, email, name, last_at) VALUES (?, ?, ?, ?) ON CONFLICT(did) DO UPDATE SET email = excluded.email, name = COALESCE(excluded.name, identities.name), last_at = excluded.last_at", record.d, email, record.u || null, Number(record.at) || Date.now());
 }
 
+// Device → account, plus aliases: manual merges from the admin and typed
+// names that only one signed-in account has ever used (so "Pixel" typed on
+// Daksh's phone means Daksh everywhere, even on a link without sign-in).
 export function identityMap(sql) {
   const map = new Map();
+  const aliases = new Map();
   try {
-    for (const row of sql.exec("SELECT did, email, name FROM identities").toArray()) map.set(row.did, { email: row.email, name: row.name });
+    const byName = new Map();
+    for (const row of sql.exec("SELECT did, email, name FROM identities").toArray()) {
+      map.set(row.did, { email: row.email, name: row.name });
+      const n = String(row.name || "").trim().toLowerCase();
+      if (n && !n.includes("@")) byName.set(n, (byName.get(n) || new Set()).add(row.email));
+    }
+    for (const [n, emails] of byName) if (emails.size === 1) aliases.set(`name:${n}`, [...emails][0]);
+    for (const row of sql.exec("SELECT key, email FROM aliases").toArray()) aliases.set(row.key, row.email);
   } catch {}
+  map.aliases = aliases;
   return map;
+}
+export function setAlias(sql, key, email) {
+  if (!email) sql.exec("DELETE FROM aliases WHERE key = ?", key);
+  else sql.exec("INSERT INTO aliases (key, email, at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET email = excluded.email, at = excluded.at", key, email.toLowerCase(), Date.now());
 }
 
 // Stable key for one person given an event and the device→email map.
@@ -42,10 +63,9 @@ export const emailOf = (record, ids) => (record.e || (record.d && ids.get(record
 export function personKey(record, ids) {
   const email = emailOf(record, ids);
   if (email) return `email:${email}`;
-  if (record.d) return `device:${record.d}`;
-  const name = String(record.u || "").trim().toLowerCase();
-  if (name) return `name:${name}`;
-  return "";
+  const raw = record.d ? `device:${record.d}` : record.u ? `name:${String(record.u).trim().toLowerCase()}` : "";
+  const a = ids.aliases?.get(raw) || (record.d && record.u && ids.aliases?.get(`name:${String(record.u).trim().toLowerCase()}`));
+  return a ? `email:${a}` : raw;
 }
 
 // Inside the DO: fold every event of the last `days` into profiles.
@@ -65,7 +85,7 @@ export function buildPeople(sql, days = 90) {
     if (!key) continue;
     const p = people.get(key) || { key, emails: new Set(), names: new Set(), devices: new Map(), places: new Set(), first: r.at, last: r.at, events: 0, dropOpens: 0, uploads: 0, bytes: 0, shareOpens: 0, views: 0, downloads: 0, errors: 0, links: new Map(), shares: new Map() };
     people.set(key, p);
-    const email = emailOf(r, ids);
+    const email = key.startsWith("email:") ? key.slice(6) : "";
     if (email) p.emails.add(email);
     if (r.u && !r.u.includes("@")) p.names.add(r.u);
     if (r.d) p.devices.set(r.d, r.c?.o || "device");
@@ -95,8 +115,10 @@ export function buildPeople(sql, days = 90) {
       bucket.set(r.s, entry);
     }
   }
+  const merged = new Map();
+  for (const [key, email] of ids.aliases || []) merged.set(`email:${email}`, [...(merged.get(`email:${email}`) || []), key]);
   return [...people.values()]
-    .map((p) => ({ ...p, emails: [...p.emails], names: [...p.names], devices: [...p.devices].map(([id, os]) => ({ id, os })), places: [...p.places], links: [...p.links.values()], shares: [...p.shares.values()] }))
+    .map((p) => ({ ...p, aliases: merged.get(p.key) || [], emails: [...p.emails], names: [...p.names], devices: [...p.devices].map(([id, os]) => ({ id, os })), places: [...p.places], links: [...p.links.values()], shares: [...p.shares.values()] }))
     .sort((a, b) => b.last - a.last);
 }
 
@@ -125,6 +147,14 @@ export async function adminPeople(env, url) {
   const r = await liveStub(env).fetch(`https://live.internal/people?days=${days}`);
   if (!r.ok) return json({ error: "people unavailable" }, 503);
   return json(await r.json());
+}
+export async function adminMerge(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const key = cleanText(b.key || "", 200);
+  const email = cleanText(b.email || "", 120).toLowerCase();
+  if (!/^(device|name):/.test(key) || (email && !email.includes("@"))) return json({ error: "key must be device:/name:, email optional" }, 400);
+  const r = await liveStub(env).fetch("https://live.internal/alias", { method: "POST", body: JSON.stringify({ key, email }) });
+  return json(await r.json(), r.status);
 }
 export async function adminPerson(env, key) {
   const r = await liveStub(env).fetch(`https://live.internal/person?key=${encodeURIComponent(cleanText(key, 200))}`);

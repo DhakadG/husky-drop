@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — People merge (PR #57)
+
+- Admin can merge a device/typed-name profile into a Google account from
+  the profile page (and unlink). Stored in a DO `aliases` table.
+- Typed names that only one signed-in account has ever used alias to it
+  automatically, so a name used on a link without sign-in still resolves.
+- E-mail-shaped uploader names on older events count as the account (#54).
+- Runner: darktable-cli gets isolated config/cache dirs and its stderr tail
+  lands in the skip reason (#55, #56).
+
 ## 2026-09-16 — People, alerts, admin motion (PR #53)
 
 - **People tab.** Visitors are stitched into one profile by Google account,

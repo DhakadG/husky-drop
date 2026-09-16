@@ -3,7 +3,7 @@
 
 import { cleanText, clamp } from "./util.js";
 import { logInsert, logQuery } from "./applog.js";
-import { buildPeople, personEvents } from "./people.js";
+import { buildPeople, personEvents, setAlias } from "./people.js";
 
 const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -12,6 +12,10 @@ export function diagnosticsRoute(state, path, url, body, isPost) {
   try {
     if (path === "/people") return reply({ people: buildPeople(sql, clamp(Number(url.searchParams.get("days")) || 90, 1, 365)) });
     if (path === "/person") return reply({ events: personEvents(sql, cleanText(url.searchParams.get("key") || "", 200)) });
+    if (isPost && path === "/alias") {
+      setAlias(sql, cleanText(body.key || "", 200), cleanText(body.email || "", 120));
+      return reply({ ok: true });
+    }
     if (isPost && path === "/log") {
       logInsert(sql, body);
       return reply({ ok: true });
