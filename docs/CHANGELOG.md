@@ -4,6 +4,15 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Fingerprint verdicts (PR #67)
+
+- Hello sends the Pro `event_id`; with `FP_SERVER_KEY` the worker fetches the
+  Server API event and stores confidence, OS/browser version, device, city,
+  ASN, VPN/proxy/Tor/datacenter, tampering, anti-detect, dev tools,
+  high-activity, suspect score and velocity on the device row. Risk flags
+  render as red tags in Devices; risky visits warn in the system log.
+- Gemini model bumped to `gemini-3.6-flash` (2.5 retired for new keys).
+
 ## 2026-09-16 — Gemini + Fingerprint Pro (PR #64)
 
 - Stitch uses Gemini (free AI Studio key, `GEMINI_API_KEY`) when set;

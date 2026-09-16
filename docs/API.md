@@ -331,13 +331,18 @@ pixel work with sharp + libraw + libheif + exiftool.
   vendored open-source agent as ad-block fallback) plus client details (screen,
   timezone, language, platform, browser, cores, memory, touch, network).
   Upserts the device row in the DO `sessions` table and, when the viewer is
-  signed in, links the device and fingerprint to that account.
+  signed in, links the device and fingerprint to that account. With the
+  `FP_SERVER_KEY` secret (Fingerprint secret key, region `ap`) the worker also
+  pulls the Server API verdict for `fpEvent`: id confidence, OS/browser
+  version, device, city/ASN, VPN/proxy/Tor/datacenter, tampering, anti-detect,
+  dev tools, high-activity, suspect score, IP/country velocity. Risky visits
+  log a warning under `people`; flags show on the profile's device rows.
 - `GET /api/admin/sessions?limit` — recent device rows.
 - `GET|POST|DELETE /api/admin/people/suggestions` — Claude-proposed merges
   of unsigned visits into accounts (POST runs the pass now; DELETE `{key}`
   dismisses one). Also runs on the nightly cron when `GEMINI_API_KEY`
   (Google AI Studio, free tier; optional `GEMINI_MODEL`, default
-  `gemini-2.5-flash`) or `ANTHROPIC_API_KEY` is set. Accepting = the normal
+  `gemini-3.6-flash`) or `ANTHROPIC_API_KEY` is set. Accepting = the normal
   merge call.
 - `GET|POST|DELETE /api/admin/bans` `{kind: email|device|fp, value, reason}` —
   blocked accounts/devices. Banned visitors get 403 on `/d/`, `/s/`, session

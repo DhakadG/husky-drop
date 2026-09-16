@@ -6,6 +6,7 @@ import { ago, displayName, initials, refreshPeople, renderList, skeleton } from 
 // merge/unlink into a Google account, block/unblock account or device.
 
 export const peopleState = { people: [], bans: [], suggestions: [], loaded: false };
+export const riskFlags = (m = {}) => [m.tor && "tor", m.vpn && "vpn", m.proxy && "proxy", m.datacenter && "datacenter", m.tampering && "tampering", m.antiDetect && "anti-detect", m.attackSource && "attack source", m.highActivity && "high activity", Number(m.suspect) >= 25 && `suspect ${m.suspect}`, Number(m.countries24h) > 1 && `${m.countries24h} countries/24h`].filter(Boolean);
 const kindOf = (t) => (/^share/.test(t) ? "share" : "drop");
 const isBanned = (kind, value) => peopleState.bans.some((b) => b.kind === kind && b.value === value);
 const banBtn = (kind, value, label) => `<button type="button" class="mini${isBanned(kind, value) ? " is-on" : ""}" data-ban-kind="${kind}" data-ban-value="${escAttr(value)}" data-ban-on="${isBanned(kind, value) ? 0 : 1}">${icon("shield-alert", "ico-sm")} ${isBanned(kind, value) ? `unblock ${label}` : `block ${label}`}</button>`;
@@ -35,9 +36,10 @@ const mergeBox = (p) => {
 
 const deviceRow = (s) => {
   const m = s.meta || {};
-  const bits = [m.browser, m.platform, m.screen, m.tz, m.lang, m.conn && `${m.conn} net`, m.touch > 0 && "touch", m.standalone && "installed app"].filter(Boolean);
+  const bits = [m.browserName && m.browserName !== "Chromium-Based Browser" ? m.browserName : m.browser, m.osVersion && `${s.os} ${m.osVersion}`, m.device && m.device !== "Other" && m.device, m.screen, m.tz, m.lang, m.conn && `${m.conn} net`, m.touch > 0 && "touch", m.standalone && "installed app", m.asn, m.fpConfidence != null && `id confidence ${Math.round(m.fpConfidence * 100)}%`].filter(Boolean);
+  const flags = riskFlags(m);
   return `<li class="device-row"><span class="avatar">${icon(/android|ios/i.test(s.os) ? "smartphone" : "monitor")}</span>
-    <span class="device-main"><b>${esc(s.os || "device")}${s.loc ? ` · ${esc(s.loc)}` : ""}</b><small>${esc(bits.join(" · ") || s.ua || "")}</small><small class="muted">${s.visits} visit${s.visits === 1 ? "" : "s"} · first ${ago(s.first)} ago · last ${ago(s.last)} ago${s.slug ? ` · ${esc(s.slug)}` : ""}${s.did ? ` · cookie ${esc(s.did.slice(0, 6))}` : ""}${s.fp ? ` · fp ${esc(s.fp.slice(0, 6))}` : ""}</small></span>
+    <span class="device-main"><b>${esc(s.os || "device")}${s.loc || m.city ? ` · ${esc(m.city || s.loc)}` : ""}${flags.map((f) => ` <span class="kind-tag risk">${esc(f)}</span>`).join("")}</b><small>${esc(bits.join(" · ") || s.ua || "")}</small><small class="muted">${s.visits} visit${s.visits === 1 ? "" : "s"} · first ${ago(s.first)} ago · last ${ago(s.last)} ago${s.slug ? ` · ${esc(s.slug)}` : ""}${s.did ? ` · cookie ${esc(s.did.slice(0, 6))}` : ""}${s.fp ? ` · fp ${esc(s.fp.slice(0, 6))}` : ""}</small></span>
     <span class="device-actions">${s.did ? banBtn("device", s.did, "cookie") : ""}${s.fp ? banBtn("fp", s.fp, "fingerprint") : ""}${!s.did && !s.fp ? "" : ""}</span></li>`;
 };
 

@@ -9,6 +9,7 @@
 import { json, cleanText, deviceIdFrom, fpFrom, extractClientInfo } from "./util.js";
 import { getViewer } from "./auth.js";
 import { liveStub } from "./store.js";
+import { appLog } from "./applog.js";
 
 export const SESSION_SCHEMA = `CREATE TABLE IF NOT EXISTS sessions (
   key TEXT PRIMARY KEY,
@@ -21,6 +22,33 @@ CREATE TABLE IF NOT EXISTS bans (
 )`;
 
 const META_KEYS = ["screen", "viewport", "tz", "lang", "platform", "cores", "mem", "touch", "conn", "standalone", "ref", "browser"];
+
+// Fingerprint Server API verdict for one page load (needs FP_SERVER_KEY,
+// region ap). Only the bits the admin acts on are kept.
+async function fpVerdict(env, eventId) {
+  if (!env.FP_SERVER_KEY || !/^[\w.-]{8,60}$/.test(eventId || "")) return null;
+  const r = await fetch(`https://ap.api.fpjs.io/events/${encodeURIComponent(eventId)}`, { headers: { "Auth-API-Key": env.FP_SERVER_KEY, accept: "application/json" } }).catch(() => null);
+  if (!r?.ok) return null;
+  const e = await r.json().catch(() => ({}));
+  const ip = e.ip_info?.v4 || e.ip_info?.v6 || {};
+  const geo = ip.geolocation || {};
+  return {
+    fpConfidence: e.identification?.confidence?.score,
+    firstSeen: e.identification?.first_seen_at,
+    osVersion: e.os_version || e.browser_details?.os_version,
+    browserName: e.browser_details?.browser_name,
+    device: e.device,
+    city: [geo.city_name, geo.subdivisions?.[0]?.iso_code, geo.country_code].filter(Boolean).join(", "),
+    asn: ip.asn_name,
+    datacenter: !!ip.datacenter_result,
+    vpn: !!e.vpn, proxy: !!e.proxy, tor: !!e.ip_blocklist?.tor_node, attackSource: !!e.ip_blocklist?.attack_source,
+    tampering: !!e.tampering, antiDetect: !!e.tampering_details?.anti_detect_browser,
+    devTools: !!e.developer_tools, highActivity: !!e.high_activity_device,
+    suspect: e.suspect_score,
+    ips24h: e.velocity?.distinct_ip?.["24_hours"], countries24h: e.velocity?.distinct_country?.["24_hours"],
+  };
+}
+export const riskFlags = (m = {}) => [m.tor && "tor", m.vpn && "vpn", m.proxy && "proxy", m.datacenter && "datacenter", m.tampering && "tampering", m.antiDetect && "anti-detect", m.attackSource && "attack source", m.highActivity && "high activity", Number(m.suspect) >= 25 && `suspect ${m.suspect}`, Number(m.countries24h) > 1 && `${m.countries24h} countries/24h`].filter(Boolean);
 
 // ---- DO side ----
 export function upsertSession(sql, s) {
@@ -90,7 +118,20 @@ export async function clientHello(request, env, ctx) {
     slug: cleanText(b.slug || "", 60),
     at: Date.now(),
   };
-  if (env.LIVE_TRACKER) ctx.waitUntil(liveStub(env).fetch("https://live.internal/hello", { method: "POST", body: JSON.stringify(s) }).catch(() => {}));
+  if (env.LIVE_TRACKER) {
+    ctx.waitUntil(
+      (async () => {
+        const verdict = await fpVerdict(env, b.fpEvent);
+        if (verdict) {
+          Object.assign(meta, Object.fromEntries(Object.entries(verdict).filter(([, v]) => v !== undefined && v !== "")));
+          s.meta = JSON.stringify(meta);
+          const flags = riskFlags(verdict);
+          if (flags.length) appLog(env, null, { level: "warn", area: "people", message: `risky visit on ${s.slug || "page"}: ${flags.join(", ")}${s.email ? ` (${s.email})` : ""}`, detail: { did: s.did, fp: s.fp, ...verdict } });
+        }
+        await liveStub(env).fetch("https://live.internal/hello", { method: "POST", body: JSON.stringify(s) });
+      })().catch(() => {}),
+    );
+  }
   return json({ ok: true });
 }
 
