@@ -234,6 +234,7 @@ export function sessionBody(item) {
     size: item.file.size,
     mimeType: item.file.type || "application/octet-stream",
     uploaderName: $("who").value.trim(),
+    uploaderAlias: $("alias")?.value.trim() || "",
     sessionId,
     relativePath: st.link.settings?.perUploaderFolders ? "" : item.relativePath || "",
     queueCount: totals.count,

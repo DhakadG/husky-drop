@@ -54,7 +54,7 @@ export async function getShareMeta(request, env, slug) {
   const raw = await env.KV.get(`share:${slug}`, "json");
   if (!raw) return json({ error: "share not found" }, 404);
   const requiresAuth = raw.requireAuth !== false && !!env.GOOGLE_CLIENT_ID;
-  const viewer = requiresAuth ? await getViewer(request, env) : null;
+  const viewer = env.GOOGLE_CLIENT_ID ? await getViewer(request, env) : null;
   return json({
     slug: raw.slug,
     label: raw.label,

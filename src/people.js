@@ -27,9 +27,10 @@ export const eventKind = (t) => (SHARE_TYPES.test(t) ? "share" : ["linknew", "li
 
 // Inside the DO: remember which device belongs to which e-mail.
 export function rememberIdentity(sql, record) {
-  const email = record?.d ? emailOf(record, new Map()) : "";
+  const email = record?.d || record?.p ? emailOf(record, new Map()) : "";
   if (!email) return;
-  sql.exec("INSERT INTO identities (did, email, name, last_at) VALUES (?, ?, ?, ?) ON CONFLICT(did) DO UPDATE SET email = excluded.email, name = COALESCE(excluded.name, identities.name), last_at = excluded.last_at", record.d, email, record.u || null, Number(record.at) || Date.now());
+  if (record.d) sql.exec("INSERT INTO identities (did, email, name, last_at) VALUES (?, ?, ?, ?) ON CONFLICT(did) DO UPDATE SET email = excluded.email, name = COALESCE(excluded.name, identities.name), last_at = excluded.last_at", record.d, email, record.u || null, Number(record.at) || Date.now());
+  if (record.p) setAlias(sql, `fp:${record.p}`, email);
 }
 
 // Device → account, plus aliases: manual merges from the admin and typed
@@ -71,8 +72,9 @@ export function personKey(record, ids) {
   const email = emailOf(record, ids);
   if (email) return `email:${email}`;
   const name = typedName(record);
-  const raw = record.d ? `device:${record.d}` : name ? `name:${name}` : record.si ? `session:${record.si}` : "";
-  const a = ids.aliases?.get(raw) || (record.d && name && ids.aliases?.get(`name:${name}`));
+  const raw = record.d ? `device:${record.d}` : record.p ? `fp:${record.p}` : name ? `name:${name}` : record.si ? `session:${record.si}` : "";
+  const al = ids.aliases;
+  const a = al?.get(raw) || (record.p && al?.get(`fp:${record.p}`)) || ((record.d || record.p) && name && al?.get(`name:${name}`));
   return a ? `email:${a}` : raw;
 }
 
@@ -96,7 +98,7 @@ export function buildPeople(sql, days = 90) {
     const email = key.startsWith("email:") ? key.slice(6) : "";
     if (email) p.emails.add(email);
     if (typedName(r) && !r.u.includes("@")) p.names.add(r.u);
-    if (r.d) p.devices.set(r.d, r.c?.o || "device");
+    if (r.d || r.p) p.devices.set(r.d || r.p, r.c?.o || "device");
     if (r.c?.l) p.places.add(r.c.l);
     p.first = Math.min(p.first, r.at);
     p.last = Math.max(p.last, r.at);
@@ -160,7 +162,7 @@ export async function adminMerge(request, env) {
   const b = await request.json().catch(() => ({}));
   const key = cleanText(b.key || "", 200);
   const email = cleanText(b.email || "", 120).toLowerCase();
-  if (!/^(device|name|session):/.test(key) || (email && !email.includes("@"))) return json({ error: "key must be device:/name:, email optional" }, 400);
+  if (!/^(device|fp|name|session):/.test(key) || (email && !email.includes("@"))) return json({ error: "key must be device:/name:, email optional" }, 400);
   const r = await liveStub(env).fetch("https://live.internal/alias", { method: "POST", body: JSON.stringify({ key, email }) });
   return json(await r.json(), r.status);
 }

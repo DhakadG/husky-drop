@@ -55,7 +55,12 @@
           <input id="who" type="text" autocomplete="name" placeholder="e.g. Riya" maxlength="60" />
           <span class="dv4-name-ok" aria-hidden="true"><svg class="ico" aria-hidden="true"><use href="/icons.svg#check"></use></svg></span>
         </div>
-        <small>So the collector knows who sent what. Saved for next time.</small>
+        <small id="who-hint">So the collector knows who sent what. Saved for next time.</small>
+      </div>
+      <div class="dv4-name hidden" id="alias-wrap">
+        <label for="alias">Folder name <span class="muted">(optional)</span></label>
+        <div class="dv4-name-input"><input id="alias" type="text" placeholder="e.g. HuskyKaPapa" maxlength="40" /></div>
+        <small>Your Drive folder becomes “Your name -- Folder name”.</small>
       </div>
       <div class="grad-border dropzone-wrap dv4-zone">
         <div class="dropzone" id="zone" role="button" tabindex="0" aria-label="Add photos and videos">
@@ -97,5 +102,5 @@
     </footer>
   </section>
 </main>
-<script src="/public.js"></script><script src="/adaptive-concurrency.js"></script><script src="/drop-trekker.js"></script><script type="module" src="/drop.js"></script>
+<script src="/vendor-fp.js"></script><script src="/public.js"></script><script src="/adaptive-concurrency.js"></script><script src="/drop-trekker.js"></script><script type="module" src="/drop.js"></script>
 </body>

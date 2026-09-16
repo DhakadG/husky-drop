@@ -3,7 +3,8 @@
 
 import { cleanText, clamp } from "./util.js";
 import { logInsert, logQuery } from "./applog.js";
-import { buildPeople, personEvents, setAlias } from "./people.js";
+import { buildPeople, personEvents, rememberIdentity, setAlias } from "./people.js";
+import { banRows, isBanned, listSessions, sessionsFor, setBan, upsertSession } from "./identity.js";
 
 const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -11,7 +12,21 @@ export function diagnosticsRoute(state, path, url, body, isPost) {
   const sql = state.storage.sql;
   try {
     if (path === "/people") return reply({ people: buildPeople(sql, clamp(Number(url.searchParams.get("days")) || 90, 1, 365)) });
-    if (path === "/person") return reply({ events: personEvents(sql, cleanText(url.searchParams.get("key") || "", 200)) });
+    if (path === "/person") {
+      const key = cleanText(url.searchParams.get("key") || "", 200);
+      const events = personEvents(sql, key);
+      const ids = [...new Set(events.flatMap((e) => [e.d, e.p]).filter(Boolean))];
+      return reply({ events, sessions: sessionsFor(sql, { email: key.startsWith("email:") ? key.slice(6) : "", keys: [...ids, key.replace(/^(device|fp|session):/, "")] }) });
+    }
+    if (isPost && path === "/hello") {
+      upsertSession(sql, body);
+      if (body.email) rememberIdentity(sql, { d: body.did, p: body.fp, e: body.email, at: body.at });
+      return reply({ ok: true });
+    }
+    if (isPost && path === "/banned") return reply({ banned: isBanned(sql, body) });
+    if (path === "/sessions") return reply({ sessions: listSessions(sql, clamp(Number(url.searchParams.get("limit")) || 200, 1, 500)) });
+    if (path === "/bans" && !isPost) return reply({ bans: banRows(sql) });
+    if (path === "/bans" && isPost) return reply({ ok: setBan(sql, body.kind, body.value, body.reason, body.on !== false) });
     if (isPost && path === "/alias") {
       setAlias(sql, cleanText(body.key || "", 200), cleanText(body.email || "", 120));
       return reply({ ok: true });

@@ -4,6 +4,26 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Identity, sessions, bans (PR #62)
+
+- **Fingerprint.** Drop and share pages load a vendored FingerprintJS v3
+  (MIT) and keep the visitor id in `hd_fp`; events carry it as `p`. A
+  fingerprint that ever signed in aliases to that account, so a device that
+  clears cookies or opens a no-sign-in link is still recognised.
+- **Sessions.** `/api/hello` records one row per device with client details
+  (screen, tz, language, platform, browser, cores, memory, touch, network,
+  installed-app, referrer). People profiles show them under Devices.
+- **Bans.** Block a Google account, device cookie or fingerprint from the
+  profile; blocked visitors get 403 on pages, upload sessions and share
+  listing/downloads. List + unblock on the People tab.
+- **Identify everyone signed in.** A Google session names the uploader/viewer
+  even on links that do not require sign-in.
+- **Folder alias.** Per-uploader folders are `Name -- Alias`; signed-in
+  uploaders get their Google name locked in and only pick the alias.
+- **People UI.** Cards are a fixed grid (uploads / views / last seen);
+  unsigned visits and blocked entries fold into their own sections; profile
+  gets Devices and block buttons.
+
 ## 2026-09-16 — People merge (PR #57)
 
 - Admin can merge a device/typed-name profile into a Google account from

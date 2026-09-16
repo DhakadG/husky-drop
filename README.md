@@ -90,9 +90,11 @@ The Worker is the control plane:
 ### Admin observability
 
 - **People** — one profile per visitor. A first visit sets an anonymous
-  `hd_did` device cookie; once that device signs in with Google, every past
-  and future event from it is attributed to the account. Profiles list drop
-  links used, shares viewed, devices, places, and a timeline.
+  `hd_did` device cookie and a FingerprintJS id; once that device signs in
+  with Google, every past and future event from it is attributed to the
+  account. Profiles list drop links used, shares viewed, devices with client
+  details, a timeline, manual merge/unlink, and block buttons (account,
+  cookie or fingerprint).
 - **Activity** — each session is tagged `drop` or `share`, grouped by Google
   account → device → typed name, with a link to the person's profile.
 - **Alerts & log** — client-side crashes on drop/share pages are posted with
@@ -270,6 +272,7 @@ husky-drop/
 │   ├── live.js           # Durable Object: sessions, hibernatable WebSockets
 │   ├── live-diagnostics.js # DO routes for People profiles and the system log
 │   ├── people.js         # visitor identity: device cookie + Google account stitching
+│   ├── identity.js       # device sessions (fingerprint + client details), bans
 │   ├── live-analytics.js # DO SQLite: rollups, telemetry, activity, share stats
 │   ├── live-digest.js    # per-session finished-upload email
 │   ├── live-completions.js # batched KV flush of Drive-verified completions

@@ -6,6 +6,7 @@ import {
   MIN_CHUNK,
   queue,
   resumeRecords,
+  sessionId,
   slug,
   st,
   totals,
@@ -25,6 +26,7 @@ import { crumb, installErrorReporting, reportProblem } from "./drop-report.js";
 import { schedulePaint } from "./drop-render.js";
 import { connectLive, acquireWakeLock, startCountdown } from "./drop-live.js";
 import { toast, clamp } from "./drop-utils.js";
+import { identify } from "./identity.js";
 
 // Drop page: boot, the pre-upload gate, main-page setup, pickers and the
 // add-files entry point. Engine and views live in drop-*.js.
@@ -47,6 +49,7 @@ async function init() {
   applySettings(st.link.settings || {});
   logOpenOnce();
   loadResumeRecords().catch(() => {});
+  identify({ slug, sessionId });
 
   if (st.link.requiresAuth && !st.link.viewer) return showSignIn();
   if (st.link.requiresPin) {
@@ -230,7 +233,7 @@ export function showMain() {
   // One quiet line of facts instead of a row of chips competing with the title.
   const facts = [
     st.link.requiresPin ? "password protected" : "private link",
-    st.link.requiresAuth && st.link.viewer ? `signed in as ${st.link.viewer.name || st.link.viewer.email}` : "",
+    st.link.viewer ? `signed in as ${st.link.viewer.name || st.link.viewer.email}` : "",
     `files up to ${fmtBytes(st.link.settings?.maxTransferBytes || 5 * 1024 ** 4)}`,
     st.link.settings?.perUploaderFolders ? "your own subfolder" : "",
   ];
@@ -244,6 +247,16 @@ export function showMain() {
   setupPromo();
   maybeShowResumeBanner();
   $("who").value = localStorage.getItem("lhdb_name") || "";
+  if (st.link.viewer?.name) {
+    // Google already told us who this is; the typed box only picks the folder alias.
+    $("who").value = st.link.viewer.name;
+    $("who").readOnly = true;
+    $("who-hint").textContent = "From your Google account.";
+  }
+  if (st.link.settings?.perUploaderFolders) {
+    $("alias-wrap").classList.remove("hidden");
+    $("alias").value = localStorage.getItem("lhdb_alias") || "";
+  }
   syncNameStep();
   const zone = $("zone");
   const picker = $("picker");
@@ -359,6 +372,7 @@ export function pickerGate() {
     return false;
   }
   localStorage.setItem("lhdb_name", name);
+  localStorage.setItem("lhdb_alias", $("alias")?.value.trim() || "");
   return true;
 }
 
