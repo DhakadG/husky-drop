@@ -332,6 +332,10 @@ pixel work with sharp + libraw + libheif + exiftool.
   Upserts the device row in the DO `sessions` table and, when the viewer is
   signed in, links the device and fingerprint to that account.
 - `GET /api/admin/sessions?limit` — recent device rows.
+- `GET|POST|DELETE /api/admin/people/suggestions` — Claude-proposed merges
+  of unsigned visits into accounts (POST runs the pass now; DELETE `{key}`
+  dismisses one). Also runs on the nightly cron when `ANTHROPIC_API_KEY`
+  is set. Accepting = the normal merge call.
 - `GET|POST|DELETE /api/admin/bans` `{kind: email|device|fp, value, reason}` —
   blocked accounts/devices. Banned visitors get 403 on `/d/`, `/s/`, session
   creation and share listing/downloads (cached 30 s per isolate).

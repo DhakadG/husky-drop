@@ -8102,3 +8102,7 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .people-unknown { margin-top: 16px; }
 .people-unknown > summary { cursor: pointer; font-size: 13px; color: var(--ink-soft); padding: 10px 0; }
 .people-unknown[open] > summary { margin-bottom: 8px; }
+.people-suggest { margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; border: 1px dashed rgba(47, 107, 255, 0.35); background: rgba(47, 107, 255, 0.04); }
+.people-suggest .section-title { margin-bottom: 6px; }
+.people-suggest .section-title h2 { font-size: 14px; }
+.people-suggest li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
