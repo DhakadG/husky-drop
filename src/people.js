@@ -22,8 +22,9 @@ export const eventKind = (t) => (SHARE_TYPES.test(t) ? "share" : ["linknew", "li
 
 // Inside the DO: remember which device belongs to which e-mail.
 export function rememberIdentity(sql, record) {
-  if (!record?.d || !record?.e) return;
-  sql.exec("INSERT INTO identities (did, email, name, last_at) VALUES (?, ?, ?, ?) ON CONFLICT(did) DO UPDATE SET email = excluded.email, name = COALESCE(excluded.name, identities.name), last_at = excluded.last_at", record.d, record.e.toLowerCase(), record.u || null, Number(record.at) || Date.now());
+  const email = record?.d ? emailOf(record, new Map()) : "";
+  if (!email) return;
+  sql.exec("INSERT INTO identities (did, email, name, last_at) VALUES (?, ?, ?, ?) ON CONFLICT(did) DO UPDATE SET email = excluded.email, name = COALESCE(excluded.name, identities.name), last_at = excluded.last_at", record.d, email, record.u || null, Number(record.at) || Date.now());
 }
 
 export function identityMap(sql) {
@@ -35,8 +36,11 @@ export function identityMap(sql) {
 }
 
 // Stable key for one person given an event and the device→email map.
+// Older events carry the signed-in address only as the uploader name, so an
+// e-mail-shaped name counts as the account too.
+export const emailOf = (record, ids) => (record.e || (record.d && ids.get(record.d)?.email) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(record.u || "") ? record.u : "")).toLowerCase();
 export function personKey(record, ids) {
-  const email = (record.e || (record.d && ids.get(record.d)?.email) || "").toLowerCase();
+  const email = emailOf(record, ids);
   if (email) return `email:${email}`;
   if (record.d) return `device:${record.d}`;
   const name = String(record.u || "").trim().toLowerCase();
@@ -61,7 +65,7 @@ export function buildPeople(sql, days = 90) {
     if (!key) continue;
     const p = people.get(key) || { key, emails: new Set(), names: new Set(), devices: new Map(), places: new Set(), first: r.at, last: r.at, events: 0, dropOpens: 0, uploads: 0, bytes: 0, shareOpens: 0, views: 0, downloads: 0, errors: 0, links: new Map(), shares: new Map() };
     people.set(key, p);
-    const email = (r.e || (r.d && ids.get(r.d)?.email) || "").toLowerCase();
+    const email = emailOf(r, ids);
     if (email) p.emails.add(email);
     if (r.u && !r.u.includes("@")) p.names.add(r.u);
     if (r.d) p.devices.set(r.d, r.c?.o || "device");
