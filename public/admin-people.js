@@ -32,6 +32,9 @@ export async function refreshPeople({ force = false } = {}) {
       if (goto) return showTab("links");
       const share = e.target.closest("[data-goto-share]");
       if (share) return showTab("shares");
+      const unlink = e.target.closest("[data-unlink]");
+      if (unlink) return merge(unlink.dataset.unlink, "");
+      if (e.target.closest("#people-merge-go")) return merge($("people-merge-go").dataset.key, $("people-merge-into").value);
     });
   }
   if (loaded && !force) return renderList();
@@ -53,6 +56,17 @@ export function openPersonByKey(key) {
   refreshPeople().then(() => openPerson(key));
 }
 
+async function merge(key, email) {
+  const r = await fetch("/api/admin/people/merge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, email }) });
+  if (!r.ok) return alert((await r.json().catch(() => ({}))).error || "merge failed");
+  await refreshPeople({ force: true });
+  openPerson(email ? `email:${email}` : key);
+}
+const mergeBox = (p) => {
+  if (p.emails.length) return p.aliases?.length ? `<p class="muted">also known as ${p.aliases.map((a) => `<code>${esc(a.replace(/^(device|name):/, ""))}</code> <button type="button" class="link-like" data-unlink="${escAttr(a)}">unlink</button>`).join(", ")}</p>` : "";
+  const accounts = people.filter((x) => x.emails.length).map((x) => x.emails[0]);
+  return accounts.length ? `<p class="people-merge">${icon("link", "ico-sm")} same person as <select id="people-merge-into" class="sort-select">${accounts.map((a) => `<option>${esc(a)}</option>`).join("")}</select> <button type="button" class="mini" id="people-merge-go" data-key="${escAttr(p.key)}">merge</button></p>` : "";
+};
 const skeleton = (n) => `<div class="skel-list">${Array.from({ length: n }, (_, i) => `<div class="skel-card" style="--i:${i}"><span class="skel-avatar"></span><span class="skel-lines"><i style="width:40%"></i><i style="width:65%"></i></span></div>`).join("")}</div>`;
 
 function renderList() {
@@ -84,7 +98,7 @@ async function openPerson(key) {
   const name = displayName(p);
   host.innerHTML = `<button class="mini" id="people-back" type="button">${icon("arrow-left", "ico-sm")} all people</button>
     <article class="person-profile rise">
-      <header><span class="avatar avatar-lg${p.emails.length ? " avatar-known" : ""}">${esc(initials(name))}</span><div><h2>${esc(name)}</h2><p class="muted">${p.emails.map((e) => esc(e)).join(", ") || "not signed in with Google yet"}${p.names.length ? ` · typed as ${p.names.map((n) => `“${esc(n)}”`).join(", ")}` : ""}</p><p class="muted">first seen ${new Date(p.first).toLocaleString()} · last ${ago(p.last)} · ${p.events} events</p></div></header>
+      <header><span class="avatar avatar-lg${p.emails.length ? " avatar-known" : ""}">${esc(initials(name))}</span><div><h2>${esc(name)}</h2><p class="muted">${p.emails.map((e) => esc(e)).join(", ") || "not signed in with Google yet"}${p.names.length ? ` · typed as ${p.names.map((n) => `“${esc(n)}”`).join(", ")}` : ""}</p><p class="muted">first seen ${new Date(p.first).toLocaleString()} · last ${ago(p.last)} · ${p.events} events</p>${mergeBox(p)}</div></header>
       <div class="stat-grid">
         <div class="stat-card v3"><span class="stat-ico">${icon("upload")}</span><div><b>${p.uploads}</b><span class="stat-label">files uploaded · ${fmtBytes(p.bytes)}</span></div></div>
         <div class="stat-card v3"><span class="stat-ico">${icon("eye")}</span><div><b>${p.shareOpens}</b><span class="stat-label">share opens · ${p.views} views · ${p.downloads} downloads</span></div></div>

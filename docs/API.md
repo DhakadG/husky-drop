@@ -322,6 +322,9 @@ pixel work with sharp + libraw + libheif + exiftool.
 - `GET /api/admin/people?days` — visitor profiles from the last N days
   (default 90). Key is `email:<addr>`, `device:<hd_did>`, or `name:<typed>`.
 - `GET /api/admin/people/:key` — that person's events, newest first.
+- `POST /api/admin/people/merge` `{key, email}` — fold a `device:`/`name:`
+  profile into a Google account (empty `email` unlinks). Typed names that
+  only one signed-in account has ever used are merged automatically.
 
 Pages under `/d/` and `/s/` set an anonymous `hd_did` cookie (random 24 hex,
 HttpOnly, 400 days). Events carry it as `d` and the signed-in Google e-mail

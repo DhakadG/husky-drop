@@ -8081,3 +8081,4 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .alert-list { list-style: none; margin: 0; padding: 8px 14px; border: 1px solid rgba(240, 85, 107, 0.25); border-top: 0; border-radius: 0 0 12px 12px; display: grid; gap: 4px; font-size: 12.5px; }
 .alert-list li { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
 .alert-list li span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-merge { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0 0; font-size: 12.5px; color: var(--ink-soft); }

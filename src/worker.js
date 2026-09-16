@@ -88,7 +88,7 @@ import {
 import { imageSources, planImageJob, scanImages } from "./images.js";
 import { convertImageJob, deleteImageRule, listImageRules, runDueRules, runImageRule, upsertImageRule } from "./images-rules.js";
 import { adminLogs } from "./applog.js";
-import { adminPeople, adminPerson } from "./people.js";
+import { adminMerge, adminPeople, adminPerson } from "./people.js";
 import {
   controlImageJob,
   imageJobItems,
@@ -241,6 +241,7 @@ async function api(request, env, url, ctx) {
     if (m === "GET" && p === "/api/admin/me") return json({ ok: true });
     if (m === "GET" && p === "/api/admin/logs") return adminLogs(env, url);
     if (m === "GET" && p === "/api/admin/people") return adminPeople(env, url);
+    if (m === "POST" && p === "/api/admin/people/merge") return adminMerge(request, env);
     if (m === "GET" && p.startsWith("/api/admin/people/")) return adminPerson(env, decodeURIComponent(p.slice("/api/admin/people/".length)));
     if (m === "GET" && p === "/api/admin/overview") return adminOverview(env);
     if (m === "POST" && p === "/api/admin/maintenance/cleanup") return cleanupInactiveRecords(request, env);
