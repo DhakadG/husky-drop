@@ -85,6 +85,8 @@ import {
   startPreviewRun,
 } from "./previews.js";
 import { imageSources, planImageJob, scanImages } from "./images.js";
+import { convertImageJob, deleteImageRule, listImageRules, runDueRules, runImageRule, upsertImageRule } from "./images-rules.js";
+import { adminLogs } from "./applog.js";
 import {
   controlImageJob,
   imageJobItems,
@@ -99,6 +101,10 @@ import {
 export { LiveTracker } from "./live.js";
 
 export default {
+  // Nightly cron (wrangler triggers.crons): recurring image-archive rules.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runDueRules(env, ctx));
+  },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const p = url.pathname;
@@ -220,6 +226,7 @@ async function api(request, env, url, ctx) {
     if (!(await isAdmin(request, env))) return json({ error: "unauthorized" }, 401);
     if (!sameOriginOk(request, url)) return json({ error: "bad origin" }, 403);
     if (m === "GET" && p === "/api/admin/me") return json({ ok: true });
+    if (m === "GET" && p === "/api/admin/logs") return adminLogs(env, url);
     if (m === "GET" && p === "/api/admin/overview") return adminOverview(env);
     if (m === "POST" && p === "/api/admin/maintenance/cleanup") return cleanupInactiveRecords(request, env);
     if (m === "GET" && p === "/api/admin/timeseries") return adminTimeseries(env, url);
@@ -251,7 +258,7 @@ async function api(request, env, url, ctx) {
       const rest = p.slice("/api/admin/previews/".length);
       if (m === "GET" && rest === "pending") return listPendingPreviews(request, env);
       if (m === "GET" && rest === "overview") return previewsOverview(request, env);
-      if (m === "POST" && rest === "report") return reportPreviewRun(request, env);
+      if (m === "POST" && rest === "report") return reportPreviewRun(request, env, ctx);
       if (m === "POST" && rest === "run") return startPreviewRun(request, env);
       if (m === "POST" && rest === "retry") return retryFailedPreviews(request, env);
       if (m === "POST" && rest === "reindex") return reindexPreviews(request, env);
@@ -264,16 +271,21 @@ async function api(request, env, url, ctx) {
       if (m === "POST" && seg[0] === "plan") return planImageJob(request, env);
       if (m === "POST" && seg[0] === "scan") return scanImages(request, env);
       if (m === "GET" && seg[0] === "sources") return imageSources(env);
+      if (m === "GET" && seg[0] === "rules" && !seg[1]) return listImageRules(env);
+      if (m === "POST" && seg[0] === "rules" && !seg[1]) return upsertImageRule(request, env, ctx);
+      if (m === "DELETE" && seg[0] === "rules" && seg[1]) return deleteImageRule(env, ctx, cleanText(seg[1], 40));
+      if (m === "POST" && seg[0] === "rules" && seg[1] && seg[2] === "run") return runImageRule(env, ctx, cleanText(seg[1], 40));
       if (m === "GET" && seg[0] === "jobs" && !seg[1]) return listImageJobs(env);
       if (m === "GET" && seg[0] === "source" && seg[1]) return imageSource(request, env, seg[1]);
       if (seg[0] === "jobs" && seg[1]) {
         const jobId = cleanText(seg[1], 40);
         if (m === "GET" && seg[2] === "next") return nextImageBatch(request, env, jobId);
         if (m === "GET" && seg[2] === "items") return imageJobItems(env, jobId);
-        if (m === "POST" && seg[2] === "report") return reportImageBatch(request, env, jobId);
-        if (m === "PUT" && seg[2] === "file" && seg[3]) return putImageResult(request, env, jobId, seg[3]);
-        if (m === "POST" && ["start", "pause", "resume", "cancel"].includes(seg[2])) return controlImageJob(request, env, jobId, seg[2]);
-        if (m === "POST" && seg[2] === "undo") return undoImageJob(env, jobId);
+        if (m === "POST" && seg[2] === "report") return reportImageBatch(request, env, ctx, jobId);
+        if (m === "PUT" && seg[2] === "file" && seg[3]) return putImageResult(request, env, ctx, jobId, seg[3]);
+        if (m === "POST" && ["start", "pause", "resume", "cancel"].includes(seg[2])) return controlImageJob(request, env, ctx, jobId, seg[2]);
+        if (m === "POST" && seg[2] === "undo") return undoImageJob(env, ctx, jobId);
+        if (m === "POST" && seg[2] === "convert") return convertImageJob(env, ctx, jobId, cleanText((await request.json().catch(() => ({}))).to || "", 10));
       }
     }
     if (m === "DELETE" && p.startsWith("/api/admin/uploads/")) {

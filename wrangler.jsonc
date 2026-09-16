@@ -44,6 +44,8 @@
     "CLARITY_PROJECT_ID": "xjtpz5cm04"
   },
   "routes": [{ "pattern": "dropbox.losthusky.qzz.io", "custom_domain": true }],
+  // Nightly at 22:45 UTC (04:15 IST): recurring image-archive rules.
+  "triggers": { "crons": ["45 22 * * *"] },
   "observability": {
     "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": true, "persist": true },
     "traces": { "enabled": false, "head_sampling_rate": 1, "persist": true }

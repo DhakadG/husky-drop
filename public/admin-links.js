@@ -69,6 +69,12 @@ export let folderParentLabel = "My Drive";
 export let folderBreadcrumbs = [{ id: "root", name: "My Drive" }];
 let selectedFolderName = "";
 let folderPickerMode = "drop";
+// "images" mode hands picks to the Image archive tab and keeps the dialog open.
+let imagePickHandler = null;
+export function setImagePickHandler(fn) {
+  imagePickHandler = fn;
+}
+let pickerSeq = 0;
 export const shareSelectedFolders = new Map();
 export const shareEditSelectedFolders = new Map();
 export let dropEditFolder = null;
@@ -123,20 +129,34 @@ export function toggleExpiredLinks() {
   $("expired-rows").classList.toggle("expanded", !expanded);
 }
 
-export async function openFolderPicker(parentId, mode = folderPickerMode) {
-  folderPickerMode = ["share", "share-edit", "drop-edit"].includes(mode) ? mode : "drop";
+const SKELETON = Array.from({ length: 5 }, (_, i) => `<div class="folder-option folder-skeleton" style="--i:${i}"><span class="folder-skel-ico"></span><span class="folder-skel-text" style="width:${45 + ((i * 17) % 40)}%"></span><span class="folder-skel-btn"></span></div>`).join("");
+
+export async function openFolderPicker(parentId, mode = folderPickerMode, opener = null) {
+  folderPickerMode = ["share", "share-edit", "drop-edit", "images"].includes(mode) ? mode : "drop";
   const shareMode = folderPickerMode.startsWith("share");
+  const multi = shareMode || folderPickerMode === "images";
   folderParentId = parentId || "root";
-  $("folder-picker-title").textContent = shareMode ? "Add Drive folders" : "Choose a destination";
-  $("folder-select-current").textContent = shareMode ? "Add this folder" : "Select this folder";
+  $("folder-picker-title").textContent = folderPickerMode === "images" ? "Pick folders to archive" : shareMode ? "Add Drive folders" : "Choose a destination";
+  $("folder-select-current").textContent = multi ? "Add this folder" : "Select this folder";
+  $("folder-create-row")?.classList.toggle("hidden", folderPickerMode === "images");
   const dialog = $("drive-picker-dialog");
   if (!dialog.open) dialog.showModal();
-  $("folder-list").innerHTML = '<div class="empty">Loading Drive folders…</div>';
+  const seq = ++pickerSeq;
+  const list = $("folder-list");
+  // The previous listing fades while the new one loads; the row that was
+  // clicked shows a busy state so the click is acknowledged instantly.
+  opener?.classList.add("is-busy");
+  list.classList.add("is-loading");
   $("folder-err").textContent = "";
+  const skeletonTimer = setTimeout(() => {
+    if (seq === pickerSeq) list.innerHTML = SKELETON;
+  }, 180);
   try {
     const response = await fetch(`/api/admin/drive/folders?parent=${encodeURIComponent(folderParentId)}`);
     const data = await response.json().catch(() => ({ folders: [] }));
     if (!response.ok) throw new Error(data.error || "Drive folder list failed.");
+    if (seq !== pickerSeq) return;
+    clearTimeout(skeletonTimer);
     folderBreadcrumbs = data.breadcrumbs?.length ? data.breadcrumbs : [{ id: "root", name: "My Drive" }];
     const current = folderBreadcrumbs.at(-1);
     folderParentId = current?.id || folderParentId;
@@ -144,21 +164,26 @@ export async function openFolderPicker(parentId, mode = folderPickerMode) {
     renderFolderBreadcrumbs();
     renderRecentFolders();
     $("folder-up").disabled = folderBreadcrumbs.length <= 1;
-    $("folder-select-current").disabled = shareMode && folderParentId === "root";
-    $("folder-list").innerHTML = (data.folders || []).length
-      ? data.folders.map((folder) => {
-        const selectedMap = folderPickerMode === "share-edit" ? shareEditSelectedFolders : shareSelectedFolders;
-        const added = shareMode && selectedMap.has(folder.id);
-        return `<div class="folder-option"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}">${icon("folder-open")}<span>${esc(folder.name)}</span><span class="folder-open-cue">Open →</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}" ${added ? "disabled" : ""}>${added ? "Added" : shareMode ? "Add" : "Select"}</button></div>`;
+    $("folder-select-current").disabled = multi && folderParentId === "root";
+    const selectedMap = folderPickerMode === "share-edit" ? shareEditSelectedFolders : shareSelectedFolders;
+    list.innerHTML = (data.folders || []).length
+      ? data.folders.map((folder, i) => {
+        const added = (shareMode && selectedMap.has(folder.id)) || (folderPickerMode === "images" && imagePickHandler?.has?.(folder.id));
+        return `<div class="folder-option folder-enter" style="--i:${Math.min(i, 12)}"><button class="folder-open" type="button" data-open-folder-picker="${escAttr(folder.id)}">${icon("folder")}<span>${esc(folder.name)}</span><span class="folder-open-cue">${icon("chevron-right", "ico-sm")}</span></button><button class="mini folder-pick" type="button" data-pick-folder="${escAttr(folder.id)}" data-folder-name="${escAttr(folder.name)}" ${added ? "disabled" : ""}>${added ? `${icon("check", "ico-sm")} Added` : multi ? "Add" : "Select"}</button></div>`;
       }).join("")
-      : '<div class="empty">No child folders here.</div>';
-    $("folder-list").querySelectorAll("[data-pick-folder]").forEach((button) => button.addEventListener("click", () => {
+      : `<div class="empty folder-hint folder-enter">${icon("folder-open")} No sub-folders here${multi ? " - use “Add this folder” above." : "."}</div>`;
+    list.querySelectorAll("[data-pick-folder]").forEach((button) => button.addEventListener("click", () => {
+      button.classList.add("is-busy");
       selectDriveFolder(button.dataset.pickFolder, button.dataset.folderName);
     }));
-    $("folder-list").querySelectorAll("[data-open-folder-picker]").forEach((button) => button.addEventListener("click", () => openFolderPicker(button.dataset.openFolderPicker)));
+    list.querySelectorAll("[data-open-folder-picker]").forEach((button) => button.addEventListener("click", () => openFolderPicker(button.dataset.openFolderPicker, folderPickerMode, button)));
   } catch (error) {
-    $("folder-list").innerHTML = "";
-    $("folder-err").textContent = error.message;
+    if (seq !== pickerSeq) return;
+    clearTimeout(skeletonTimer);
+    list.innerHTML = `<div class="empty folder-hint folder-enter">${icon("circle-alert")} ${esc(error.message)} <button class="mini" type="button" data-open-folder-picker="${escAttr(folderParentId)}">retry</button></div>`;
+    list.querySelector("[data-open-folder-picker]")?.addEventListener("click", () => openFolderPicker(folderParentId, folderPickerMode));
+  } finally {
+    if (seq === pickerSeq) list.classList.remove("is-loading");
   }
 }
 
@@ -177,6 +202,11 @@ export function openParentFolder() {
 
 export function selectDriveFolder(id, name) {
   rememberFolder(id, name);
+  if (folderPickerMode === "images") {
+    imagePickHandler?.(id, name, folderBreadcrumbs.map((c) => c.name).concat(folderBreadcrumbs.at(-1)?.id === id ? [] : [name]).join(" / "));
+    openFolderPicker(folderParentId, folderPickerMode);
+    return;
+  }
   if (folderPickerMode.startsWith("share")) {
     const pathParts = folderBreadcrumbs.map((crumb) => crumb.name);
     if (folderBreadcrumbs.at(-1)?.id !== id) pathParts.push(name || "Folder");

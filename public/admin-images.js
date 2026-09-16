@@ -1,6 +1,8 @@
 import { $, icon } from "./admin-state.js";
 import { flash } from "./admin.js";
 import { TYPE_LABELS, summarize, trialCandidates, trialEncode } from "./admin-images-plan.js";
+import { openFolderPicker, setImagePickHandler } from "./admin-links.js";
+import { initRules, loadRules, ruleAction, saveRule } from "./admin-images-rules.js";
 
 // Image archive tab. Flow: pick sources → scan once → tune the recipe with
 // instant estimates over the scanned rows → start (the worker re-plans and
@@ -15,6 +17,19 @@ const PRESETS = [
   { key: "tiny", name: "Smallest", blurb: "AVIF at 6 MP, GPS removed. For sharing, not editing.", icon: "wand-sparkles", maxMp: 6, quality: 75, format: "avif", metadata: "strip-gps", targetMb: 0 },
 ];
 const MP_STEPS = [0, 2, 4, 6, 8, 12, 16, 24];
+const MP_CARDS = MP_STEPS.map((v) => ({ v, name: v ? `${v} MP` : "Keep", sub: v ? `${Math.round(Math.sqrt(v * 1e6 * 1.5))}×${Math.round(Math.sqrt((v * 1e6) / 1.5))}` : "no downscale", hint: { 0: "original pixels", 2: "phone screens", 4: "4K TV", 6: "small prints", 8: "A4 print", 12: "A3 print", 16: "large print", 24: "full-frame" }[v] }));
+const FORMAT_CARDS = [
+  { v: "same", name: "Same as source", sub: "JPEG stays JPEG, PNG stays PNG", hint: "RAW · HEIC · TIFF → JPEG" },
+  { v: "jpeg", name: "JPEG", sub: "opens everywhere", hint: "best for photos" },
+  { v: "webp", name: "WebP", sub: "~25% smaller than JPEG", hint: "screenshots, web" },
+  { v: "avif", name: "AVIF", sub: "~50% smaller than JPEG", hint: "slow encode, newer apps" },
+];
+const META_CARDS = [
+  { v: "keep", name: "Keep everything", sub: "camera, lens, date, GPS", hint: "for your own archive" },
+  { v: "strip-gps", name: "Remove GPS", sub: "camera & date kept", hint: "for sharing" },
+  { v: "strip", name: "Strip", sub: "colour profile only", hint: "for publishing" },
+];
+const optCards = (name, cards, current) => `<div class="ia-opts" data-seg="${name}">${cards.map((c) => `<button type="button" data-value="${escAttr(String(c.v))}" aria-pressed="${String(c.v) === String(current)}"><b>${esc(c.name)}</b><span>${esc(c.sub)}</span><small>${esc(c.hint)}</small></button>`).join("")}</div>`;
 const MODES = [
   { key: "copy", icon: "files", name: "Copy", blurb: "Originals untouched. New files go to _compressed/… mirroring the folder tree. Undo removes the copies." },
   { key: "archive", icon: "folder-check", name: "Archive", blurb: "Originals move to _archive/… (instant, no copy). New files take their place. Undo moves them back." },
@@ -24,7 +39,22 @@ const SPEED = ["gentle · 1 at a time", "2 in parallel", "3 in parallel", "balan
 
 const roots = new Map(); // id -> name
 const excluded = new Set(); // folder ids unticked in the tree
-const cfg = { maxMp: 8, quality: 82, format: "same", metadata: "keep", mode: "copy", recursive: true, onlyIfSmaller: true, minMb: 1.5, targetMb: 0, exclude: "", excludeRe: "", skipRecentDays: 0, skipSidecar: true, largestFirst: false, parallel: 4, types: new Set(Object.keys(TYPE_LABELS)) };
+const cfg = { maxMp: 8, quality: 82, format: "same", metadata: "keep", mode: "copy", recursive: true, onlyIfSmaller: true, minMb: 1.5, targetMb: 0, exclude: "", excludeRe: "", skipRecentDays: 0, skipSidecar: true, largestFirst: false, parallel: 4, notify: true, types: new Set(Object.keys(TYPE_LABELS)) };
+let every = "daily";
+let known = { shares: [], links: [] };
+const RECENT_KEY = "lhdb_ia_recent";
+const recentFolders = () => {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+  } catch {
+    return [];
+  }
+};
+const rememberRecent = (id, name) => {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify([{ id, name }, ...recentFolders().filter((f) => f.id !== id)].slice(0, 8)));
+  } catch {}
+};
 let scan = null;
 let state = null;
 let pollTimer = 0;
@@ -32,7 +62,6 @@ let trial = null;
 const post = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
 const fmtEta = (s) => (s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
-const seg = (name, items, current) => `<div class="seg-control ia-seg" role="group" data-seg="${name}">${items.map(([v, label]) => `<button type="button" data-value="${escAttr(String(v))}" aria-pressed="${String(v) === String(current)}">${esc(label)}</button>`).join("")}</div>`;
 const toggle = (key, label, on, hint = "") => `<label class="ia-toggle"><input type="checkbox" data-toggle="${key}" ${on ? "checked" : ""}><span class="ia-switch" aria-hidden="true"></span><span>${esc(label)}${hint ? `<small>${esc(hint)}</small>` : ""}</span></label>`;
 
 export async function refreshImages() {
@@ -66,23 +95,22 @@ function shell() {
   <div class="ia-main">
     <section class="panel ia-step">
       <header class="ia-step-head"><span class="ia-step-n">1</span><div><h2>Sources</h2><p class="muted">Folders this app already knows are one click away; anything else by link or by browsing Drive.</p></div></header>
-      <div id="ia-quick" class="ia-quick"><span class="muted">Loading your shares and drop links…</span></div>
-      <div class="ia-folder-row"><input id="ia-folder-input" class="ia-input" placeholder="Paste a Drive folder link or id" aria-label="Drive folder link or id"><button class="mini" id="ia-folder-add" type="button">${icon("plus", "ico-sm")} add</button><button class="mini" id="ia-folder-browse" type="button">${icon("folder-open", "ico-sm")} browse</button></div>
-      <div id="ia-browser" class="ia-browser hidden"></div>
+      <div class="ia-folder-row"><select id="ia-known" class="ia-input ia-select" aria-label="Known folders"><option value="">Choose a share or drop-link folder…</option></select><input id="ia-folder-input" class="ia-input" placeholder="…or paste a Drive folder link" aria-label="Drive folder link or id"><button class="mini" id="ia-folder-add" type="button">${icon("plus", "ico-sm")} add</button><button class="mini" id="ia-folder-browse" type="button">${icon("folder-open", "ico-sm")} browse Drive</button></div>
+      <div id="ia-recent" class="ia-quick"></div>
       <div class="ia-roots-row"><div id="ia-chips" class="ia-chips"></div><button class="btn" id="ia-scan" type="button" disabled>${icon("search", "ico-sm")} Scan</button></div>
       <div id="ia-tree"></div>
     </section>
     <section class="panel ia-step">
       <header class="ia-step-head"><span class="ia-step-n">2</span><div><h2>Recipe</h2><p class="muted">Presets show what they would do to the scanned photos. Every control updates the impact card instantly.</p></div></header>
       <div class="ia-presets" id="ia-presets"></div>
-      <div class="ia-field"><label>Resolution cap</label>${seg("maxMp", MP_STEPS.map((v) => [v, v ? `${v} MP` : "keep"]), cfg.maxMp)}<small class="muted" id="ia-mp-note"></small></div>
+      <div class="ia-field"><label>Resolution cap</label>${optCards("maxMp", MP_CARDS, cfg.maxMp)}<small class="muted" id="ia-mp-note"></small></div>
       <div class="ia-field"><label>Quality <output id="ia-q-out">${cfg.quality}</output></label><input type="range" id="ia-quality" class="ia-range" min="50" max="95" value="${cfg.quality}" aria-label="Quality"><small class="muted">50 visibly soft · 75–85 sweet spot · 90+ near-lossless, twice the bytes. Ignored per photo when a size target is set.</small></div>
       <div class="ia-two">
-        <div class="ia-field"><label>Format</label>${seg("format", [["same", "same as source"], ["jpeg", "JPEG"], ["webp", "WebP"], ["avif", "AVIF"]], cfg.format)}<small class="muted">RAW, HEIC and TIFF always become JPEG under "same". PNG stays PNG - screenshots rarely shrink; pick WebP for those.</small></div>
+        <div class="ia-field"><label>Format</label>${optCards("format", FORMAT_CARDS, cfg.format)}</div>
         <div class="ia-field"><label>Size target per photo</label><div class="ia-inline"><input type="number" id="ia-target" class="ia-input ia-num" min="0" step="0.5" value="0"><span class="muted">MB · 0 = off. Quality is tuned per photo (≤4 passes) until it lands within ±30%.</span></div></div>
       </div>
       <div class="ia-two">
-        <div class="ia-field"><label>Metadata</label>${seg("metadata", [["keep", "keep all"], ["strip-gps", "remove GPS"], ["strip", "strip"]], cfg.metadata)}<small class="muted">Colour profile always kept; "strip" drops EXIF, XMP, IPTC (camera, date, lens).</small></div>
+        <div class="ia-field"><label>Metadata</label>${optCards("metadata", META_CARDS, cfg.metadata)}</div>
         <div class="ia-field"><label>File types</label><div class="ia-chipset" id="ia-types"></div></div>
       </div>
       <div class="ia-field"><label>Processing speed <output id="ia-speed-out">${SPEED[cfg.parallel - 1]}</output></label><input type="range" id="ia-parallel" class="ia-range" min="1" max="8" value="${cfg.parallel}" aria-label="Files processed in parallel"><small class="muted">Files encoded at once on the runner (4 cores). Higher is faster until the Drive link saturates; RAW develops are CPU-bound, JPEGs are network-bound.</small></div>
@@ -102,6 +130,7 @@ function shell() {
     <section class="panel ia-step">
       <header class="ia-step-head"><span class="ia-step-n">3</span><div><h2>Originals</h2><p class="muted">What happens to each original after its smaller copy is stored and verified.</p></div></header>
       <div class="ia-modes">${MODES.map((m) => `<button type="button" class="ia-mode${m.danger ? " ia-mode-danger" : ""}" data-mode="${m.key}" aria-pressed="${cfg.mode === m.key}"><span class="ia-mode-ico">${icon(m.icon)}</span><b>${esc(m.name)}</b><small>${esc(m.blurb)}</small></button>`).join("")}</div>
+      <div class="ia-toggles">${toggle("notify", "Email me a digest when the job finishes", true)}</div>
       <div id="ia-confirm" class="ia-confirm hidden"><label for="ia-confirm-input">Type <code>REPLACE</code> to allow overwriting originals</label><input id="ia-confirm-input" class="ia-input ia-num" autocomplete="off"><small class="muted">Before replacing anything, run the same recipe once in Copy mode on a small folder and check the results in Drive.</small></div>
       <div class="ia-trial">
         <div class="ia-trial-head"><div><b>Try it on one photo</b><small class="muted">Encodes one scanned JPEG/PNG/WebP right here in the browser - nothing is written anywhere.</small></div><div class="section-tools"><button class="mini" id="ia-trial-largest" type="button" disabled>${icon("image", "ico-sm")} largest photo</button><button class="mini" id="ia-trial-random" type="button" disabled>${icon("refresh-cw", "ico-sm")} random photo</button></div></div>
@@ -111,6 +140,11 @@ function shell() {
   </div>
   <aside class="ia-side"><div class="panel ia-plan" id="ia-impact"></div></aside>
   </div>
+  <section class="panel ia-step">
+    <header class="ia-step-head"><span class="ia-step-n">${icon("clock", "ico-sm")}</span><div><h2>Recurring rules</h2><p class="muted">Save the current sources + recipe as a rule. The worker runs due rules nightly at 04:15 IST; new photos in those folders get archived without you touching anything.</p></div></header>
+    <div class="ia-rule-form"><input id="ia-rule-name" class="ia-input" placeholder="Rule name, e.g. Nightly: Pushkar drop-link" aria-label="Rule name"><div class="seg-control ia-seg" data-every><button type="button" data-value="daily" aria-pressed="true">daily</button><button type="button" data-value="weekly" aria-pressed="false">weekly</button><button type="button" data-value="monthly" aria-pressed="false">monthly</button></div><button class="mini" id="ia-rule-save" type="button" disabled>${icon("save", "ico-sm")} Save as rule</button></div>
+    <div id="ia-rules"></div>
+  </section>
   <section class="panel"><div class="section-title"><div><p class="eyebrow">jobs</p><h2>${icon("zap")} Progress &amp; history</h2></div><div class="section-tools"><button class="mini" id="ia-refresh" type="button">${icon("refresh-cw", "ico-sm")} Refresh</button></div></div><div id="ia-jobs"></div></section>`;
 }
 
@@ -129,6 +163,8 @@ function sync() {
   $("ia-mp-note").textContent = cfg.maxMp ? `≈ ${Math.round(Math.sqrt(cfg.maxMp * 1e6 * 1.5))}×${Math.round(Math.sqrt(cfg.maxMp * 1e6 / 1.5))} for a 3:2 photo` : "keeps the original pixel count";
   $("ia-exclude-note").textContent = cfg.exclude && !cfg.excludeRe ? "invalid regex - ignored" : "";
   $("ia-scan").disabled = !roots.size;
+  $("ia-rule-save").disabled = !roots.size;
+  for (const b of document.querySelectorAll("[data-every] button")) b.setAttribute("aria-pressed", String(b.dataset.value === every));
   const sum = scan ? summarize(scan, cfg, excluded) : null;
   $("ia-types").innerHTML = Object.entries(TYPE_LABELS).map(([k, l]) => `<button type="button" class="ia-chip" data-type="${k}" aria-pressed="${cfg.types.has(k)}">${esc(l)}${sum?.byType[k] ? ` <b>${sum.byType[k].count}</b>` : ""}</button>`).join("");
   $("ia-presets").innerHTML = PRESETS.map((p) => {
@@ -188,31 +224,33 @@ function renderImpact(sum) {
 
 // ---- sources ----
 async function loadSources() {
-  const box = $("ia-quick");
+  renderRecent();
   try {
-    const d = await fetch("/api/admin/images/sources").then((r) => r.json());
-    const chips = [];
-    for (const s of d.shares || []) for (const f of s.folders) chips.push(`<button type="button" class="ia-quick-chip" data-pick-folder="${escAttr(f.id)}" data-name="${escAttr(f.name)}" title="share ${escAttr(s.label)}">${icon("share-2", "ico-sm")} ${esc(f.name)}<small>${esc(s.label)}</small></button>`);
-    for (const l of d.links || []) chips.push(`<button type="button" class="ia-quick-chip" data-pick-folder="${escAttr(l.folder.id)}" data-name="${escAttr(l.folder.name)}" title="drop link ${escAttr(l.label)}">${icon("download", "ico-sm")} ${esc(l.folder.name)}<small>${esc(l.label)}</small></button>`);
-    box.innerHTML = chips.join("") || `<span class="muted">No shares or drop links with folders yet.</span>`;
-  } catch {
-    box.innerHTML = "";
-  }
+    known = await fetch("/api/admin/images/sources").then((r) => r.json());
+    const opt = (id, name, label) => `<option value="${escAttr(id)}" data-name="${escAttr(name)}">${esc(name)}${label && label !== name ? ` — ${esc(label)}` : ""}</option>`;
+    const shares = (known.shares || []).flatMap((s) => s.folders.map((f) => opt(f.id, f.name, s.label)));
+    const links = (known.links || []).map((l) => opt(l.folder.id, l.folder.name, l.label));
+    $("ia-known").innerHTML = `<option value="">Choose a share or drop-link folder…</option>${shares.length ? `<optgroup label="Share folders">${shares.join("")}</optgroup>` : ""}${links.length ? `<optgroup label="Drop-link folders">${links.join("")}</optgroup>` : ""}`;
+  } catch {}
+  initRules({ roots, cfg, options, known: () => known, getEvery: () => every, setEvery: (v) => (every = v), renderRoots, refresh: refreshImages });
+  loadRules();
 }
+function renderRecent() {
+  const recent = recentFolders();
+  $("ia-recent").innerHTML = recent.length ? `<span class="muted ia-recent-label">recent</span>${recent.map((f) => `<button type="button" class="ia-quick-chip" data-pick-folder="${escAttr(f.id)}" data-name="${escAttr(f.name)}">${icon("folder", "ico-sm")} ${esc(f.name)}</button>`).join("")}` : "";
+}
+function addRoot(id, name) {
+  roots.set(id, name);
+  rememberRecent(id, name);
+  renderRecent();
+  renderRoots();
+}
+
 function renderRoots() {
   $("ia-chips").innerHTML = roots.size ? [...roots].map(([id, name]) => `<span class="chip ia-folder-chip">${icon("folder", "chip-icon")}${esc(name)}<button type="button" class="ia-chip-x" data-remove-folder="${escAttr(id)}" aria-label="remove ${escAttr(name)}">${icon("x", "ico-sm")}</button></span>`).join("") : `<span class="muted">No folders picked yet.</span>`;
   scan = null;
   excluded.clear();
   sync();
-}
-async function browse(parent = "root") {
-  const box = $("ia-browser");
-  box.classList.remove("hidden");
-  box.innerHTML = `<p class="muted">Loading…</p>`;
-  const d = await fetch(`/api/admin/drive/folders?parent=${encodeURIComponent(parent)}`).then((r) => r.json());
-  const here = d.breadcrumbs?.at(-1);
-  box.innerHTML = `<div class="ia-crumbs">${(d.breadcrumbs || []).map((c) => `<button class="mini" type="button" data-browse="${escAttr(c.id)}">${esc(c.name)}</button>`).join(`<span class="muted">/</span>`)}${parent !== "root" ? `<button class="mini ia-use" type="button" data-pick-folder="${escAttr(parent)}" data-name="${escAttr(here?.name || "Folder")}">${icon("check", "ico-sm")} use "${esc(here?.name || "folder")}"</button>` : ""}<button class="mini" type="button" id="ia-browser-close" aria-label="close">${icon("x", "ico-sm")}</button></div>
-    <ul class="ia-folder-list">${(d.folders || []).map((f) => `<li><button type="button" class="ia-folder-open" data-browse="${escAttr(f.id)}">${icon("folder", "ico-sm")} ${esc(f.name)}</button><button class="mini" type="button" data-pick-folder="${escAttr(f.id)}" data-name="${escAttr(f.name)}">add</button></li>`).join("") || `<li class="muted">No sub-folders here.</li>`}</ul>`;
 }
 async function addFolderFromInput() {
   const raw = $("ia-folder-input").value.trim();
@@ -221,13 +259,12 @@ async function addFolderFromInput() {
   const r = await fetch(`/api/admin/drive/folders?parent=${encodeURIComponent(id)}`);
   const d = await r.json().catch(() => ({}));
   if (!r.ok) return flash($("ia-folder-add"), d.error || "folder not found");
-  roots.set(id, d.breadcrumbs?.at(-1)?.name || id);
   $("ia-folder-input").value = "";
-  renderRoots();
+  addRoot(id, d.breadcrumbs?.at(-1)?.name || id);
 }
 async function doScan(button) {
   button.disabled = true;
-  $("ia-tree").innerHTML = `<p class="muted">${icon("loader-circle", "ico-sm")} Reading folder metadata from Drive…</p>`;
+  $("ia-tree").innerHTML = `<div class="ia-skel-rows">${Array.from({ length: 4 }, (_, i) => `<div class="ia-skel-row" style="--i:${i}"></div>`).join("")}</div>`;
   try {
     const r = await post("/api/admin/images/scan", { folderIds: [...roots.keys()], recursive: true });
     const d = await r.json();
@@ -254,7 +291,7 @@ async function runTrial(pickRandom) {
     const t = await trialEncode(row, cfg, (stage) => ($("ia-trial-stage").textContent = stage));
     const urls = [URL.createObjectURL(t.before.blob), URL.createObjectURL(t.after.blob)];
     trial = { urls };
-    box.innerHTML = `<div class="ia-compare" id="ia-compare" style="--split:50%"><img src="${urls[0]}" alt="original"><img src="${urls[1]}" alt="re-encoded" class="ia-compare-after"><input type="range" min="0" max="100" value="50" aria-label="compare slider"><span class="ia-compare-tag ia-compare-tag-l">original · ${fmtBytes(row.s)} · ${t.before.w}×${t.before.h}</span><span class="ia-compare-tag ia-compare-tag-r">after · ~${fmtBytes(t.after.blob.size)} · ${t.after.w}×${t.after.h}</span></div>
+    box.innerHTML = `<div class="ia-compare" id="ia-compare" style="--split:50%"><img src="${urls[0]}" alt="original"><img src="${urls[1]}" alt="re-encoded" class="ia-compare-after"><input type="range" min="0" max="100" value="50" aria-label="compare slider"><span class="ia-compare-tag ia-compare-tag-l">original · ${fmtBytes(row.s)} · ${t.before.w}×${t.before.h} (resampled, not recompressed)</span><span class="ia-compare-tag ia-compare-tag-r">after · ~${fmtBytes(t.after.blob.size)} · ${t.after.w}×${t.after.h}</span></div>
       <div class="ia-trial-foot"><span><b>${pct(row.s - t.after.blob.size, row.s)}% smaller</b> at this recipe</span><label class="ia-toggle"><input type="checkbox" id="ia-compare-zoom"><span class="ia-switch" aria-hidden="true"></span><span>1:1 pixels</span></label><small class="muted">${esc(t.note)}</small></div>`;
   } catch (error) {
     box.innerHTML = `<p class="muted">${icon("circle-alert", "ico-sm")} ${esc(error.message)}</p>`;
@@ -275,11 +312,13 @@ function renderJobs() {
     if (["paused", "pausing"].includes(j.status)) ctl.push(`<button class="mini" data-job-action="resume" data-job="${j.id}" type="button">${icon("play", "ico-sm")} resume</button>`);
     if (["running", "pausing", "paused", "planned", "queued"].includes(j.status)) ctl.push(`<button class="mini danger" data-job-action="cancel" data-job="${j.id}" type="button">cancel</button>`);
     if (["done", "paused", "cancelled"].includes(j.status) && j.options.mode !== "replace" && p.done) ctl.push(`<button class="mini danger" data-job-undo="${j.id}" type="button">${icon("rotate-ccw", "ico-sm")} undo</button>`);
+    if (["done", "paused", "cancelled"].includes(j.status) && j.options.mode !== "replace" && p.done) ctl.push(`<button class="mini" data-job-convert="${j.options.mode === "copy" ? "archive" : "copy"}" data-job="${j.id}" type="button">${icon("rotate-cw", "ico-sm")} switch to ${j.options.mode === "copy" ? "archive" : "copy"}</button>`);
     for (const id of (j.outputs || []).slice(0, 3)) ctl.push(`<a class="mini" href="https://drive.google.com/drive/folders/${escAttr(id)}" target="_blank" rel="noopener">${icon("external-link", "ico-sm")} output folder</a>`);
+    for (const rid of (j.runIds || []).slice(-2)) ctl.push(`<a class="mini" href="https://github.com/DhakadG/husky-drop/actions/runs/${escAttr(rid)}" target="_blank" rel="noopener">${icon("terminal", "ico-sm")} runner log</a>`);
     ctl.push(`<button class="mini" data-job-items="${j.id}" type="button">${icon("list", "ico-sm")} files</button>`);
     const note = { running: eta ? `${rate.toFixed(1)} files/min · ~${eta} left` : "starting…", pausing: "stops after the current files", paused: "resume to continue where it left off", queued: "starts when the running job finishes", planned: "waiting for start", done: `finished ${j.finishedAt ? new Date(j.finishedAt).toLocaleString() : ""}`, cancelled: "cancelled - files already written stay", undone: "undone - outputs removed" }[j.status] || "";
     return `<article class="ia-job" data-status="${j.status}">
-      <div class="ia-job-head"><div><b>${(j.roots || []).map((r) => esc(r.name)).join(", ") || esc(j.id)}</b><small class="muted">${esc(j.id)} · ${j.options.mode} · ${j.options.maxMp ? `${j.options.maxMp} MP` : "full res"} · ${j.options.targetBytes ? `~${fmtBytes(j.options.targetBytes)} target` : `q${j.options.quality}`} · ${j.options.format}${j.options.parallel ? ` · ×${j.options.parallel}` : ""}</small></div><span class="chip ia-status" data-status="${j.status}">${esc(j.status)}</span></div>
+      <div class="ia-job-head"><div><b>${(j.roots || []).map((r) => esc(r.name)).join(", ") || esc(j.id)}${j.rule ? ` <span class="ia-tag">rule</span>` : ""}${j.converting ? ` <span class="ia-tag">converting → ${esc(j.converting)}</span>` : ""}</b><small class="muted">${esc(j.id)} · ${j.options.mode} · ${j.options.maxMp ? `${j.options.maxMp} MP` : "full res"} · ${j.options.targetBytes ? `~${fmtBytes(j.options.targetBytes)} target` : `q${j.options.quality}`} · ${j.options.format}${j.options.parallel ? ` · ×${j.options.parallel}` : ""}</small></div><span class="chip ia-status" data-status="${j.status}">${esc(j.status)}</span></div>
       <div class="ia-bar ia-bar-progress"><i style="width:${pct(done, total)}%"></i></div>
       <div class="ia-job-stats"><span><b>${done}</b>/${total} files</span><span><b>${fmtBytes(p.bytesIn)}</b> → <b>${fmtBytes(p.bytesOut)}</b>${p.bytesIn ? ` <em>−${pct(p.bytesIn - p.bytesOut, p.bytesIn)}%</em>` : ""}</span>${p.failed ? `<span class="img-bad">${p.failed} failed</span>` : ""}${p.skipped ? `<span class="muted">${p.skipped} skipped</span>` : ""}<span class="muted">${esc(note)}</span></div>
       <div class="ia-job-ctl">${ctl.join("")}</div>
@@ -313,7 +352,7 @@ async function startJob(button) {
     const r = await post("/api/admin/images/plan", options());
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || `plan ${r.status}`);
-    const s = await post(`/api/admin/images/jobs/${d.job.id}/start`, { confirm: $("ia-confirm-input").value.trim() });
+    const s = await post(`/api/admin/images/jobs/${d.job.id}/start`, { confirm: $("ia-confirm-input").value.trim(), notify: cfg.notify });
     const sd = await s.json();
     if (!s.ok) throw new Error(sd.error || `start ${s.status}`);
     flash(button, sd.job.status === "queued" ? "queued" : sd.dispatched ? "started" : sd.reason || "recorded");
@@ -322,6 +361,19 @@ async function startJob(button) {
     flash(button, error.message);
     button.disabled = false;
   }
+}
+async function convertJob(button, id, to) {
+  if (!confirm(to === "archive" ? "Move originals to _archive/ and put the copies in their place?" : "Move originals back and put the copies in _compressed/?")) return;
+  button.disabled = true;
+  for (let i = 0; i < 200; i++) {
+    const r = await post(`/api/admin/images/jobs/${encodeURIComponent(id)}/convert`, { to });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return flash(button, d.error || "convert failed");
+    flash(button, `${d.remaining} left…`);
+    if (!d.remaining) break;
+  }
+  flash(button, `now ${to}`);
+  setTimeout(refreshImages, 1000);
 }
 async function undoJob(button, id) {
   if (!confirm("Undo this job? Copies go to Drive's trash; archived originals move back.")) return;
@@ -356,7 +408,14 @@ function wire() {
   });
   $("ia-folder-add").addEventListener("click", addFolderFromInput);
   $("ia-folder-input").addEventListener("keydown", (e) => e.key === "Enter" && addFolderFromInput());
-  $("ia-folder-browse").addEventListener("click", () => browse("root"));
+  $("ia-known").addEventListener("change", (e) => {
+    const o = e.target.selectedOptions[0];
+    if (o?.value) addRoot(o.value, o.dataset.name);
+    e.target.value = "";
+  });
+  setImagePickHandler(Object.assign((id, name) => addRoot(id, name), { has: (id) => roots.has(id) }));
+  $("ia-folder-browse").addEventListener("click", () => openFolderPicker("root", "images"));
+  $("ia-rule-save").addEventListener("click", (e) => saveRule(e.currentTarget));
   $("ia-scan").addEventListener("click", (e) => doScan(e.currentTarget));
   $("ia-refresh").addEventListener("click", () => refreshImages());
   $("ia-trial-largest").addEventListener("click", () => runTrial(false));
@@ -393,10 +452,15 @@ function wire() {
     }
     if (t.dataset.mode) return ((cfg.mode = t.dataset.mode), sync());
     if (t.dataset.type) return (cfg.types.has(t.dataset.type) ? cfg.types.delete(t.dataset.type) : cfg.types.add(t.dataset.type), sync());
+    const ev = t.closest("[data-every]");
+    if (ev) return ((every = t.dataset.value), sync());
     if (t.id === "ia-start") return startJob(t);
-    if (t.id === "ia-browser-close") return $("ia-browser").classList.add("hidden");
-    if (t.dataset.browse) return browse(t.dataset.browse);
-    if (t.dataset.pickFolder) return (roots.set(t.dataset.pickFolder, t.dataset.name), renderRoots());
+    if (t.dataset.pickFolder) return addRoot(t.dataset.pickFolder, t.dataset.name);
+    if (t.dataset.ruleRun) return ruleAction(t, t.dataset.ruleRun, "run");
+    if (t.dataset.ruleToggle) return ruleAction(t, t.dataset.ruleToggle, "toggle");
+    if (t.dataset.ruleLoad) return ruleAction(t, t.dataset.ruleLoad, "load");
+    if (t.dataset.ruleDelete) return ruleAction(t, t.dataset.ruleDelete, "delete");
+    if (t.dataset.jobConvert) return convertJob(t, t.dataset.job, t.dataset.jobConvert);
     if (t.dataset.removeFolder) return (roots.delete(t.dataset.removeFolder), renderRoots());
     if (t.dataset.jobAction) return jobAction(t, t.dataset.job, t.dataset.jobAction);
     if (t.dataset.jobUndo) return undoJob(t, t.dataset.jobUndo);

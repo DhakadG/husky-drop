@@ -13,6 +13,8 @@
 import { accessToken, driveCreateFolder, driveFindFolder, driveListFolder, driveTrashFile } from "./drive.js";
 import { json, shareState, cleanText } from "./util.js";
 import { signShareTokenWithExpiry } from "./share-token.js";
+import { appLog } from "./applog.js";
+import { sendNotify } from "./store.js";
 
 const INDEX_KEY = "previews:index";
 const FOLDER_KEY = "previews:folder";
@@ -223,7 +225,7 @@ export async function putPreview(request, env, fileId) {
 // Batch report from the Action: {runId, trigger, startedAt, finishedAt?,
 // done: [{id, name, size, previewId, previewSize, ms}], skipped: [{id, name, error}]}.
 // One KV write per report; the script reports every few files and at the end.
-export async function reportPreviewRun(request, env) {
+export async function reportPreviewRun(request, env, ctx) {
   const b = await request.json().catch(() => null);
   if (!b || !b.runId) return json({ error: "runId required" }, 400);
   const index = await previewIndex(env);
@@ -248,10 +250,13 @@ export async function reportPreviewRun(request, env) {
     run.previewBytes += Number(d.previewSize) || 0;
   }
   run.items = [...run.items, ...(b.done || []).map((d) => ({ id: d.id, name: cleanText(d.name || d.id, 120), ok: true, ms: Number(d.ms) || 0, size: Number(d.size) || 0, previewSize: Number(d.previewSize) || 0 })), ...(b.skipped || []).map((s) => ({ id: s.id, name: cleanText(s.name || s.id, 120), ok: false, error: cleanText(s.error || "", 200) }))].slice(-300);
+  for (const s of b.skipped || []) appLog(env, ctx, { level: "warn", area: "previews", message: `preview failed: ${s.name || s.id}`, detail: s.error });
   if (b.finishedAt) {
     run.finishedAt = Number(b.finishedAt) || now;
     run.pendingLeft = Number(b.pendingLeft) || 0;
     index.queue = null; // an explicit request has been served
+    appLog(env, ctx, { area: "previews", message: `run ${runId} (${run.trigger}) finished: ${run.done} done, ${run.skipped} skipped, ${run.pendingLeft} left` });
+    if (run.done || run.skipped) ctx?.waitUntil?.(sendNotify(env, { subject: `Video previews: ${run.done} made${run.skipped ? `, ${run.skipped} failed` : ""}${run.pendingLeft ? `, ${run.pendingLeft} left` : ""}`, html: `<p>${run.trigger} run ${runId}: <b>${run.done}</b> previews made, ${run.skipped} failed, ${run.pendingLeft} still pending.</p><p>${(run.bytes / 1e9).toFixed(2)} GB of originals → ${(run.previewBytes / 1e6).toFixed(0)} MB of previews.</p><p><a href="https://dropbox.losthusky.qzz.io/admin/previews">Video previews</a></p>`, category: "video-previews", idempotencyKey: `prev-digest-${runId}` }));
   }
   if (!existing) index.runs.unshift(run);
   index.runs = index.runs.slice(0, RUNS_KEPT);

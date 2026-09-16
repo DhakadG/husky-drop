@@ -136,7 +136,7 @@ let batch = { done: [], skipped: [] };
 // A failed report keeps its batch for the next attempt; nothing is dropped.
 async function report(extra = {}) {
   if (!batch.done.length && !batch.skipped.length && !Object.keys(extra).length) return null;
-  const body = JSON.stringify({ ...batch, ...extra });
+  const body = JSON.stringify({ ...batch, ...extra, runId: process.env.GITHUB_RUN_ID || "" });
   for (let attempt = 0; attempt < 3; attempt++) {
     const r = await api(`/api/admin/images/jobs/${jobId}/report`, { method: "POST", headers: { "content-type": "application/json" }, body }).catch(() => null);
     if (r?.ok) {

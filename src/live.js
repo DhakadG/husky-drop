@@ -19,6 +19,7 @@ import { bumpStats } from "./store.js";
 import { Analytics } from "./live-analytics.js";
 import { DigestQueue } from "./live-digest.js";
 import { CompletionQueue } from "./live-completions.js";
+import { LOG_SCHEMA, logInsert, logQuery } from "./applog.js";
 
 // Progress ticks from N uploaders inside this window become one admin patch.
 const BROADCAST_COALESCE_MS = 200;
@@ -60,6 +61,9 @@ export class LiveTracker {
   // (possibly empty) snapshot right away.
   async wake() {
     this.analytics.init();
+    try {
+      this.state.storage.sql?.exec(LOG_SCHEMA);
+    } catch {}
     try {
       this.recentDone = (await this.state.storage.get(RECENT_DONE_KEY)) || [];
     } catch {}
@@ -104,6 +108,22 @@ export class LiveTracker {
     }
 
     if (path === "/share-stats") return reply({ rows: this.analytics.shareStatRows() });
+
+    if (isPost && path === "/log") {
+      try {
+        logInsert(this.state.storage.sql, body);
+      } catch (err) {
+        return reply({ error: err.message }, 500);
+      }
+      return reply({ ok: true });
+    }
+    if (path === "/logs") {
+      try {
+        return reply({ rows: logQuery(this.state.storage.sql, { limit: clamp(Number(url.searchParams.get("limit")) || 200, 1, 500), area: cleanText(url.searchParams.get("area") || "", 24), level: cleanText(url.searchParams.get("level") || "", 8), before: Number(url.searchParams.get("before")) || 0 }) });
+      } catch (err) {
+        return reply({ error: err.message }, 500);
+      }
+    }
 
     if (isPost && path === "/ratelimit") {
       const key = cleanText(body.key || "", 120);

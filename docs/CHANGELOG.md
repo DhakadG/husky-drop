@@ -4,6 +4,37 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — System log, email digests, recurring rules, outcome switch (PR #51)
+
+- **System log** tab (`src/applog.js`): job start/queue/finish/pause,
+  every failed file, rule runs, Drive store failures, email attempts.
+  Stored in the LiveTracker Durable Object's SQLite (`app_log`, capped at
+  3000 rows) - zero KV writes. Filter by area and level, page older.
+- **Email digest** (Resend, existing `NOTIFY_*`) when an image job or a
+  video-preview run finishes; per-job "email me" toggle.
+- **Recurring rules** (`src/images-rules.js`, `images:rules` key): save
+  the current sources + recipe as a daily / weekly / monthly rule; the
+  worker cron (`45 22 * * *` UTC) plans and starts (or queues) due rules.
+  Run now / pause / load recipe / delete from the tab.
+- **Switch outcome** on finished copy/archive jobs: copy → archive moves
+  originals to `_archive/` and puts the copies in their place; archive →
+  copy reverses it. Chunked; per-item `mode` tracked. Replace stays
+  final.
+- Sources: known share/drop-link folders in a grouped dropdown, recent
+  picks as chips, Drive browser opened in the shared picker dialog.
+- Drive picker (used by drops, shares and the archive): skeleton rows
+  while loading, staggered fade-in, busy state on the clicked row, retry
+  on error, "Added" state for folders already picked.
+- Resolution / format / metadata are option cards with pixel size, use
+  case and caveat instead of bare segmented buttons.
+- Trial compare: the "before" pane is the original resampled to the
+  output size without recompression, so 1:1 lines up and only encoding
+  differs; original dimensions shown correctly.
+- Job cards link the GitHub runner log(s) for the job.
+- Icons: `.ico` uses `vertical-align: -0.2em` + `display: inline-block`;
+  flex parents (buttons, chips, tabs, tools) drop the glyph margin and
+  centre with `gap`.
+
 ## 2026-09-16 — Image archive v4 (PR #48)
 
 - Flow is now scan → tune → start. `POST /api/admin/images/scan` returns
