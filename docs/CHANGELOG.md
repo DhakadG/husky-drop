@@ -11,8 +11,8 @@ the way they are. Goal-by-goal status for the September round lives in
   "Archived" in the admin, nothing deleted.
 - Fingerprint Rules Engine: with `FP_RULESET_ID` the Server API call
   evaluates the ruleset; `rule: block` shows as a risk tag with the rule.
-- Fingerprint Pro (metered) only runs for visitors who are not signed in;
-  signed-in devices use the account + cookie and the free OSS agent.
+- Fingerprint Pro (metered) runs once per device to seed `hd_fp`, then
+  only for signed-out visitors and at most once a day (`hd_fpv`).
 - Overview skeletons now clear on first render (`reconcile` strips them).
 - Person timeline was hidden by the activity-tab CSS; device cells wrap
   instead of clipping; profile spacing tidied.

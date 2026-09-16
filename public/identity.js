@@ -10,15 +10,17 @@ const cookie = (n) => document.cookie.match(new RegExp(`(?:^|; )${n}=([^;]*)`))?
 export async function identify({ slug = "", sessionId = "", linkedId = "", kind = "" } = {}) {
   let fp = cookie("hd_fp");
   let fpEvent = "";
-  // Pro (metered) runs only for visitors who are NOT signed in - those are
-  // the ones we need a verdict for. Signed-in devices are already known via
-  // the account + hd_did cookie; the free OSS agent fills hd_fp if missing.
-  if (!linkedId) try {
+  // Pro (metered) runs once per device to seed hd_fp, then only for
+  // signed-out visitors and at most once a day (hd_fpv marks a fresh
+  // verdict). Signed-in devices with a cookie take the free path.
+  const fresh = !!cookie("hd_fpv");
+  if (!fp || (!linkedId && !fresh)) try {
     const pro = await import(`https://fpjscdn.net/v4/${FP_PRO_KEY}`).then((m) => m.start({ region: FP_PRO_REGION }));
     // linkedId = the signed-in account (when known); tag = what they opened.
     const r = await pro.get({ linkedId: linkedId || undefined, tag: { slug, kind, sessionId } });
     fpEvent = r.event_id || "";
     fp = r.visitor_id || fp;
+    document.cookie = `hd_fpv=1; Path=/; Max-Age=86400; Secure; SameSite=Lax`;
   } catch {}
   if (!fp) {
     try {
