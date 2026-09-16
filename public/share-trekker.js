@@ -60,8 +60,22 @@
     const depth = Math.min(100, Math.round((scrollY / max) * 100));
     for (const mark of [25, 50, 75, 100]) if (depth >= mark && !scrollMarks.has(mark)) { scrollMarks.add(mark); track("scroll_depth", String(mark)); }
   }, { passive: true });
-  window.addEventListener("error", (event) => track("client_error", event.message || "resource error", { file: String(event.filename || "").split("/").pop(), line: event.lineno || 0 }));
-  window.addEventListener("unhandledrejection", (event) => track("promise_rejection", String(event.reason?.message || event.reason || "rejected").slice(0, 160)));
+  // Beyond the telemetry beacon, real crashes go straight to the admin log
+  // (stack, page, device) - at most three per page load.
+  let reported = 0;
+  const reportCrash = (name, message, stack, where) => {
+    if (reported++ >= 3) return;
+    fetch("/api/client-error", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, message: String(message || "").slice(0, 300), stack: String(stack || "").slice(0, 1200), where, url: location.pathname + location.hash, state: { viewport: `${innerWidth}x${innerHeight}`, online: navigator.onLine, effectiveType: network().effectiveType }, crumbs: [] }) }).catch(() => {});
+  };
+  window.addEventListener("error", (event) => {
+    track("client_error", event.message || "resource error", { file: String(event.filename || "").split("/").pop(), line: event.lineno || 0 });
+    if (event.message) reportCrash("window.onerror", event.message, event.error?.stack, `${event.filename}:${event.lineno}:${event.colno}`);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    const message = String(event.reason?.message || event.reason || "rejected").slice(0, 160);
+    track("promise_rejection", message);
+    reportCrash("unhandledrejection", message, event.reason?.stack, "");
+  });
   navigator.connection?.addEventListener?.("change", () => track("network_change", network().effectiveType, network()));
   window.addEventListener("load", () => {
     const nav = performance.getEntriesByType("navigation")[0];

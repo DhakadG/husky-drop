@@ -65,8 +65,12 @@ function groupActivitySessions(events, day = "") {
     // One card per person per day: a named or signed-in visitor keeps one
     // timeline across drop uploads and share browsing instead of a card per
     // ten-minute burst. Anonymous traffic still falls back to bursts.
-    const person = String(event.u || "").trim().toLowerCase();
-    const key = person ? `person:${person}` : event.si || `anon:${event.s || event.l || "system"}:${Math.floor((event.at || 0) / 600000)}`;
+    // Google e-mail (also inherited by the device that signed in later)
+    // beats the device cookie, which beats the typed uploader name.
+    const person = String(event.e || "").trim().toLowerCase();
+    const device = String(event.d || "");
+    const name = String(event.u || "").trim().toLowerCase();
+    const key = person ? `email:${person}` : device ? `device:${device}` : name ? `name:${name}` : event.si || `anon:${event.s || event.l || "system"}:${Math.floor((event.at || 0) / 600000)}`;
 
     if (!sessions.has(key)) sessions.set(key, { key: `${day}:${key}`, events: [] });
     sessions.get(key).events.push(event);
@@ -106,7 +110,11 @@ function updateActivitySession(article, session) {
   const events = session.events;
   const first = events[0] || {};
   const last = events.at(-1) || first;
-  const actor = last.u || first.u || "anonymous";
+  const email = events.map((e) => e.e).find(Boolean) || "";
+  const typed = [...new Set(events.map((e) => e.u).filter((u) => u && !u.includes("@")))];
+  const actor = email || typed[0] || (first.d ? `Device ${first.d.slice(0, 6)}` : "anonymous");
+  const personKey = email ? `email:${email}` : first.d ? `device:${first.d}` : typed[0] ? `name:${typed[0].toLowerCase()}` : "";
+  const kinds = [...new Set(events.map((e) => activityKind(e.t)).filter((k) => k !== "admin"))];
   const place = last.l || last.s || first.l || first.s || "system";
   const context = last.c || first.c || {};
   const fileCount = activityFileCount(events);
@@ -116,12 +124,17 @@ function updateActivitySession(article, session) {
   article.className = `activity-session glass-tile${expanded ? " expanded" : ""}${hasError ? " has-error" : ""}`;
   article.innerHTML = `
     <button class="activity-session-summary" type="button" aria-expanded="${expanded}">
-      <span class="avatar">${esc(initialsOf(actor))}</span>
-      <span class="activity-person"><b>${esc(actor)} <i>·</i> ${esc(place)}</b><small>${esc(context.o || "Unknown device")}${context.l ? ` · ${esc(context.l)}` : ""} · ${activityTimeRange(first.at, last.at)}</small></span>
+      <span class="avatar${email ? " avatar-known" : ""}">${esc(initialsOf(actor))}</span>
+      <span class="activity-person"><b>${esc(actor)}${typed.length && email ? ` <small class="muted">“${esc(typed.slice(0, 2).join("”, “"))}”</small>` : ""} <i>·</i> ${kinds.map((k) => `<span class="kind-tag" data-kind="${k}">${k}</span>`).join(" ")} ${esc(place)}</b><small>${email ? icon("google-g", "ico-sm") + " " : ""}${esc(context.o || "Unknown device")}${context.l ? ` · ${esc(context.l)}` : ""} · ${activityTimeRange(first.at, last.at)}${personKey ? ` · <a href="#" class="activity-person-link" data-person-key="${escAttr(personKey)}">profile</a>` : ""}</small></span>
       <span class="activity-counts">${counts}${fileCount ? `<em>${fileCount} file${fileCount === 1 ? "" : "s"}</em>` : ""}</span>
       ${icon("chevron-down", "activity-chevron")}
     </button>
     <div class="activity-timeline">${events.map(activityTimelineRow).join("")}</div>`;
+  article.querySelector(".activity-person-link")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    document.dispatchEvent(new CustomEvent("admin:open-person", { detail: e.currentTarget.dataset.personKey }));
+  });
   article.querySelector(".activity-session-summary").onclick = () => {
     if (openActivitySessions.has(session.key)) openActivitySessions.delete(session.key);
     else openActivitySessions.add(session.key);
@@ -151,8 +164,15 @@ function activityFileCount(events) {
 function activityTimelineRow(event) {
   const count = Number(event.n) || 0;
   const label = event.t === "file" && count > 1 ? `${count} files uploaded` : event.f || (event.m !== "first open" && event.m) || activityTypeLabel(event.t);
-  const meta = [activityTypeLabel(event.t), event.l || (event.s ? `link ${event.s}` : ""), event.m === "first open" ? "first time on this share" : ""].filter(Boolean).join(" · ");
-  return `<div class="activity-timeline-row ${escAttr(event.t || "event")}"><span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(label)}</b><small>${esc(meta)}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>`;
+  const kind = activityKind(event.t);
+  const meta = [activityTypeLabel(event.t), event.l || (event.s ? `${kind} ${event.s}` : ""), event.m === "first open" ? "first time on this share" : "", event.c?.o || ""].filter(Boolean).join(" · ");
+  return `<div class="activity-timeline-row ${escAttr(event.t || "event")}"><span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(label)}</b><small>${kind !== "admin" ? `<span class="kind-tag" data-kind="${kind}">${kind}</span> ` : ""}${esc(meta)}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>`;
+}
+
+export function activityKind(type) {
+  if (/^share/.test(type || "")) return "share";
+  if (["linknew", "linkedit", "linkdel", "sharenew", "shareedit", "sharedel", "lock", "global-lock"].includes(type)) return "admin";
+  return "drop";
 }
 
 export function activityTypeLabel(type) {
@@ -184,7 +204,7 @@ export function makeCompactEventRow() {
 }
 
 export function updateCompactEventRow(row, event) {
-  const actor = event.u || "anonymous";
+  const actor = event.e || event.u || (event.d ? `Device ${event.d.slice(0, 6)}` : "anonymous");
   row.innerHTML = `<span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(activityTypeLabel(event.t))}</b><small>${esc(actor)}${event.l || event.s ? ` · ${esc(event.l || event.s)}` : ""}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>`;
 }
 

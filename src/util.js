@@ -284,6 +284,14 @@ export function extractClientInfo(request) {
   return { o: os, l: loc, i: icon };
 }
 
+// Long-lived anonymous device id (hd_did cookie, set by the worker on HTML
+// pages). Lets the admin stitch a device's history to the Google account it
+// later signs in with.
+export function deviceIdFrom(request) {
+  const value = request?.headers ? getCookie(request, "hd_did") : "";
+  return /^[a-f0-9]{16,32}$/.test(value || "") ? value : "";
+}
+
 export function normalizeEvent(event, request) {
   return {
     t: cleanText(event.type || "event", 32),
@@ -296,6 +304,8 @@ export function normalizeEvent(event, request) {
     n: clamp(Number(event.count) || 0, 0, 1000000),
     m: cleanText(event.message || "", 160),
     si: cleanText(event.sessionId || "", 80),
+    e: cleanText(event.email || "", 120).toLowerCase(),
+    d: deviceIdFrom(request),
     c: extractClientInfo(request),
   };
 }

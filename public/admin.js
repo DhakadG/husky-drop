@@ -64,7 +64,8 @@ import { previewFile, refreshDetail, renderDetailLive } from "./admin-detail.js"
 import { shareCreatedDrop } from "./admin-folders.js";
 import { refreshPreviews, stopPreviewsPolling } from "./admin-previews.js";
 import { refreshImages, stopImagesPolling } from "./admin-images.js";
-import { refreshLogs } from "./admin-logs.js";
+import { refreshLogs, refreshAlertsBadge } from "./admin-logs.js";
+import { refreshPeople, openPersonByKey } from "./admin-people.js";
 
 // Admin dashboard: boot, auth gate, tabs/routing, live socket, overview
 // stats, event delegation and QR. Feature areas live in admin-*.js.
@@ -78,6 +79,7 @@ async function init() {
   });
   $("tok-go").addEventListener("click", tryToken);
   $("tok").addEventListener("keydown", (e) => e.key === "Enter" && tryToken());
+  document.addEventListener("admin:open-person", (e) => openPersonByKey(e.detail));
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => showTab(tab.dataset.tab));
   });
@@ -282,6 +284,12 @@ export function showTab(name, { push = true } = {}) {
   if (name === "images") refreshImages();
   else stopImagesPolling();
   if (name === "logs") refreshLogs();
+  if (name === "people") refreshPeople();
+  // Panes slide in; the class is removed so the next switch animates again.
+  const pane = $(`tab-${name}`);
+  pane.classList.remove("pane-enter");
+  void pane.offsetWidth;
+  pane.classList.add("pane-enter");
   adminMoreToggle?.classList.toggle("active", adminSecondaryTabs.has(name));
   setAdminMobileMoreOpen(false, false);
   const path = name === "detail" && currentDetailSlug ? `/admin/links/${encodeURIComponent(currentDetailSlug)}` : name === "overview" ? "/admin" : `/admin/${name}`;
@@ -299,6 +307,7 @@ function routeFromUrl() {
 }
 
 export async function refreshAll() {
+  refreshAlertsBadge();
   try {
     const r = await fetch("/api/admin/overview");
     if (r.status === 401) {
@@ -409,7 +418,12 @@ export function upsertCards(container, pairs, cls) {
     (el, [label, value]) => {
       if (el._label.textContent !== label) el._label.textContent = label;
       const text = String(value);
-      if (el._value.textContent !== text) el._value.textContent = text;
+      if (el._value.textContent !== text) {
+        el._value.textContent = text;
+        el._value.classList.remove("tick");
+        void el._value.offsetWidth;
+        el._value.classList.add("tick");
+      }
     },
   );
 }
@@ -451,7 +465,12 @@ export function renderStats() {
     (el, [, value, title]) => {
       if (el._label.textContent !== title) el._label.textContent = title;
       const text = String(value);
-      if (el._value.textContent !== text) el._value.textContent = text;
+      if (el._value.textContent !== text) {
+        el._value.textContent = text;
+        el._value.classList.remove("tick");
+        void el._value.offsetWidth;
+        el._value.classList.add("tick");
+      }
     },
   );
 }

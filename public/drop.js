@@ -21,7 +21,7 @@ import {
   syncNameStep,
 } from "./drop-queue.js";
 import { resumeKey, loadResumeRecords, maybeShowResumeBanner, hideResumeBanner } from "./drop-resume.js";
-import { installErrorReporting, reportProblem } from "./drop-report.js";
+import { crumb, installErrorReporting, reportProblem } from "./drop-report.js";
 import { schedulePaint } from "./drop-render.js";
 import { connectLive, acquireWakeLock, startCountdown } from "./drop-live.js";
 import { toast, clamp } from "./drop-utils.js";
@@ -393,6 +393,7 @@ async function collectDropped(dt) {
 }
 
 export function addFiles(files) {
+  crumb(`addFiles: ${(files || []).length} file(s)`);
   const incoming = [...files].map((f) =>
     f instanceof File ? { file: f, rel: f.webkitRelativePath || "" } : f
   );

@@ -19,7 +19,9 @@ import { bumpStats } from "./store.js";
 import { Analytics } from "./live-analytics.js";
 import { DigestQueue } from "./live-digest.js";
 import { CompletionQueue } from "./live-completions.js";
-import { LOG_SCHEMA, logInsert, logQuery } from "./applog.js";
+import { LOG_SCHEMA } from "./applog.js";
+import { IDENTITY_SCHEMA, identityMap, rememberIdentity } from "./people.js";
+import { diagnosticsRoute } from "./live-diagnostics.js";
 
 // Progress ticks from N uploaders inside this window become one admin patch.
 const BROADCAST_COALESCE_MS = 200;
@@ -63,6 +65,7 @@ export class LiveTracker {
     this.analytics.init();
     try {
       this.state.storage.sql?.exec(LOG_SCHEMA);
+      this.state.storage.sql?.exec(IDENTITY_SCHEMA);
     } catch {}
     try {
       this.recentDone = (await this.state.storage.get(RECENT_DONE_KEY)) || [];
@@ -70,6 +73,17 @@ export class LiveTracker {
     for (const socket of this.adminSockets()) {
       this.safeSend(socket, { type: "snapshot", active: this.snapshot(), recent: this.recentDone });
     }
+  }
+
+  // Events that predate a device's Google sign-in get its e-mail on read.
+  withIdentity(events) {
+    let ids;
+    try {
+      ids = identityMap(this.state.storage.sql);
+    } catch {
+      return events;
+    }
+    return events.map((e) => (e && !e.e && e.d && ids.get(e.d) ? { ...e, e: ids.get(e.d).email, ei: 1 } : e));
   }
 
   adminSockets() {
@@ -96,7 +110,7 @@ export class LiveTracker {
 
     if (path === "/events") {
       const limit = clamp(Number(url.searchParams.get("limit")) || 60, 1, EVENT_CAP);
-      return reply({ events: this.analytics.recentEvents(limit) });
+      return reply({ events: this.withIdentity(this.analytics.recentEvents(limit)) });
     }
 
     if (path === "/events-days") {
@@ -104,26 +118,14 @@ export class LiveTracker {
       const before = /^\d{4}-\d{2}-\d{2}$/.test(beforeRaw) ? beforeRaw : dayKey(Date.now());
       const days = clamp(Number(url.searchParams.get("days")) || 3, 1, 14);
       const out = this.analytics.eventDays(before, days);
+      if (out?.days) for (const day of out.days) day.events = this.withIdentity(day.events || []);
       return out ? reply(out) : reply({ error: "bad before date" }, 400);
     }
 
     if (path === "/share-stats") return reply({ rows: this.analytics.shareStatRows() });
 
-    if (isPost && path === "/log") {
-      try {
-        logInsert(this.state.storage.sql, body);
-      } catch (err) {
-        return reply({ error: err.message }, 500);
-      }
-      return reply({ ok: true });
-    }
-    if (path === "/logs") {
-      try {
-        return reply({ rows: logQuery(this.state.storage.sql, { limit: clamp(Number(url.searchParams.get("limit")) || 200, 1, 500), area: cleanText(url.searchParams.get("area") || "", 24), level: cleanText(url.searchParams.get("level") || "", 8), before: Number(url.searchParams.get("before")) || 0 }) });
-      } catch (err) {
-        return reply({ error: err.message }, 500);
-      }
-    }
+    const diag = diagnosticsRoute(this.state, path, url, body, isPost);
+    if (diag) return diag;
 
     if (isPost && path === "/ratelimit") {
       const key = cleanText(body.key || "", 120);
@@ -135,7 +137,12 @@ export class LiveTracker {
     if (isPost && path === "/telemetry") return reply({ ok: true, stored: this.analytics.storeTelemetry(body) });
 
     if (isPost && path === "/event") {
-      if (body.record) this.analytics.recordEvent(body.record);
+      if (body.record) {
+        this.analytics.recordEvent(body.record);
+        try {
+          rememberIdentity(this.state.storage.sql, body.record);
+        } catch {}
+      }
       if (!this.sqlReady) await this.armAlarm();
       return reply({ ok: true });
     }
