@@ -55,10 +55,11 @@ async function decodable(input, file) {
       // preview. darktable's pipeline handles them.
       const dt = `${input}.dt.jpg`;
       try {
-        await run("darktable-cli", [input, dt, "--apply-custom-presets", "false", "--core", "--configdir", "/tmp/dt-config", "--cachedir", "/tmp/dt-cache", "--conf", "write_sidecar_files=never", "--conf", "plugins/imageio/format/jpeg/quality=95"], { timeout: 180_000 });
+        // darktable locks library.db per config dir, so parallel workers need their own.
+        await run("darktable-cli", [input, dt, "--apply-custom-presets", "false", "--core", "--configdir", `${input}.dtcfg`, "--cachedir", `${input}.dtcache`, "--conf", "write_sidecar_files=never", "--conf", "plugins/imageio/format/jpeg/quality=95"], { timeout: 180_000 });
         return { path: dt, via: "darktable" };
       } catch (error) {
-        const tail = String(error.stderr || error.message || "").trim().split("\n").slice(-3).join(" | ").slice(0, 300);
+        const tail = `exit ${error.code ?? "?"}: ${String(error.stderr || error.stdout || "").trim().split("\n").slice(-3).join(" | ")}`.slice(0, 300);
         throw new Error(`unsupported RAW (libraw, embedded preview and darktable all failed): ${tail}`);
       }
     }
