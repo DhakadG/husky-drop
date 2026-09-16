@@ -186,7 +186,7 @@ export async function scanImages(request, env) {
   const out = await walkRoots(env, options);
   if (out.error) return out.error;
   const jobs = await loadJobs(env);
-  const doneBefore = [...new Set(jobs.flatMap((j) => j.items.filter((i) => i.ok).map((i) => i.id)))];
+  const doneBefore = [...new Set(jobs.flatMap((j) => j.items.filter((i) => i.ok && !i.undone).map((i) => i.id)))];
   return json({
     roots: out.roots,
     folders: out.folders,
@@ -212,7 +212,7 @@ export async function planImageJob(request, env) {
 // Builds and stores a planned job. Shared by the admin and the rules cron.
 export async function planJobRecord(env, options, extra = {}) {
   const jobs = await loadJobs(env);
-  const ctx = { doneBefore: new Set(jobs.flatMap((j) => j.items.filter((i) => i.ok).map((i) => i.id))) };
+  const ctx = { doneBefore: new Set(jobs.flatMap((j) => j.items.filter((i) => i.ok && !i.undone).map((i) => i.id))) };
   const out = await walkRoots(env, options);
   if (out.error) throw Object.assign(new Error("a folder was not found"), { status: 404 });
   const digest = { scanned: out.files.length, scannedBytes: 0, byType: {}, skipped: {}, files: 0, bytes: 0, estBytes: 0, etaSec: 0, capped: out.files.length >= MAX_FILES, largest: [] };
