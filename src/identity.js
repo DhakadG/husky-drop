@@ -80,7 +80,7 @@ export async function clientHello(request, env, ctx) {
   for (const k of META_KEYS) if (b.meta && b.meta[k] != null) meta[k] = cleanText(String(b.meta[k]), 80);
   const s = {
     did: deviceIdFrom(request),
-    fp: /^[a-f0-9]{16,40}$/i.test(b.fp || "") ? b.fp : "",
+    fp: /^[A-Za-z0-9]{16,40}$/.test(b.fp || "") ? b.fp : "",
     si: cleanText(b.sessionId || "", 80),
     email: (viewer?.email || "").toLowerCase(),
     os: c.o || "",

@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Gemini + Fingerprint Pro (PR #64)
+
+- Stitch uses Gemini (free AI Studio key, `GEMINI_API_KEY`) when set;
+  Anthropic stays as the alternative.
+- Fingerprint Pro agent (public key, region `ap`) is loaded first; the
+  vendored open-source agent remains the ad-block fallback. CSP allows
+  `fpjscdn.net` / `*.fpjs.io`. Visitor ids are now alphanumeric, not hex.
+
 ## 2026-09-16 — AI identity stitching (PR #63)
 
 - Nightly (with the 22:45 cron) `src/stitch.js` sends known accounts and
