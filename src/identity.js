@@ -27,13 +27,15 @@ const META_KEYS = ["screen", "viewport", "tz", "lang", "platform", "cores", "mem
 // region ap). Only the bits the admin acts on are kept.
 async function fpVerdict(env, eventId) {
   if (!env.FP_SERVER_KEY || !/^[\w.-]{8,60}$/.test(eventId || "")) return null;
-  const r = await fetch(`https://ap.api.fpjs.io/events/${encodeURIComponent(eventId)}`, { headers: { "Auth-API-Key": env.FP_SERVER_KEY, accept: "application/json" } }).catch(() => null);
+  const r = await fetch(`https://ap.api.fpjs.io/v4/events/${encodeURIComponent(eventId)}`, { headers: { authorization: `Bearer ${env.FP_SERVER_KEY}`, accept: "application/json" } }).catch(() => null);
   if (!r?.ok) return null;
   const e = await r.json().catch(() => ({}));
   const ip = e.ip_info?.v4 || e.ip_info?.v6 || {};
   const geo = ip.geolocation || {};
   return {
     fpConfidence: e.identification?.confidence?.score,
+    visitorFound: e.identification?.visitor_found,
+    linkedId: e.linked_id,
     firstSeen: e.identification?.first_seen_at,
     osVersion: e.os_version || e.browser_details?.os_version,
     browserName: e.browser_details?.browser_name,

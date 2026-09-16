@@ -127,7 +127,7 @@ async function init() {
   document.title = `${meta.label} - LostHusky's DropBox`;
   applyTheme(meta.theme || {});
   logOpenOnce();
-  identify({ slug });
+  identify({ slug, kind: "share", linkedId: meta.viewer?.email || "" });
   setViewer(meta.viewer || null);
 
   const needsAuth = !!meta.requiresAuth && !viewer;

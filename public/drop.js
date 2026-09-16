@@ -49,7 +49,7 @@ async function init() {
   applySettings(st.link.settings || {});
   logOpenOnce();
   loadResumeRecords().catch(() => {});
-  identify({ slug, sessionId });
+  identify({ slug, sessionId, kind: "drop", linkedId: st.link.viewer?.email || "" });
 
   if (st.link.requiresAuth && !st.link.viewer) return showSignIn();
   if (st.link.requiresPin) {
