@@ -337,6 +337,11 @@ pixel work with sharp + libraw + libheif + exiftool.
   version, device, city/ASN, VPN/proxy/Tor/datacenter, tampering, anti-detect,
   dev tools, high-activity, suspect score, IP/country velocity. Risky visits
   log a warning under `people`; flags show on the profile's device rows.
+  With `FP_RULESET_ID` the call also evaluates that Rules Engine ruleset
+  (`rule_action.type` → `rule` / `ruleWhy` on the device row).
+- `PATCH /api/admin/links/:slug` and `/api/admin/shares/:slug` accept
+  `{archived: true|false}`; archived links report state `archived` and are
+  closed to visitors.
 - `GET /api/admin/sessions?limit` — recent device rows.
 - `GET|POST|DELETE /api/admin/people/suggestions` — Claude-proposed merges
   of unsigned visits into accounts (POST runs the pass now; DELETE `{key}`

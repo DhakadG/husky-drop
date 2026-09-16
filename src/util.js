@@ -230,6 +230,7 @@ export async function pinMatches(link, pin) {
 
 export function linkState(link) {
   if (!link) return "missing";
+  if (link.archived) return "archived";
   if (link.disabled) return "paused";
   if (link.expiresAt && Date.now() > link.expiresAt) return "expired";
   return "active";
@@ -237,6 +238,7 @@ export function linkState(link) {
 
 export function shareState(share) {
   if (!share) return "missing";
+  if (share.archived) return "archived";
   if (share.disabled) return "paused";
   if (share.expiresAt && Date.now() > share.expiresAt) return "expired";
   return "active";

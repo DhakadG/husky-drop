@@ -57,6 +57,7 @@ export async function createAdminDriveFolder(request, env) {
 
 export function adminLink(link, stats = {}) {
   return {
+    archived: !!link.archived,
     slug: link.slug,
     label: link.label,
     folderId: link.folderId || null,
@@ -149,6 +150,9 @@ export async function patchLink(request, env, slug) {
     link.disabled = !!b.disabled;
     link.disabledReason = link.disabled ? cleanText(b.disabledReason || "paused by admin", 80) : "";
   }
+  // Archived = closed to visitors and tucked away in the admin, but nothing
+  // is deleted: stats, folder and history stay.
+  if ("archived" in b) link.archived = !!b.archived;
   if ("expiresDays" in b) {
     const days = clamp(Number(b.expiresDays) || 0, 0, MAX_EXPIRY_DAYS);
     link.expiresAt = days > 0 ? Date.now() + days * 86400_000 : null;

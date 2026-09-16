@@ -27,7 +27,8 @@ const META_KEYS = ["screen", "viewport", "tz", "lang", "platform", "cores", "mem
 // region ap). Only the bits the admin acts on are kept.
 async function fpVerdict(env, eventId) {
   if (!env.FP_SERVER_KEY || !/^[\w.-]{8,60}$/.test(eventId || "")) return null;
-  const r = await fetch(`https://ap.api.fpjs.io/v4/events/${encodeURIComponent(eventId)}`, { headers: { authorization: `Bearer ${env.FP_SERVER_KEY}`, accept: "application/json" } }).catch(() => null);
+  const ruleset = env.FP_RULESET_ID ? `?ruleset_id=${encodeURIComponent(env.FP_RULESET_ID)}` : "";
+  const r = await fetch(`https://ap.api.fpjs.io/v4/events/${encodeURIComponent(eventId)}${ruleset}`, { headers: { authorization: `Bearer ${env.FP_SERVER_KEY}`, accept: "application/json" } }).catch(() => null);
   if (!r?.ok) return null;
   const e = await r.json().catch(() => ({}));
   const ip = e.ip_info?.v4 || e.ip_info?.v6 || {};
@@ -48,9 +49,11 @@ async function fpVerdict(env, eventId) {
     devTools: !!e.developer_tools, highActivity: !!e.high_activity_device,
     suspect: e.suspect_score,
     ips24h: e.velocity?.distinct_ip?.["24_hours"], countries24h: e.velocity?.distinct_country?.["24_hours"],
+    // Rules Engine verdict when FP_RULESET_ID is set: "block" plus the rule that fired.
+    rule: e.rule_action?.type, ruleWhy: e.rule_action?.rule_expression,
   };
 }
-export const riskFlags = (m = {}) => [m.tor && "tor", m.vpn && "vpn", m.proxy && "proxy", m.datacenter && "datacenter", m.tampering && "tampering", m.antiDetect && "anti-detect", m.attackSource && "attack source", m.highActivity && "high activity", Number(m.suspect) >= 25 && `suspect ${m.suspect}`, Number(m.countries24h) > 1 && `${m.countries24h} countries/24h`].filter(Boolean);
+export const riskFlags = (m = {}) => [m.rule === "block" && "rule: block", m.tor && "tor", m.vpn && "vpn", m.proxy && "proxy", m.datacenter && "datacenter", m.tampering && "tampering", m.antiDetect && "anti-detect", m.attackSource && "attack source", m.highActivity && "high activity", Number(m.suspect) >= 25 && `suspect ${m.suspect}`, Number(m.countries24h) > 1 && `${m.countries24h} countries/24h`].filter(Boolean);
 
 // ---- DO side ----
 export function upsertSession(sql, s) {

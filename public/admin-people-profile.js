@@ -6,7 +6,7 @@ import { ago, displayName, initials, refreshPeople, renderList, skeleton } from 
 // table with Fingerprint verdicts), merge/unlink, block/unblock.
 
 export const peopleState = { people: [], bans: [], suggestions: [], loaded: false };
-export const riskFlags = (m = {}) => [m.tor && "tor", m.vpn && "vpn", m.proxy && "proxy", m.datacenter && "datacenter", m.tampering && "tampering", m.antiDetect && "anti-detect", m.attackSource && "attack source", m.highActivity && "high activity", Number(m.suspect) >= 25 && `suspect ${m.suspect}`, Number(m.countries24h) > 1 && `${m.countries24h} countries/24h`].filter(Boolean);
+export const riskFlags = (m = {}) => [m.rule === "block" && "rule: block", m.tor && "tor", m.vpn && "vpn", m.proxy && "proxy", m.datacenter && "datacenter", m.tampering && "tampering", m.antiDetect && "anti-detect", m.attackSource && "attack source", m.highActivity && "high activity", Number(m.suspect) >= 25 && `suspect ${m.suspect}`, Number(m.countries24h) > 1 && `${m.countries24h} countries/24h`].filter(Boolean);
 const kindOf = (t) => (/^share/.test(t) ? "share" : "drop");
 const isBanned = (kind, value) => peopleState.bans.some((b) => b.kind === kind && b.value === value);
 const banBtn = (kind, value, label) => `<button type="button" class="mini${isBanned(kind, value) ? " is-on" : ""}" data-ban-kind="${kind}" data-ban-value="${escAttr(value)}" data-ban-on="${isBanned(kind, value) ? 0 : 1}">${icon("shield-alert", "ico-sm")} ${isBanned(kind, value) ? `unblock ${label}` : `block ${label}`}</button>`;
@@ -55,7 +55,7 @@ const deviceCard = (s) => {
       <div class="dev-flags">${flags.map((f) => `<span class="kind-tag risk">${esc(f)}</span>`).join("") || `<span class="kind-tag" data-kind="drop">clean</span>`}</div></div>
     <div class="dev-grid">
       ${cell("where", m.city || s.loc)}${cell("network", [m.asn, m.conn].filter(Boolean).join(" · "))}${cell("screen", m.screen)}${cell("timezone", m.tz)}${cell("language", m.lang)}${cell("hardware", [m.cores && `${m.cores} cores`, m.mem && `${m.mem} GB`, m.touch > 0 && "touch"].filter(Boolean).join(" · "))}
-      ${cell("visits", `${s.visits} · first ${ago(s.first)} ago · last ${ago(s.last)} ago`)}${cell("last page", s.slug)}${cell("id confidence", m.fpConfidence != null ? `${Math.round(m.fpConfidence * 100)}%` : "")}${cell("ids", [s.did && `cookie ${s.did.slice(0, 6)}`, s.fp && `fp ${s.fp.slice(0, 6)}`].filter(Boolean).join(" · "))}
+      ${cell("visits", `${s.visits} · first ${ago(s.first)} ago · last ${ago(s.last)} ago`)}${cell("last page", s.slug)}${cell("rule", m.rule ? `${m.rule}${m.ruleWhy ? ` · ${m.ruleWhy}` : ""}` : "")}${cell("id confidence", m.fpConfidence != null ? `${Math.round(m.fpConfidence * 100)}%` : "")}${cell("ids", [s.did && `cookie ${s.did.slice(0, 6)}`, s.fp && `fp ${s.fp.slice(0, 6)}`].filter(Boolean).join(" · "))}
     </div>
     <div class="dev-actions">${s.did ? banBtn("device", s.did, "cookie") : ""}${s.fp ? banBtn("fp", s.fp, "fingerprint") : ""}</div>
   </li>`;
