@@ -43,7 +43,7 @@ export function identityMap(sql) {
     for (const row of sql.exec("SELECT did, email, name FROM identities").toArray()) {
       map.set(row.did, { email: row.email, name: row.name });
       const n = String(row.name || "").trim().toLowerCase();
-      if (n && !n.includes("@")) byName.set(n, (byName.get(n) || new Set()).add(row.email));
+      if (n && !n.includes("@") && !NOBODY.test(n)) byName.set(n, (byName.get(n) || new Set()).add(row.email));
     }
     for (const [n, emails] of byName) if (emails.size === 1) aliases.set(`name:${n}`, [...emails][0]);
     for (const row of sql.exec("SELECT key, email FROM aliases").toArray()) aliases.set(row.key, row.email);
@@ -60,11 +60,19 @@ export function setAlias(sql, key, email) {
 // Older events carry the signed-in address only as the uploader name, so an
 // e-mail-shaped name counts as the account too.
 export const emailOf = (record, ids) => (record.e || (record.d && ids.get(record.d)?.email) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(record.u || "") ? record.u : "")).toLowerCase();
+// "anonymous"/"guest"/blank is not a name - many strangers type it, so it
+// would fold them into one person. Those fall back to the session id.
+const NOBODY = /^(anonymous|anon|guest|unknown|user|test|temp|-+)?$/i;
+const typedName = (record) => {
+  const n = String(record.u || "").trim().toLowerCase();
+  return NOBODY.test(n) ? "" : n;
+};
 export function personKey(record, ids) {
   const email = emailOf(record, ids);
   if (email) return `email:${email}`;
-  const raw = record.d ? `device:${record.d}` : record.u ? `name:${String(record.u).trim().toLowerCase()}` : "";
-  const a = ids.aliases?.get(raw) || (record.d && record.u && ids.aliases?.get(`name:${String(record.u).trim().toLowerCase()}`));
+  const name = typedName(record);
+  const raw = record.d ? `device:${record.d}` : name ? `name:${name}` : record.si ? `session:${record.si}` : "";
+  const a = ids.aliases?.get(raw) || (record.d && name && ids.aliases?.get(`name:${name}`));
   return a ? `email:${a}` : raw;
 }
 
@@ -87,7 +95,7 @@ export function buildPeople(sql, days = 90) {
     people.set(key, p);
     const email = key.startsWith("email:") ? key.slice(6) : "";
     if (email) p.emails.add(email);
-    if (r.u && !r.u.includes("@")) p.names.add(r.u);
+    if (typedName(r) && !r.u.includes("@")) p.names.add(r.u);
     if (r.d) p.devices.set(r.d, r.c?.o || "device");
     if (r.c?.l) p.places.add(r.c.l);
     p.first = Math.min(p.first, r.at);
@@ -152,7 +160,7 @@ export async function adminMerge(request, env) {
   const b = await request.json().catch(() => ({}));
   const key = cleanText(b.key || "", 200);
   const email = cleanText(b.email || "", 120).toLowerCase();
-  if (!/^(device|name):/.test(key) || (email && !email.includes("@"))) return json({ error: "key must be device:/name:, email optional" }, 400);
+  if (!/^(device|name|session):/.test(key) || (email && !email.includes("@"))) return json({ error: "key must be device:/name:, email optional" }, 400);
   const r = await liveStub(env).fetch("https://live.internal/alias", { method: "POST", body: JSON.stringify({ key, email }) });
   return json(await r.json(), r.status);
 }

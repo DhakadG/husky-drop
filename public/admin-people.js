@@ -13,7 +13,7 @@ const ago = (ts) => {
   return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`;
 };
 const kindOf = (t) => (/^share/.test(t) ? "share" : "drop");
-const displayName = (p) => p.emails[0] || p.names[0] || (p.key.startsWith("device:") ? `Device ${p.key.slice(7, 13)}` : p.key);
+const displayName = (p) => p.emails[0] || p.names[0] || (p.key.startsWith("device:") ? `Device ${p.key.slice(7, 13)}` : p.key.startsWith("session:") ? `Unknown visitor ${p.key.slice(8, 14)}` : p.key.replace(/^name:/, ""));
 const initials = (name) => name.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
 
 export async function refreshPeople({ force = false } = {}) {
@@ -85,7 +85,7 @@ function card(p, i) {
   const identified = p.emails.length > 0;
   return `<button type="button" class="person-card rise" style="--i:${Math.min(i, 12)}" data-person="${escAttr(p.key)}">
     <span class="avatar${identified ? " avatar-known" : ""}">${esc(initials(name))}</span>
-    <span class="person-main"><b>${esc(name)}</b><small>${identified ? icon("google-g", "ico-sm") + " Google" : p.key.startsWith("device:") ? icon("smartphone", "ico-sm") + " device only" : icon("user-round", "ico-sm") + " typed name"}${p.names.length && identified ? ` · also “${esc(p.names.slice(0, 2).join("”, “"))}”` : ""}${p.devices.length ? ` · ${p.devices.length} device${p.devices.length === 1 ? "" : "s"} (${esc([...new Set(p.devices.map((d) => d.os))].join(", "))})` : ""}${p.places.length ? ` · ${esc(p.places.slice(0, 2).join(", "))}` : ""}</small></span>
+    <span class="person-main"><b>${esc(name)}</b><small>${identified ? icon("google-g", "ico-sm") + " Google" : p.key.startsWith("device:") ? icon("smartphone", "ico-sm") + " device only" : p.key.startsWith("session:") ? icon("eye", "ico-sm") + " no sign-in, one visit" : icon("user-round", "ico-sm") + " typed name"}${p.names.length && identified ? ` · also “${esc(p.names.slice(0, 2).join("”, “"))}”` : ""}${p.devices.length ? ` · ${p.devices.length} device${p.devices.length === 1 ? "" : "s"} (${esc([...new Set(p.devices.map((d) => d.os))].join(", "))})` : ""}${p.places.length ? ` · ${esc(p.places.slice(0, 2).join(", "))}` : ""}</small></span>
     <span class="person-stats">${p.uploads ? `<em>${p.uploads} files · ${fmtBytes(p.bytes)}</em>` : ""}${p.shareOpens || p.views ? `<em>${p.shareOpens} opens · ${p.views} views · ${p.downloads} dl</em>` : ""}${p.errors ? `<em class="img-bad">${p.errors} errors</em>` : ""}<small class="muted">last seen ${ago(p.last)}</small></span>
     ${icon("chevron-right", "ico-sm")}
   </button>`;
