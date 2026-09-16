@@ -75,9 +75,12 @@ function renderList() {
   const sort = $("people-sort").value;
   let rows = people.filter((p) => !q || [displayName(p), ...p.emails, ...p.names, ...p.places, ...p.links.map((l) => l.label), ...p.shares.map((s) => s.label)].some((v) => String(v).toLowerCase().includes(q)));
   rows = rows.sort((a, b) => (sort === "uploads" ? b.bytes - a.bytes : sort === "views" ? b.views + b.shareOpens - (a.views + a.shareOpens) : sort === "errors" ? b.errors - a.errors : b.last - a.last));
-  const totals = { people: people.length, identified: people.filter((p) => p.emails.length).length, bytes: people.reduce((n, p) => n + p.bytes, 0) };
-  host.innerHTML = `<div class="people-summary"><span><b>${totals.people}</b> visitors in 90 days</span><span><b>${totals.identified}</b> identified by Google account</span><span><b>${fmtBytes(totals.bytes)}</b> uploaded</span></div>
-    <div class="people-grid">${rows.map((p, i) => card(p, i)).join("") || `<p class="muted">Nobody matches.</p>`}</div>`;
+  const unknown = rows.filter((p) => p.key.startsWith("session:"));
+  rows = rows.filter((p) => !p.key.startsWith("session:"));
+  const totals = { people: rows.length, identified: people.filter((p) => p.emails.length).length, bytes: people.reduce((n, p) => n + p.bytes, 0) };
+  host.innerHTML = `<div class="people-summary"><span><b>${totals.people}</b> people in 90 days</span><span><b>${totals.identified}</b> identified by Google account</span><span><b>${fmtBytes(totals.bytes)}</b> uploaded</span><span><b>${unknown.length}</b> unknown visits</span></div>
+    <div class="people-grid">${rows.map((p, i) => card(p, i)).join("") || `<p class="muted">Nobody matches.</p>`}</div>
+    ${unknown.length ? `<details class="people-unknown"><summary>${icon("eye", "ico-sm")} ${unknown.length} visits without sign-in · ${unknown.reduce((n, p) => n + p.events, 0)} events</summary><div class="people-grid">${unknown.map((p, i) => card(p, i)).join("")}</div></details>` : ""}`;
 }
 
 function card(p, i) {
