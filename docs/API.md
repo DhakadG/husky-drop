@@ -309,6 +309,17 @@ pixel work with sharp + libraw + libheif + exiftool.
   `POST …/:id/report` (batch; `stopped` marks the job paused, `finished`
   marks it done). One KV write per report.
 
+### Rules, conversion, logs
+
+- `GET /api/admin/images/rules`, `POST /api/admin/images/rules` (`{id?,
+  name, every daily|weekly|monthly, enabled, notify, options, confirm}`),
+  `DELETE /api/admin/images/rules/:id`, `POST …/rules/:id/run`. The cron
+  trigger runs due rules via `runDueRules`.
+- `POST /api/admin/images/jobs/:id/convert` `{to: copy|archive}` —
+  chunked outcome switch for finished copy/archive jobs.
+- `GET /api/admin/logs?limit&area&level&before` — app log rows from the
+  Durable Object (`{id, at, level, area, message, detail}`).
+
 ### `GET /api/admin/thumb/:fileId`
 
 Returns Drive file preview metadata for admin-side preview/open actions.

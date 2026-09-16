@@ -264,6 +264,8 @@ husky-drop/
 │   ├── previews.js       # 720p video previews (GitHub Actions transcoder API)
 │   ├── images.js         # image archive: scan, estimates, plan
 │   ├── images-run.js     # image archive: job control, queue, runner API, Drive writes, undo
+│   ├── images-rules.js   # recurring rules (cron) + copy/archive outcome switch
+│   ├── applog.js         # system log in the LiveTracker DO (SQLite), admin endpoint
 │   ├── share-zip.js      # streaming ZIP64 "download all"
 │   ├── store.js          # KV events, counters, lockouts, notifications
 │   └── util.js           # normalizers, security helpers, constants

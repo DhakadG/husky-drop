@@ -201,10 +201,20 @@ export async function scanImages(request, env) {
 export async function planImageJob(request, env) {
   const options = normalizeOptions(await request.json().catch(() => ({})));
   if (!options.folderIds.length) return json({ error: "pick at least one folder" }, 400);
+  try {
+    const { job } = await planJobRecord(env, options);
+    return json({ job: publicJob(job) }, 201);
+  } catch (error) {
+    return json({ error: error.message }, error.status || 500);
+  }
+}
+
+// Builds and stores a planned job. Shared by the admin and the rules cron.
+export async function planJobRecord(env, options, extra = {}) {
   const jobs = await loadJobs(env);
   const ctx = { doneBefore: new Set(jobs.flatMap((j) => j.items.filter((i) => i.ok).map((i) => i.id))) };
   const out = await walkRoots(env, options);
-  if (out.error) return out.error;
+  if (out.error) throw Object.assign(new Error("a folder was not found"), { status: 404 });
   const digest = { scanned: out.files.length, scannedBytes: 0, byType: {}, skipped: {}, files: 0, bytes: 0, estBytes: 0, etaSec: 0, capped: out.files.length >= MAX_FILES, largest: [] };
   const files = [];
   for (const file of out.files) {
@@ -233,12 +243,15 @@ export async function planImageJob(request, env) {
     digest,
     progress: { done: 0, failed: 0, skipped: 0, bytesIn: 0, bytesOut: 0 },
     outputs: [],
+    runIds: [],
     items: [],
     files,
+    ...extra,
   };
   // A new plan replaces any older un-started plan; running jobs are kept.
-  await saveJobs(env, [job, ...jobs.filter((j) => j.status !== "planned")]);
-  return json({ job: publicJob(job) }, 201);
+  const next = [job, ...jobs.filter((j) => j.status !== "planned")];
+  await saveJobs(env, next);
+  return { job, jobs: next };
 }
 
 // ---- admin: quick picks (folders already known to the app) ----

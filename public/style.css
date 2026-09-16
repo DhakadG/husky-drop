@@ -669,16 +669,24 @@ h2 {
 .ico {
   width: 16px;
   height: 16px;
-  margin-right: 6px;
+  margin-right: 0.4em;
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
   flex: 0 0 auto;
-  vertical-align: -3px;
+  display: inline-block;
+  /* sits on the text's x-height centre in inline contexts; flex parents
+     centre it themselves */
+  vertical-align: -0.2em;
   overflow: visible;
 }
+/* Flex parents space with gap - no extra margin on the glyph */
+.btn > .ico, .mini > .ico, .tab > .ico, .chip > .ico, .chip-icon, .seg-control .ico, .ia-toggle .ico,
+.section-tools .ico, .ia-quick-chip > .ico, .folder-open > .ico, .folder-pick > .ico, .ia-facts .ico,
+.ia-step-n .ico, .ia-preset-ico .ico, .ia-mode-ico .ico, .ia-empty .ico, .log-row .ico, .ia-items .ico { margin: 0; }
+.mini, .btn, .tab, .chip { align-items: center; }
 /* Icon tiles and icon-only controls: no text follows, so no side margin. */
 .icon-tile .ico, .stat-ico .ico, .gate-icon .ico, .dropzone-icon .ico, .success-check .ico,
 .live-empty-icon .ico, .share-mode-icon .ico, .mini-drop-icon .ico, .auth-lock .ico,
@@ -7947,3 +7955,56 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .ia-trial-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12.5px; }
 .ia-items-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
 .ia-job-ctl a.mini { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---------- image archive v5 ---------- */
+.ia-select { appearance: auto; max-width: 320px; }
+.ia-recent-label { align-self: center; font: 600 10.5px var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; margin-right: 4px; }
+.ia-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.ia-opts button { display: grid; gap: 2px; justify-items: start; text-align: left; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.7); color: var(--ink); font: inherit; cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease; }
+.ia-opts button b { font-size: 13px; }
+.ia-opts button span { font: 600 10.5px var(--font-mono); color: var(--ink-soft); }
+.ia-opts button small { font-size: 10.5px; color: var(--muted); }
+.ia-opts button:hover { border-color: rgba(47, 107, 255, 0.45); }
+.ia-opts button[aria-pressed="true"] { border-color: var(--accent); background: rgba(47, 107, 255, 0.07); box-shadow: 0 0 0 2px rgba(47, 107, 255, 0.14); }
+.ia-opts button[aria-pressed="true"] b { color: var(--accent); }
+.ia-skel-rows { display: grid; gap: 6px; padding: 6px 0; }
+.ia-skel-row, .folder-skeleton { height: 38px; border-radius: 9px; background: linear-gradient(90deg, rgba(12, 26, 43, 0.06) 25%, rgba(12, 26, 43, 0.12) 50%, rgba(12, 26, 43, 0.06) 75%); background-size: 200% 100%; animation: ia-shimmer 1.2s linear infinite; animation-delay: calc(var(--i, 0) * 80ms); }
+@keyframes ia-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.ia-rule-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.ia-rule-form .ia-input { flex: 1 1 260px; }
+.ia-rule { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, 0.7); margin-bottom: 6px; }
+.ia-rule[data-enabled="false"] { opacity: 0.6; }
+.ia-rule b { display: block; font-size: 13.5px; }
+.ia-rule small { display: block; }
+
+/* ---------- Drive picker: skeleton, enter transitions, busy rows ---------- */
+.folder-list { position: relative; transition: opacity 160ms ease; }
+.folder-list.is-loading { opacity: 0.55; pointer-events: none; }
+.folder-skeleton { display: flex; align-items: center; gap: 10px; padding: 0 8px; margin: 4px 0; }
+.folder-skel-ico { width: 20px; height: 20px; border-radius: 6px; background: rgba(12, 26, 43, 0.12); }
+.folder-skel-text { height: 12px; border-radius: 6px; background: rgba(12, 26, 43, 0.12); }
+.folder-skel-btn { margin-left: auto; width: 54px; height: 24px; border-radius: 999px; background: rgba(12, 26, 43, 0.1); }
+.folder-enter { animation: folder-in 220ms ease both; animation-delay: calc(var(--i, 0) * 28ms); }
+@keyframes folder-in { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+.folder-open, .folder-pick { transition: background 140ms ease, color 140ms ease, opacity 140ms ease; }
+.folder-open:hover { background: rgba(47, 107, 255, 0.07); border-radius: 9px; }
+.folder-open.is-busy { opacity: 0.6; }
+.folder-open.is-busy > .ico { animation: folder-spin 900ms linear infinite; }
+.folder-pick.is-busy { opacity: 0.6; pointer-events: none; }
+.folder-open-cue { display: inline-flex; }
+@keyframes folder-spin { to { rotate: 360deg; } }
+.folder-breadcrumbs button { transition: color 140ms ease, background 140ms ease; }
+@media (prefers-reduced-motion: reduce) { .folder-enter, .folder-skeleton, .ia-skel-row { animation: none; } }
+
+/* ---------- System log ---------- */
+.logs-body { display: grid; gap: 2px; font-size: 12.5px; }
+.log-row { display: grid; grid-template-columns: 90px 84px minmax(0, 1fr); gap: 10px; padding: 7px 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.6); align-items: baseline; }
+.log-row[data-level="warn"] { background: rgba(217, 138, 20, 0.08); }
+.log-row[data-level="error"] { background: rgba(240, 85, 107, 0.08); }
+.log-when { color: var(--muted); font: 500 11px var(--font-mono); white-space: nowrap; }
+.log-area { font: 700 10.5px var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-soft); }
+.log-msg { min-width: 0; overflow-wrap: anywhere; }
+.log-msg details { margin-top: 2px; }
+.log-msg summary { cursor: pointer; color: var(--accent); font-size: 11.5px; }
+.log-msg pre { margin: 4px 0 0; padding: 8px; border-radius: 6px; background: rgba(12, 26, 43, 0.06); font-size: 11px; white-space: pre-wrap; max-height: 200px; overflow: auto; }
+@media (max-width: 640px) { .log-row { grid-template-columns: 1fr; gap: 2px; } }
