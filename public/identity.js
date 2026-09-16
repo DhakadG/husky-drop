@@ -7,14 +7,15 @@ const FP_PRO_KEY = "Ju77MjhZRhdHsc51ifga";
 const FP_PRO_REGION = "ap";
 const cookie = (n) => document.cookie.match(new RegExp(`(?:^|; )${n}=([^;]*)`))?.[1] || "";
 
-export async function identify({ slug = "", sessionId = "" } = {}) {
+export async function identify({ slug = "", sessionId = "", linkedId = "", kind = "" } = {}) {
   let fp = cookie("hd_fp");
   let fpEvent = "";
   // Pro runs every visit: the event id lets the worker pull the server-side
   // verdict (VPN, proxy, tampering, velocity...) for this exact page load.
   try {
     const pro = await import(`https://fpjscdn.net/v4/${FP_PRO_KEY}`).then((m) => m.start({ region: FP_PRO_REGION }));
-    const r = await pro.get();
+    // linkedId = the signed-in account (when known); tag = what they opened.
+    const r = await pro.get({ linkedId: linkedId || undefined, tag: { slug, kind, sessionId } });
     fpEvent = r.event_id || "";
     fp = r.visitor_id || fp;
   } catch {}

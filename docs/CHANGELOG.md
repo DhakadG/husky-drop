@@ -4,6 +4,15 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — Log selection, profile v2, Server API v4 (PR #68)
+
+- Alerts & log: click / shift-click / drag to select rows, copy as text,
+  mark errors read (localStorage) - read errors leave the badge and strip.
+- People profile: identity chips (typed names, linked cookies/fingerprints
+  with unlink), meta row, device cards with grouped cells and risk tags.
+- Fingerprint Server API v4 (`/v4/events/{id}`, Bearer). Agent calls tag
+  each event with the link slug/kind and `linkedId` = signed-in e-mail.
+
 ## 2026-09-16 — Fingerprint verdicts (PR #67)
 
 - Hello sends the Pro `event_id`; with `FP_SERVER_KEY` the worker fetches the
