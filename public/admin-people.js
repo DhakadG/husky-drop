@@ -33,6 +33,9 @@ export async function refreshPeople({ force = false } = {}) {
       const unlink = e.target.closest("[data-unlink]");
       if (unlink) return mergePerson(unlink.dataset.unlink, "");
       if (e.target.closest("#people-merge-go")) return mergePerson($("people-merge-go").dataset.key, $("people-merge-into").value);
+      const sug = e.target.closest("[data-suggest]");
+      if (sug) return decideSuggestion(sug.dataset.suggest, sug.dataset.email, sug.dataset.accept === "1");
+      if (e.target.closest("#people-stitch")) return runStitch();
       const ban = e.target.closest("[data-ban-kind]");
       if (ban) return setBan(ban.dataset.banKind, ban.dataset.banValue, ban.dataset.banOn === "1");
     });
@@ -40,11 +43,12 @@ export async function refreshPeople({ force = false } = {}) {
   if (peopleState.loaded && !force) return renderList();
   host.innerHTML = skeleton(4);
   try {
-    const [pr, br] = await Promise.all([fetch("/api/admin/people?days=90"), fetch("/api/admin/bans")]);
+    const [pr, br, sr] = await Promise.all([fetch("/api/admin/people?days=90"), fetch("/api/admin/bans"), fetch("/api/admin/people/suggestions")]);
     const d = await pr.json();
     if (!pr.ok) throw new Error(d.error || `people ${pr.status}`);
     peopleState.people = d.people || [];
     peopleState.bans = (await br.json().catch(() => ({}))).bans || [];
+    peopleState.suggestions = (await sr.json().catch(() => ({}))).suggestions || [];
     peopleState.loaded = true;
     renderList();
   } catch (error) {
@@ -68,11 +72,30 @@ export function renderList() {
   rows = rows.filter((p) => !p.key.startsWith("session:"));
   const identified = people.filter((p) => p.emails.length).length;
   host.innerHTML = `<div class="people-summary"><span><b>${rows.length}</b> people</span><span><b>${identified}</b> Google accounts</span><span><b>${fmtBytes(people.reduce((n, p) => n + p.bytes, 0))}</b> uploaded</span><span><b>${unknown.length}</b> unsigned visits</span>${bans.length ? `<span class="img-bad"><b>${bans.length}</b> blocked</span>` : ""}</div>
+    ${suggestionsBox()}
     <div class="people-grid">${rows.map((p, i) => card(p, i)).join("") || `<p class="muted">Nobody matches.</p>`}</div>
     ${unknown.length ? `<details class="people-unknown"><summary>${icon("eye", "ico-sm")} ${unknown.length} visits without sign-in · ${unknown.reduce((n, p) => n + p.events, 0)} events</summary><div class="people-grid">${unknown.map((p, i) => card(p, i)).join("")}</div></details>` : ""}
     ${bans.length ? `<details class="people-unknown"><summary>${icon("shield-alert", "ico-sm")} ${bans.length} blocked</summary><ul class="person-links">${bans.map((b) => `<li><span><code>${esc(b.kind)}</code> ${esc(b.value)}${b.reason ? ` <span class="muted">· ${esc(b.reason)}</span>` : ""}</span><button type="button" class="link-like" data-ban-kind="${escAttr(b.kind)}" data-ban-value="${escAttr(b.value)}" data-ban-on="0">unblock</button></li>`).join("")}</ul></details>` : ""}`;
 }
 
+// Nightly Claude pass proposes which unsigned visits belong to which account.
+const suggestionsBox = () => {
+  const list = peopleState.suggestions || [];
+  const byKey = new Map(peopleState.people.map((p) => [p.key, p]));
+  return `<div class="people-suggest"><div class="section-title"><h2>${icon("wand-sparkles", "ico-sm")} Suggested merges</h2><button type="button" class="mini" id="people-stitch">${icon("refresh-cw", "ico-sm")} run now</button></div>
+    ${list.length ? `<ul class="person-links">${list.map((s) => `<li><span><b>${esc(byKey.has(s.key) ? displayName(byKey.get(s.key)) : s.key)}</b> → ${esc(s.email)} <span class="kind-tag" data-kind="${s.confidence >= 0.8 ? "drop" : "admin"}">${Math.round(s.confidence * 100)}%</span><small class="muted"> ${esc(s.reason)}</small></span><span class="device-actions"><button type="button" class="mini" data-suggest="${escAttr(s.key)}" data-email="${escAttr(s.email)}" data-accept="1">merge</button><button type="button" class="link-like" data-suggest="${escAttr(s.key)}" data-email="" data-accept="0">dismiss</button></span></li>`).join("")}</ul>` : `<p class="muted">Nothing pending. Runs nightly; needs the ANTHROPIC_API_KEY secret.</p>`}</div>`;
+};
+async function decideSuggestion(key, email, accept) {
+  if (accept) await fetch("/api/admin/people/merge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, email }) });
+  await fetch("/api/admin/people/suggestions", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
+  refreshPeople({ force: true });
+}
+async function runStitch() {
+  $("people-stitch").disabled = true;
+  const d = await fetch("/api/admin/people/suggestions", { method: "POST" }).then((r) => r.json()).catch(() => ({}));
+  if (d.skipped) alert("Set the ANTHROPIC_API_KEY worker secret first.");
+  refreshPeople({ force: true });
+}
 const stat = (value, label) => `<span class="pstat"><b>${value}</b><small>${label}</small></span>`;
 function card(p, i) {
   const name = displayName(p);

@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — AI identity stitching (PR #63)
+
+- Nightly (with the 22:45 cron) `src/stitch.js` sends known accounts and
+  unsigned visits - OS, browser, screen, timezone, language, places, links,
+  times, typed names - to Claude and stores merge *suggestions* with a
+  confidence and reason. The People tab lists them with merge / dismiss;
+  nothing merges automatically. Needs the `ANTHROPIC_API_KEY` secret.
+
 ## 2026-09-16 — Identity, sessions, bans (PR #62)
 
 - **Fingerprint.** Drop and share pages load a vendored FingerprintJS v3

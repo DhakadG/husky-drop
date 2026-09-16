@@ -22,6 +22,7 @@ import { CompletionQueue } from "./live-completions.js";
 import { LOG_SCHEMA } from "./applog.js";
 import { IDENTITY_SCHEMA, identityMap, rememberIdentity } from "./people.js";
 import { SESSION_SCHEMA } from "./identity.js";
+import { SUGGESTION_SCHEMA } from "./stitch.js";
 import { diagnosticsRoute } from "./live-diagnostics.js";
 
 // Progress ticks from N uploaders inside this window become one admin patch.
@@ -68,6 +69,7 @@ export class LiveTracker {
       this.state.storage.sql?.exec(LOG_SCHEMA);
       this.state.storage.sql?.exec(IDENTITY_SCHEMA);
       this.state.storage.sql?.exec(SESSION_SCHEMA);
+      this.state.storage.sql?.exec(SUGGESTION_SCHEMA);
     } catch {}
     try {
       this.recentDone = (await this.state.storage.get(RECENT_DONE_KEY)) || [];
@@ -126,7 +128,7 @@ export class LiveTracker {
 
     if (path === "/share-stats") return reply({ rows: this.analytics.shareStatRows() });
 
-    const diag = diagnosticsRoute(this.state, path, url, body, isPost);
+    const diag = diagnosticsRoute(this.state, path, url, body, isPost, request.method);
     if (diag) return diag;
 
     if (isPost && path === "/ratelimit") {

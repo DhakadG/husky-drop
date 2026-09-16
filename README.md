@@ -273,6 +273,7 @@ husky-drop/
 │   ├── live-diagnostics.js # DO routes for People profiles and the system log
 │   ├── people.js         # visitor identity: device cookie + Google account stitching
 │   ├── identity.js       # device sessions (fingerprint + client details), bans
+│   ├── stitch.js         # nightly Claude pass: suggest which unsigned visits are which account
 │   ├── live-analytics.js # DO SQLite: rollups, telemetry, activity, share stats
 │   ├── live-digest.js    # per-session finished-upload email
 │   ├── live-completions.js # batched KV flush of Drive-verified completions

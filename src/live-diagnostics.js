@@ -5,10 +5,11 @@ import { cleanText, clamp } from "./util.js";
 import { logInsert, logQuery } from "./applog.js";
 import { buildPeople, personEvents, rememberIdentity, setAlias } from "./people.js";
 import { banRows, isBanned, listSessions, sessionsFor, setBan, upsertSession } from "./identity.js";
+import { dropSuggestion, replaceSuggestions, suggestionRows } from "./stitch.js";
 
 const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-export function diagnosticsRoute(state, path, url, body, isPost) {
+export function diagnosticsRoute(state, path, url, body, isPost, method = "") {
   const sql = state.storage.sql;
   try {
     if (path === "/people") return reply({ people: buildPeople(sql, clamp(Number(url.searchParams.get("days")) || 90, 1, 365)) });
@@ -27,6 +28,11 @@ export function diagnosticsRoute(state, path, url, body, isPost) {
     if (path === "/sessions") return reply({ sessions: listSessions(sql, clamp(Number(url.searchParams.get("limit")) || 200, 1, 500)) });
     if (path === "/bans" && !isPost) return reply({ bans: banRows(sql) });
     if (path === "/bans" && isPost) return reply({ ok: setBan(sql, body.kind, body.value, body.reason, body.on !== false) });
+    if (path === "/suggestions") {
+      if (method === "DELETE") dropSuggestion(sql, cleanText(body.key || "", 200));
+      else if (isPost) replaceSuggestions(sql, body.rows || []);
+      return reply({ suggestions: suggestionRows(sql) });
+    }
     if (isPost && path === "/alias") {
       setAlias(sql, cleanText(body.key || "", 200), cleanText(body.email || "", 120));
       return reply({ ok: true });

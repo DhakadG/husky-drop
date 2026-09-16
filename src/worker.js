@@ -87,9 +87,10 @@ import {
 } from "./previews.js";
 import { imageSources, planImageJob, scanImages } from "./images.js";
 import { convertImageJob, deleteImageRule, listImageRules, runDueRules, runImageRule, upsertImageRule } from "./images-rules.js";
-import { adminLogs } from "./applog.js";
+import { adminLogs, appLog } from "./applog.js";
 import { adminMerge, adminPeople, adminPerson } from "./people.js";
 import { adminBans, adminSessions, bannedRequest, blockedResponse, clientHello } from "./identity.js";
+import { adminSuggestions, runIdentityStitch } from "./stitch.js";
 import {
   controlImageJob,
   imageJobItems,
@@ -107,6 +108,7 @@ export default {
   // Nightly cron (wrangler triggers.crons): recurring image-archive rules.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runDueRules(env, ctx));
+    ctx.waitUntil(runIdentityStitch(env, ctx).catch((e) => appLog(env, ctx, { level: "error", area: "people", message: `identity stitch crashed: ${e.message}` })));
   },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -248,6 +250,7 @@ async function api(request, env, url, ctx) {
     if (m === "GET" && p === "/api/admin/logs") return adminLogs(env, url);
     if (m === "GET" && p === "/api/admin/people") return adminPeople(env, url);
     if (m === "POST" && p === "/api/admin/people/merge") return adminMerge(request, env);
+    if (p === "/api/admin/people/suggestions") return adminSuggestions(request, env, ctx);
     if (m === "GET" && p === "/api/admin/sessions") return adminSessions(env, url);
     if (p === "/api/admin/bans") return adminBans(request, env);
     if (m === "GET" && p.startsWith("/api/admin/people/")) return adminPerson(env, decodeURIComponent(p.slice("/api/admin/people/".length)));

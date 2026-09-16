@@ -5,7 +5,7 @@ import { ago, displayName, initials, refreshPeople, renderList, skeleton } from 
 // One person's profile: stats, links, devices (from the sessions table),
 // merge/unlink into a Google account, block/unblock account or device.
 
-export const peopleState = { people: [], bans: [], loaded: false };
+export const peopleState = { people: [], bans: [], suggestions: [], loaded: false };
 const kindOf = (t) => (/^share/.test(t) ? "share" : "drop");
 const isBanned = (kind, value) => peopleState.bans.some((b) => b.kind === kind && b.value === value);
 const banBtn = (kind, value, label) => `<button type="button" class="mini${isBanned(kind, value) ? " is-on" : ""}" data-ban-kind="${kind}" data-ban-value="${escAttr(value)}" data-ban-on="${isBanned(kind, value) ? 0 : 1}">${icon("shield-alert", "ico-sm")} ${isBanned(kind, value) ? `unblock ${label}` : `block ${label}`}</button>`;
