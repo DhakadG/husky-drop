@@ -326,10 +326,24 @@ pixel work with sharp + libraw + libheif + exiftool.
   profile into a Google account (empty `email` unlinks). Typed names that
   only one signed-in account has ever used are merged automatically.
 
+- `POST /api/hello` `{fp, slug, sessionId, meta}` — once per page load from
+  drop/share pages: FingerprintJS visitor id plus client details (screen,
+  timezone, language, platform, browser, cores, memory, touch, network).
+  Upserts the device row in the DO `sessions` table and, when the viewer is
+  signed in, links the device and fingerprint to that account.
+- `GET /api/admin/sessions?limit` — recent device rows.
+- `GET|POST|DELETE /api/admin/bans` `{kind: email|device|fp, value, reason}` —
+  blocked accounts/devices. Banned visitors get 403 on `/d/`, `/s/`, session
+  creation and share listing/downloads (cached 30 s per isolate).
+- `POST /api/session` accepts `uploaderAlias`; per-uploader folders become
+  `Name -- Alias`. A signed-in Google account names the uploader even on
+  links that do not require sign-in.
+
 Pages under `/d/` and `/s/` set an anonymous `hd_did` cookie (random 24 hex,
 HttpOnly, 400 days). Events carry it as `d` and the signed-in Google e-mail
-as `e`; the Durable Object's `identities` table links the two so a device's
-older anonymous events are attributed once it signs in.
+as `e`, the FingerprintJS id (client-set `hd_fp` cookie) as `p`; the Durable
+Object's `identities`/`aliases` tables link device and fingerprint to the
+account so older anonymous events are attributed once it signs in.
 
 ### `GET /api/admin/thumb/:fileId`
 

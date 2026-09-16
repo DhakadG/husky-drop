@@ -291,6 +291,11 @@ export function deviceIdFrom(request) {
   const value = request?.headers ? getCookie(request, "hd_did") : "";
   return /^[a-f0-9]{16,32}$/.test(value || "") ? value : "";
 }
+// FingerprintJS visitor id, set client-side into hd_fp (see public/identity.js).
+export function fpFrom(request) {
+  const value = request?.headers ? getCookie(request, "hd_fp") : "";
+  return /^[a-f0-9]{16,40}$/i.test(value || "") ? value.toLowerCase() : "";
+}
 
 export function normalizeEvent(event, request) {
   return {
@@ -306,6 +311,7 @@ export function normalizeEvent(event, request) {
     si: cleanText(event.sessionId || "", 80),
     e: cleanText(event.email || "", 120).toLowerCase(),
     d: deviceIdFrom(request),
+    p: fpFrom(request),
     c: extractClientInfo(request),
   };
 }

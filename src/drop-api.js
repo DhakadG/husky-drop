@@ -142,7 +142,7 @@ export async function getPublicLink(request, env, slug) {
   if (!link) return json({ error: "link not found" }, 404);
   const quota = env.GOOGLE_CLIENT_ID ? await driveQuota(env) : null;
   const out = publicLink(link, quota, env);
-  out.viewer = out.requiresAuth ? await getViewer(request, env) : null;
+  out.viewer = env.GOOGLE_CLIENT_ID ? await getViewer(request, env) : null;
   return json(out);
 }
 
@@ -152,12 +152,14 @@ async function requireDropViewer(request, env, link) {
   return json({ error: "sign-in required", authRequired: true }, 401);
 }
 
-// When the link demands Google sign-in, the verified account name beats
-// whatever the uploader typed into the "what should we call you" box.
+// A signed-in Google account names the uploader even on links that do not
+// demand sign-in; the typed name is the fallback.
 async function resolveUploader(request, env, link, typed) {
-  const viewer = link.requireAuth && env.GOOGLE_CLIENT_ID ? await getViewer(request, env) : null;
+  const viewer = env.GOOGLE_CLIENT_ID ? await getViewer(request, env) : null;
   return cleanText(viewer?.name || typed || "anonymous", 60) || "anonymous";
 }
+// Per-uploader folder is "Name -- Alias" when the uploader picked an alias.
+const folderLabel = (uploader, alias) => (cleanText(alias || "", 40) ? `${uploader} -- ${cleanText(alias, 40)}` : uploader);
 
 export async function verifyPin(request, env) {
   const b = await request.json().catch(() => ({}));
@@ -225,7 +227,7 @@ export async function logProgress(request, env, ctx) {
 
 export async function createSession(request, env) {
   const b = await request.json().catch(() => ({}));
-  const { linkId, pin, filename, size, mimeType, uploaderName, relativePath, queueCount, queueBytes } = b;
+  const { linkId, pin, filename, size, mimeType, uploaderName, uploaderAlias, relativePath, queueCount, queueBytes } = b;
   const sessionId = cleanText(b.sessionId || "", 80);
 
   if (!linkId || !filename || !sessionId || !Number.isFinite(size) || size <= 0) {
@@ -288,7 +290,7 @@ export async function createSession(request, env) {
   const folderSegments = relSegments.length > 1 ? relSegments.slice(0, -1) : [];
   let folderId;
   try {
-    folderId = await resolveTargetFolder(env, link, uploader, folderSegments);
+    folderId = await resolveTargetFolder(env, link, folderLabel(uploader, uploaderAlias), folderSegments);
   } catch (err) {
     return json({ error: "Drive folder create failed: " + err.message }, 502);
   }

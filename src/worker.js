@@ -89,6 +89,7 @@ import { imageSources, planImageJob, scanImages } from "./images.js";
 import { convertImageJob, deleteImageRule, listImageRules, runDueRules, runImageRule, upsertImageRule } from "./images-rules.js";
 import { adminLogs } from "./applog.js";
 import { adminMerge, adminPeople, adminPerson } from "./people.js";
+import { adminBans, adminSessions, bannedRequest, blockedResponse, clientHello } from "./identity.js";
 import {
   controlImageJob,
   imageJobItems,
@@ -115,8 +116,10 @@ export default {
       if (p === "/") return servePage(env, url, "/index.html");
       if (p === "/privacy") return servePage(env, url, "/privacy.html");
       if (p === "/terms") return servePage(env, url, "/terms.html");
-      if (p.startsWith("/d/")) return withDeviceId(request, await servePage(env, url, "/drop.html"));
-      if (p.startsWith("/s/")) return withDeviceId(request, await servePage(env, url, "/share.html"));
+      if (p.startsWith("/d/") || p.startsWith("/s/")) {
+        if (await bannedRequest(env, request)) return blockedResponse(true);
+        return withDeviceId(request, await servePage(env, url, p.startsWith("/d/") ? "/drop.html" : "/share.html"));
+      }
       if (p === "/admin" || p.startsWith("/admin/")) return servePage(env, url, "/admin.html");
       return secureAsset(await env.ASSETS.fetch(request));
     } catch (err) {
@@ -189,6 +192,9 @@ async function api(request, env, url, ctx) {
   }
   if (m === "GET" && p === "/api/admin/live") return openAdminLiveSocket(request, env);
 
+  if (m === "POST" && p === "/api/hello") return clientHello(request, env, ctx);
+  // Banned accounts/devices get no session, listing or download.
+  if (/^\/api\/(session|verify|link\/|share\/(meta|verify|list|summary|dl|zip|redirect|file-info|refresh-dl))/.test(p) && (await bannedRequest(env, request))) return blockedResponse(false);
   if (m === "GET" && p.startsWith("/api/link/")) {
     return getPublicLink(request, env, p.slice("/api/link/".length));
   }
@@ -242,6 +248,8 @@ async function api(request, env, url, ctx) {
     if (m === "GET" && p === "/api/admin/logs") return adminLogs(env, url);
     if (m === "GET" && p === "/api/admin/people") return adminPeople(env, url);
     if (m === "POST" && p === "/api/admin/people/merge") return adminMerge(request, env);
+    if (m === "GET" && p === "/api/admin/sessions") return adminSessions(env, url);
+    if (p === "/api/admin/bans") return adminBans(request, env);
     if (m === "GET" && p.startsWith("/api/admin/people/")) return adminPerson(env, decodeURIComponent(p.slice("/api/admin/people/".length)));
     if (m === "GET" && p === "/api/admin/overview") return adminOverview(env);
     if (m === "POST" && p === "/api/admin/maintenance/cleanup") return cleanupInactiveRecords(request, env);

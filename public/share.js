@@ -27,6 +27,7 @@ import {
   visibleFiles,
 } from "./share-state.js";
 import { toast, fmtDur } from "./share-utils.js";
+import { identify } from "./identity.js";
 import { trackEvent, installTracking } from "./share-beacon.js";
 import { downloadFile } from "./share-download.js";
 import { heatVideoTile, installHoverPreview, probeVideoMetadata, warmVideoTile } from "./share-preview.js";
@@ -126,6 +127,7 @@ async function init() {
   document.title = `${meta.label} - LostHusky's DropBox`;
   applyTheme(meta.theme || {});
   logOpenOnce();
+  identify({ slug });
   setViewer(meta.viewer || null);
 
   const needsAuth = !!meta.requiresAuth && !viewer;

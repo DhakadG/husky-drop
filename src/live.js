@@ -21,6 +21,7 @@ import { DigestQueue } from "./live-digest.js";
 import { CompletionQueue } from "./live-completions.js";
 import { LOG_SCHEMA } from "./applog.js";
 import { IDENTITY_SCHEMA, identityMap, rememberIdentity } from "./people.js";
+import { SESSION_SCHEMA } from "./identity.js";
 import { diagnosticsRoute } from "./live-diagnostics.js";
 
 // Progress ticks from N uploaders inside this window become one admin patch.
@@ -66,6 +67,7 @@ export class LiveTracker {
     try {
       this.state.storage.sql?.exec(LOG_SCHEMA);
       this.state.storage.sql?.exec(IDENTITY_SCHEMA);
+      this.state.storage.sql?.exec(SESSION_SCHEMA);
     } catch {}
     try {
       this.recentDone = (await this.state.storage.get(RECENT_DONE_KEY)) || [];
@@ -183,7 +185,7 @@ export class LiveTracker {
 
     if (isPost && (path === "/folder" || path === "/pathfolder")) {
       const link = body.link || {};
-      const uploader = cleanText(body.uploader || "anonymous", 60) || "anonymous";
+      const uploader = cleanText(body.uploader || "anonymous", 120) || "anonymous";
       if (!link.slug || !link.folderId) return reply({ error: "link required" }, 400);
       const who = sanitizeFolderName(uploader).toLowerCase();
       // Serialize (nested) folder creation so parallel files from the same
