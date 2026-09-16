@@ -58,11 +58,12 @@ File bytes move from the browser directly to Google Drive through resumable uplo
 | 🧯 | **Abuse containment** | Link budgets, expiry, pause controls, Drive-space checks, brute-force damping, and signed short-lived download tokens limit damage. |
 | 🗂️ | **Drive-native organization** | Choose a destination in the Drive browser, create per-uploader folders, or preserve uploaded relative paths in metadata. |
 | 🎨 | **Per-link presentation** | Labels, welcome copy, colors, backgrounds, logos, promo media, and calls to action can be configured per drop. |
+| 🗜️ | **Image archive & video previews** | GitHub Actions runners (free tier, no Cloudflare CPU) shrink RAW/HEIC/JPEG folders to a size target as a copy, an `_archive` mirror, or an in-place Drive revision, with dry-run, pause/undo, recurring rules and e-mail digests; videos get 720p previews for galleries. |
 
 ### One application, three experiences
 
 - **Drop links** — private `/d/:slug` receive-only pages for originals and large batches.
-- **Admin** — one `/admin` shell with Overview, Live transfers, Drop links, Share links, Activity, link details, and New drop link flows.
+- **Admin** — one `/admin` shell with Overview, Live transfers, Drop links, Share links, Activity, People, Image archive, Video previews, Alerts & log, link details, and New drop link flows.
 - **Share links** — `/s/:slug` galleries for controlled read access, plus redirect mode when a public Drive handoff is intentional.
 
 ## How it works
