@@ -18,10 +18,10 @@ export const PBKDF2_ITERATIONS = 100000;
 export const SECURITY_HEADERS = {
   "content-security-policy": [
     "default-src 'self'",
-    "script-src 'self' https://static.cloudflareinsights.com https://*.clarity.ms",
+    "script-src 'self' https://static.cloudflareinsights.com https://*.clarity.ms https://fpjscdn.net",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com",
-    "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://api.resend.com https://cloudflareinsights.com https://*.clarity.ms",
+    "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://api.resend.com https://cloudflareinsights.com https://*.clarity.ms https://fpjscdn.net https://*.fpjs.io",
     "img-src 'self' data: blob: https:",
     "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
     "base-uri 'none'",
@@ -294,7 +294,7 @@ export function deviceIdFrom(request) {
 // FingerprintJS visitor id, set client-side into hd_fp (see public/identity.js).
 export function fpFrom(request) {
   const value = request?.headers ? getCookie(request, "hd_fp") : "";
-  return /^[a-f0-9]{16,40}$/i.test(value || "") ? value.toLowerCase() : "";
+  return /^[A-Za-z0-9]{16,40}$/.test(value || "") ? value : "";
 }
 
 export function normalizeEvent(event, request) {

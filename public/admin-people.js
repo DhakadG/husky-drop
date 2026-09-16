@@ -83,7 +83,7 @@ const suggestionsBox = () => {
   const list = peopleState.suggestions || [];
   const byKey = new Map(peopleState.people.map((p) => [p.key, p]));
   return `<div class="people-suggest"><div class="section-title"><h2>${icon("wand-sparkles", "ico-sm")} Suggested merges</h2><button type="button" class="mini" id="people-stitch">${icon("refresh-cw", "ico-sm")} run now</button></div>
-    ${list.length ? `<ul class="person-links">${list.map((s) => `<li><span><b>${esc(byKey.has(s.key) ? displayName(byKey.get(s.key)) : s.key)}</b> → ${esc(s.email)} <span class="kind-tag" data-kind="${s.confidence >= 0.8 ? "drop" : "admin"}">${Math.round(s.confidence * 100)}%</span><small class="muted"> ${esc(s.reason)}</small></span><span class="device-actions"><button type="button" class="mini" data-suggest="${escAttr(s.key)}" data-email="${escAttr(s.email)}" data-accept="1">merge</button><button type="button" class="link-like" data-suggest="${escAttr(s.key)}" data-email="" data-accept="0">dismiss</button></span></li>`).join("")}</ul>` : `<p class="muted">Nothing pending. Runs nightly; needs the ANTHROPIC_API_KEY secret.</p>`}</div>`;
+    ${list.length ? `<ul class="person-links">${list.map((s) => `<li><span><b>${esc(byKey.has(s.key) ? displayName(byKey.get(s.key)) : s.key)}</b> → ${esc(s.email)} <span class="kind-tag" data-kind="${s.confidence >= 0.8 ? "drop" : "admin"}">${Math.round(s.confidence * 100)}%</span><small class="muted"> ${esc(s.reason)}</small></span><span class="device-actions"><button type="button" class="mini" data-suggest="${escAttr(s.key)}" data-email="${escAttr(s.email)}" data-accept="1">merge</button><button type="button" class="link-like" data-suggest="${escAttr(s.key)}" data-email="" data-accept="0">dismiss</button></span></li>`).join("")}</ul>` : `<p class="muted">Nothing pending. Runs nightly; needs the GEMINI_API_KEY (free) or ANTHROPIC_API_KEY secret.</p>`}</div>`;
 };
 async function decideSuggestion(key, email, accept) {
   if (accept) await fetch("/api/admin/people/merge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, email }) });
@@ -93,7 +93,7 @@ async function decideSuggestion(key, email, accept) {
 async function runStitch() {
   $("people-stitch").disabled = true;
   const d = await fetch("/api/admin/people/suggestions", { method: "POST" }).then((r) => r.json()).catch(() => ({}));
-  if (d.skipped) alert("Set the ANTHROPIC_API_KEY worker secret first.");
+  if (d.skipped) alert("Set the GEMINI_API_KEY (or ANTHROPIC_API_KEY) worker secret first.");
   refreshPeople({ force: true });
 }
 const stat = (value, label) => `<span class="pstat"><b>${value}</b><small>${label}</small></span>`;

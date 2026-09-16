@@ -327,15 +327,18 @@ pixel work with sharp + libraw + libheif + exiftool.
   only one signed-in account has ever used are merged automatically.
 
 - `POST /api/hello` `{fp, slug, sessionId, meta}` — once per page load from
-  drop/share pages: FingerprintJS visitor id plus client details (screen,
+  drop/share pages: Fingerprint Pro visitor id (public key, `ap` region;
+  vendored open-source agent as ad-block fallback) plus client details (screen,
   timezone, language, platform, browser, cores, memory, touch, network).
   Upserts the device row in the DO `sessions` table and, when the viewer is
   signed in, links the device and fingerprint to that account.
 - `GET /api/admin/sessions?limit` — recent device rows.
 - `GET|POST|DELETE /api/admin/people/suggestions` — Claude-proposed merges
   of unsigned visits into accounts (POST runs the pass now; DELETE `{key}`
-  dismisses one). Also runs on the nightly cron when `ANTHROPIC_API_KEY`
-  is set. Accepting = the normal merge call.
+  dismisses one). Also runs on the nightly cron when `GEMINI_API_KEY`
+  (Google AI Studio, free tier; optional `GEMINI_MODEL`, default
+  `gemini-2.5-flash`) or `ANTHROPIC_API_KEY` is set. Accepting = the normal
+  merge call.
 - `GET|POST|DELETE /api/admin/bans` `{kind: email|device|fp, value, reason}` —
   blocked accounts/devices. Banned visitors get 403 on `/d/`, `/s/`, session
   creation and share listing/downloads (cached 30 s per isolate).

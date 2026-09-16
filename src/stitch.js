@@ -18,7 +18,26 @@ export function replaceSuggestions(sql, rows) {
 }
 export const dropSuggestion = (sql, key) => sql.exec("DELETE FROM suggestions WHERE key = ?", key);
 
-const MODEL = "claude-sonnet-5";
+// ponytail: Gemini free tier first (GEMINI_API_KEY), Anthropic if that is
+// what is configured. Same prompt, both return JSON text.
+async function askModel(env, prompt) {
+  if (env.GEMINI_API_KEY) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL || "gemini-2.5-flash"}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": env.GEMINI_API_KEY, "content-type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", maxOutputTokens: 4000 } }),
+    });
+    const d = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, d, text: (d.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(""), usage: `${d.usageMetadata?.promptTokenCount || 0} in / ${d.usageMetadata?.candidatesTokenCount || 0} out (gemini)` };
+  }
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 4000, messages: [{ role: "user", content: prompt }] }),
+  });
+  const d = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, d, text: (d.content || []).map((c) => c.text || "").join(""), usage: `${d.usage?.input_tokens || 0} in / ${d.usage?.output_tokens || 0} out (claude)` };
+}
 const brief = (p, sessions) => ({
   key: p.key,
   names: p.names,
@@ -32,8 +51,8 @@ const brief = (p, sessions) => ({
 });
 
 export async function runIdentityStitch(env, ctx, { force = false } = {}) {
-  if (!env.ANTHROPIC_API_KEY) {
-    appLog(env, ctx, { area: "people", message: "identity stitch skipped: ANTHROPIC_API_KEY not set" });
+  if (!env.GEMINI_API_KEY && !env.ANTHROPIC_API_KEY) {
+    appLog(env, ctx, { area: "people", message: "identity stitch skipped: set GEMINI_API_KEY (free) or ANTHROPIC_API_KEY" });
     return { skipped: "no key" };
   }
   const live = liveStub(env);
@@ -43,17 +62,12 @@ export async function runIdentityStitch(env, ctx, { force = false } = {}) {
   if (!known.length || !unknown.length) return { suggestions: 0 };
   if (!force && unknown.length > 300) unknown.length = 300;
   const prompt = `You match anonymous website visits to known Google accounts for a private photo-drop site. Be conservative: only suggest a match when device details (OS, browser, screen, timezone, language), places and behaviour (same links/shares, overlapping times, typed names similar to the account's names) make it likely. Output JSON only: {"suggestions":[{"key":"<unknown key>","email":"<known email>","confidence":0.0-1.0,"reason":"<one short sentence>"}]}. Omit anything under 0.5 confidence.\n\nKNOWN ACCOUNTS:\n${JSON.stringify(known)}\n\nUNKNOWN VISITS:\n${JSON.stringify(unknown)}`;
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 4000, messages: [{ role: "user", content: prompt }] }),
-  });
-  const d = await r.json().catch(() => ({}));
+  const r = await askModel(env, prompt);
   if (!r.ok) {
-    appLog(env, ctx, { level: "error", area: "people", message: `identity stitch failed: ${r.status}`, detail: d });
+    appLog(env, ctx, { level: "error", area: "people", message: `identity stitch failed: ${r.status}`, detail: r.d });
     return { error: r.status };
   }
-  const text = (d.content || []).map((c) => c.text || "").join("");
+  const text = r.text;
   let parsed = { suggestions: [] };
   try {
     parsed = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
@@ -64,7 +78,7 @@ export async function runIdentityStitch(env, ctx, { force = false } = {}) {
     .filter((s) => unknownKeys.has(s.key) && knownEmails.has(String(s.email || "").toLowerCase()) && Number(s.confidence) >= 0.5)
     .map((s) => ({ key: s.key, email: String(s.email).toLowerCase(), confidence: Math.min(1, Number(s.confidence)), reason: cleanText(s.reason || "", 200) }));
   await live.fetch("https://live.internal/suggestions", { method: "POST", body: JSON.stringify({ rows }) });
-  appLog(env, ctx, { area: "people", message: `identity stitch: ${rows.length} suggestion${rows.length === 1 ? "" : "s"} from ${unknown.length} unknown vs ${known.length} accounts (${d.usage?.input_tokens || 0} in / ${d.usage?.output_tokens || 0} out tokens)` });
+  appLog(env, ctx, { area: "people", message: `identity stitch: ${rows.length} suggestion${rows.length === 1 ? "" : "s"} from ${unknown.length} unknown vs ${known.length} accounts (${r.usage} tokens)` });
   return { suggestions: rows.length };
 }
 
