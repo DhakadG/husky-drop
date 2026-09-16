@@ -92,8 +92,11 @@ export function summarize(scan, cfg, excluded) {
 // ---- try it on one photo (browser encoder, indicative) ----
 // RAW/HEIC/TIFF cannot be decoded by the browser; the runner uses libraw,
 // libheif and mozjpeg, which lands ~15% smaller than the canvas encoder.
+// Any decodable row qualifies (a folder that is fully "done" can still be
+// previewed); rows the recipe would process come first.
 export function trialCandidates(scan, cfg, excluded) {
-  return scan.rows.filter((r) => ["jpeg", "png", "webp"].includes(r.t) && !skipReasonRow(r, cfg, scan, excluded)).sort((a, b) => b.s - a.s);
+  const rank = (r) => (skipReasonRow(r, cfg, scan, excluded) ? 1 : 0);
+  return scan.rows.filter((r) => ["jpeg", "png", "webp"].includes(r.t)).sort((a, b) => rank(a) - rank(b) || b.s - a.s);
 }
 export async function trialEncode(row, cfg, onStage) {
   onStage?.("downloading");
