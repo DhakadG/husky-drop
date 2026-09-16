@@ -55,10 +55,13 @@ async function decodable(input, file) {
       // preview. darktable's pipeline handles them.
       const dt = `${input}.dt.jpg`;
       try {
-        await run("darktable-cli", [input, dt, "--core", "--conf", "plugins/imageio/format/jpeg/quality=95"], { timeout: 180_000 });
+        await run("darktable-cli", [input, dt, "--apply-custom-presets", "false", "--core", "--configdir", "/tmp/dt-config", "--cachedir", "/tmp/dt-cache", "--conf", "write_sidecar_files=never", "--conf", "plugins/imageio/format/jpeg/quality=95"], { timeout: 180_000 });
         return { path: dt, via: "darktable" };
-      } catch {}
-      throw new Error("unsupported RAW (libraw, embedded preview and darktable all failed)");
+      } catch (error) {
+        const tail = String(error.stderr || error.message || "").trim().split("
+").slice(-3).join(" | ").slice(0, 300);
+        throw new Error(`unsupported RAW (libraw, embedded preview and darktable all failed): ${tail}`);
+      }
     }
   }
   if (/^hei[cf]$/.test(ext(file.name)) || /hei[cf]/.test(file.mime)) {
