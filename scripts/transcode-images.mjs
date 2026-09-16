@@ -51,7 +51,14 @@ async function decodable(input, file) {
           }
         } catch {}
       }
-      throw new Error("unsupported RAW (libraw and embedded preview both failed)");
+      // Lightroom HDR / linear float DNGs: libraw refuses and they carry no
+      // preview. darktable's pipeline handles them.
+      const dt = `${input}.dt.jpg`;
+      try {
+        await run("darktable-cli", [input, dt, "--core", "--conf", "plugins/imageio/format/jpeg/quality=95"], { timeout: 180_000 });
+        return { path: dt, via: "darktable" };
+      } catch {}
+      throw new Error("unsupported RAW (libraw, embedded preview and darktable all failed)");
     }
   }
   if (/^hei[cf]$/.test(ext(file.name)) || /hei[cf]/.test(file.mime)) {

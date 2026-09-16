@@ -4,6 +4,12 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-16 — HDR DNG fallback (PR #52)
+
+- Runner tries `darktable-cli` when libraw and the embedded preview both
+  fail - Lightroom HDR-merge DNGs (linear float) in the ARW test folder
+  were the case. Reported as `via: darktable`.
+
 ## 2026-09-16 — System log, email digests, recurring rules, outcome switch (PR #51)
 
 - **System log** tab (`src/applog.js`): job start/queue/finish/pause,
