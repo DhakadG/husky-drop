@@ -39,7 +39,7 @@ async function decodable(input, file) {
     const tiff = `${input}.tiff`;
     try {
       await run("dcraw_emu", ["-w", "-q", "3", "-T", "-Z", tiff, input]);
-      return tiff;
+      return { path: tiff, via: "libraw" };
     } catch {
       const jpg = `${input}.preview.jpg`;
       for (const tag of ["JpgFromRaw", "PreviewImage", "OtherImage"]) {
@@ -47,7 +47,7 @@ async function decodable(input, file) {
           const { stdout } = await run("exiftool", ["-b", `-${tag}`, input], { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 });
           if (stdout.length > 50_000) {
             await pipeline(Readable.from(stdout), createWriteStream(jpg));
-            return jpg;
+            return { path: jpg, via: "preview" };
           }
         } catch {}
       }
@@ -57,9 +57,9 @@ async function decodable(input, file) {
   if (/^hei[cf]$/.test(ext(file.name)) || /hei[cf]/.test(file.mime)) {
     const jpg = `${input}.heic.jpg`;
     await run("heif-convert", ["-q", "95", input, jpg]);
-    return jpg;
+    return { path: jpg, via: "libheif" };
   }
-  return input;
+  return { path: input, via: "direct" };
 }
 
 async function encode(source, output, file, options, original) {
@@ -98,7 +98,7 @@ async function encode(source, output, file, options, original) {
   // so copy the tags from the real original; pixels are already upright.
   if (options.metadata !== "strip" && source !== original) await run("exiftool", ["-overwrite_original", "-q", "-tagsfromfile", original, "-all:all", "-orientation=", output]).catch(() => {});
   if (options.metadata === "strip-gps") await run("exiftool", ["-overwrite_original", "-q", "-gps:all=", output]).catch(() => {});
-  return info;
+  return { ...info, q };
 }
 
 async function processOne(file, options, dir) {
@@ -107,7 +107,7 @@ async function processOne(file, options, dir) {
   const src = await api(`/api/admin/images/source/${file.id}`);
   if (!src.ok || !src.body) throw new Error(`source ${src.status}`);
   await pipeline(Readable.fromWeb(src.body), createWriteStream(input));
-  const source = await decodable(input, file);
+  const { path: source, via } = await decodable(input, file);
   const info = await encode(source, output, file, options, input);
   const { size } = await stat(output);
   if (!size || !info.width) throw new Error("encoder produced nothing");
@@ -129,7 +129,7 @@ async function processOne(file, options, dir) {
   if (!put.ok) throw new Error(result.error || `put ${put.status}`);
   if (result.skipped) throw new Error(result.skipped);
   if (result.w && (Math.abs(result.w - info.width) > 1 || Math.abs(result.h - info.height) > 1)) throw new Error(`Drive reports ${result.w}x${result.h}, encoded ${info.width}x${info.height}`);
-  return { newId: result.id, size };
+  return { newId: result.id, size, via, q: info.q, parent: result.parent };
 }
 
 let batch = { done: [], skipped: [] };
@@ -154,47 +154,50 @@ const dir = await mkdtemp(join(tmpdir(), "hd-images-"));
 let processed = 0;
 try {
   for (;;) {
-    const res = await api(`/api/admin/images/jobs/${jobId}/next?n=8`);
-    if (!res.ok) throw new Error(`next ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const { status, options, files, remaining } = await res.json();
+    const first = await api(`/api/admin/images/jobs/${jobId}/next?n=1`);
+    if (!first.ok) throw new Error(`next ${first.status}: ${(await first.text()).slice(0, 200)}`);
+    const { status, options } = await first.json();
     if (status !== "running") {
       console.log(`job is ${status}; stopping`);
       await report({ stopped: true });
       break;
     }
+    const parallel = Math.max(1, Math.min(8, Number(options.parallel) || 4));
+    const res = await api(`/api/admin/images/jobs/${jobId}/next?n=${parallel * 3}`);
+    const { files, remaining } = await res.json();
     if (!files.length) {
       await report({ finished: true });
       console.log(`finished: ${processed} files`);
       break;
     }
-    console.log(`${remaining} remaining`);
+    console.log(`${remaining} remaining · ${parallel} in parallel`);
+    // Pool: `parallel` workers pull from this batch; pause / cancel / the
+    // time budget are checked between batches (≤ 3 files per worker each).
     let stop = "";
-    for (const file of files) {
-      // Pause and the time budget are honoured per file, not per batch.
-      if (Date.now() - started > budgetMs) {
-        stop = "time budget reached - resume from the admin to continue";
-        break;
-      }
-      if (file !== files[0]) {
-        const peek = await api(`/api/admin/images/jobs/${jobId}/next?n=1`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-        if (peek && peek.status !== "running") {
-          stop = `job is ${peek.status}; stopping`;
-          break;
+    const queue = [...files];
+    const worker = async (slot) => {
+      const mine = join(dir, `w${slot}`);
+      await mkdir(mine, { recursive: true });
+      for (let file = queue.shift(); file; file = queue.shift()) {
+        if (Date.now() - started > budgetMs) {
+          stop = "time budget reached - resume from the admin to continue";
+          return;
         }
+        const t0 = Date.now();
+        try {
+          const { newId, size, via, q, parent } = await processOne(file, options, mine);
+          batch.done.push({ id: file.id, newId, size, ms: Date.now() - t0, via, q, parent });
+          console.log(`ok   ${file.path}/${file.name} ${(file.size / 1e6).toFixed(1)} MB -> ${(size / 1e6).toFixed(2)} MB (${via}, q${q})`);
+        } catch (error) {
+          batch.skipped.push({ id: file.id, error: error.message });
+          console.log(`skip ${file.name}: ${error.message}`);
+        }
+        processed += 1;
+        await rm(mine, { recursive: true, force: true });
+        await mkdir(mine, { recursive: true });
       }
-      const t0 = Date.now();
-      try {
-        const { newId, size } = await processOne(file, options, dir);
-        batch.done.push({ id: file.id, newId, size, ms: Date.now() - t0 });
-        console.log(`ok   ${file.path}/${file.name} ${(file.size / 1e6).toFixed(1)} MB -> ${(size / 1e6).toFixed(2)} MB`);
-      } catch (error) {
-        batch.skipped.push({ id: file.id, error: error.message });
-        console.log(`skip ${file.name}: ${error.message}`);
-      }
-      processed += 1;
-      await rm(dir, { recursive: true, force: true });
-      await mkdir(dir, { recursive: true });
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(parallel, files.length) }, (_, i) => worker(i)));
     const state = await report();
     if (stop || (state && state.status !== "running")) {
       console.log(stop || `job is ${state.status}; stopping`);

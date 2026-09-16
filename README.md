@@ -262,7 +262,8 @@ husky-drop/
 │   ├── share-token.js    # signed download tokens, download safety list
 │   ├── share-media.js    # thumbnails, Range downloads, on-demand EXIF
 │   ├── previews.js       # 720p video previews (GitHub Actions transcoder API)
-│   ├── images.js         # image archive jobs: plan / dry run / run control / Drive writes
+│   ├── images.js         # image archive: scan, estimates, plan
+│   ├── images-run.js     # image archive: job control, queue, runner API, Drive writes, undo
 │   ├── share-zip.js      # streaming ZIP64 "download all"
 │   ├── store.js          # KV events, counters, lockouts, notifications
 │   └── util.js           # normalizers, security helpers, constants
