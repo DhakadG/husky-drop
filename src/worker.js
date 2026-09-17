@@ -78,6 +78,7 @@ import {
   deletePreview,
   listPendingPreviews,
   previewSource,
+  previewsCoverage,
   previewsOverview,
   putPreview,
   reindexPreviews,
@@ -286,6 +287,7 @@ async function api(request, env, url, ctx) {
       const rest = p.slice("/api/admin/previews/".length);
       if (m === "GET" && rest === "pending") return listPendingPreviews(request, env);
       if (m === "GET" && rest === "overview") return previewsOverview(request, env);
+      if (m === "GET" && rest === "coverage") return previewsCoverage(request, env);
       if (m === "POST" && rest === "report") return reportPreviewRun(request, env, ctx);
       if (m === "POST" && rest === "run") return startPreviewRun(request, env);
       if (m === "POST" && rest === "retry") return retryFailedPreviews(request, env);

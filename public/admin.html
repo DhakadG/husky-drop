@@ -203,7 +203,49 @@
       <!-- VIDEO PREVIEWS: transcoder coverage, runs, controls -->
       <section id="tab-previews" class="tab-pane hidden">
         <div class="pane-head"><div><p class="eyebrow">streaming copies</p><h1 class="pane-title">Video previews</h1><span class="muted">720p copies of share videos, made by the nightly GitHub Actions job. Hover playback and first play use them; HD stays one tap away.</span></div></div>
-        <div id="previews-body" aria-live="polite"><div class="empty-state"><p class="muted">Loading preview status…</p></div></div>
+        <div id="previews-body" aria-live="polite">
+          <div class="stat-grid" id="previews-stat-grid">
+            <div class="stat-card v3 skel"><div class="stat-skel-ico skel-bone"></div><div><div class="stat-skel-val skel-bone"></div><div class="stat-skel-lbl skel-bone"></div></div></div>
+            <div class="stat-card v3 skel"><div class="stat-skel-ico skel-bone"></div><div><div class="stat-skel-val skel-bone"></div><div class="stat-skel-lbl skel-bone"></div></div></div>
+            <div class="stat-card v3 skel"><div class="stat-skel-ico skel-bone"></div><div><div class="stat-skel-val skel-bone"></div><div class="stat-skel-lbl skel-bone"></div></div></div>
+            <div class="stat-card v3 skel"><div class="stat-skel-ico skel-bone"></div><div><div class="stat-skel-val skel-bone"></div><div class="stat-skel-lbl skel-bone"></div></div></div>
+            <div class="stat-card v3 skel"><div class="stat-skel-ico skel-bone"></div><div><div class="stat-skel-val skel-bone"></div><div class="stat-skel-lbl skel-bone"></div></div></div>
+          </div>
+          <div id="previews-live-wrap"></div>
+          <section class="panel" id="previews-runs-section">
+            <div class="section-title"><div><p class="eyebrow">transcoder</p><h2><svg class="ico" aria-hidden="true"><use href="/icons.svg#zap"></use></svg> Runs</h2></div>
+              <div class="section-tools previews-tools">
+                <label class="muted">limit <input id="previews-limit" class="previews-limit" type="number" min="1" max="1000" value="300" aria-label="Videos per run" disabled></label>
+                <button class="btn" id="previews-run" type="button" disabled><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#play"></use></svg> Run now</button>
+                <button class="mini" id="previews-refresh" type="button" disabled><svg class="ico ico-sm spin" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg> Loading…</button>
+              </div>
+            </div>
+            <div class="upload-table-wrap">
+              <table class="uploads previews-runs">
+                <thead><tr><th>Run</th><th>Started</th><th class="num">Done</th><th class="num">Skipped</th><th class="num">In → out</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr class="table-skel-row"><td><div class="table-skel-cell skel-bone" style="width:120px"></div></td><td><div class="table-skel-cell skel-bone" style="width:60px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:30px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:90px"></div></td><td><div class="table-skel-cell skel-bone" style="width:80px"></div></td></tr>
+                  <tr class="table-skel-row"><td><div class="table-skel-cell skel-bone" style="width:100px"></div></td><td><div class="table-skel-cell skel-bone" style="width:55px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:35px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:30px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:85px"></div></td><td><div class="table-skel-cell skel-bone" style="width:75px"></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel" id="previews-coverage-section">
+            <div class="section-title"><div><p class="eyebrow">by folder</p><h2><svg class="ico" aria-hidden="true"><use href="/icons.svg#folder"></use></svg> Coverage</h2></div>
+              <div class="section-tools"><span class="coverage-loading-badge"><svg class="ico ico-sm spin" aria-hidden="true"><use href="/icons.svg#loader-circle"></use></svg> Scanning folders…</span></div>
+            </div>
+            <div class="upload-table-wrap">
+              <table class="uploads previews-folders">
+                <thead><tr><th></th><th>Folder</th><th>Share</th><th class="num">Videos</th><th class="num">Ready</th><th class="num">Waiting</th><th class="num">Failed</th><th>Progress</th><th></th></tr></thead>
+                <tbody>
+                  <tr class="table-skel-row"><td></td><td><div class="table-skel-cell skel-bone" style="width:140px"></div></td><td><div class="table-skel-cell skel-bone" style="width:80px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:30px"></div></td><td><div class="table-skel-cell skel-bone" style="width:110px"></div></td><td></td></tr>
+                  <tr class="table-skel-row"><td></td><td><div class="table-skel-cell skel-bone" style="width:180px"></div></td><td><div class="table-skel-cell skel-bone" style="width:80px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:30px"></div></td><td><div class="table-skel-cell skel-bone" style="width:90px"></div></td><td></td></tr>
+                  <tr class="table-skel-row"><td></td><td><div class="table-skel-cell skel-bone" style="width:120px"></div></td><td><div class="table-skel-cell skel-bone" style="width:80px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:40px"></div></td><td class="num"><div class="table-skel-cell skel-bone" style="width:30px"></div></td><td><div class="table-skel-cell skel-bone" style="width:130px"></div></td><td></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       </section>
 
       <!-- IMAGE ARCHIVE: plan, dry-run and run re-encode jobs -->

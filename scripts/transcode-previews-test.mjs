@@ -258,4 +258,44 @@ class MockWebSocket {
   console.log("✓ Fast remux compliance detection verified");
 }
 
+// ---- Test 4: Progressive Preview UI & Skeletons Contract ----
+{
+  const fs = await import("node:fs");
+  const adminHtml = fs.readFileSync(new URL("../public/admin.html", import.meta.url), "utf8");
+  const adminPreviewsJs = fs.readFileSync(new URL("../public/admin-previews.js", import.meta.url), "utf8");
+  const css = fs.readFileSync(new URL("../public/style.css", import.meta.url), "utf8");
+  const workerJs = fs.readFileSync(new URL("../src/worker.js", import.meta.url), "utf8");
+  const previewsJs = fs.readFileSync(new URL("../src/previews.js", import.meta.url), "utf8");
+
+  // Verify admin.html initial skeleton state
+  assert.ok(adminHtml.includes('id="previews-stat-grid"'), "admin.html has previews stat grid skeleton");
+  assert.ok(adminHtml.includes("stat-card v3 skel"), "admin.html has skeleton stat cards");
+  assert.ok(adminHtml.includes('id="previews-runs-section"'), "admin.html has previews runs section skeleton");
+  assert.ok(adminHtml.includes('id="previews-coverage-section"'), "admin.html has previews coverage section skeleton");
+  assert.ok(adminHtml.includes("coverage-loading-badge"), "admin.html has coverage loading badge");
+  assert.ok(!adminHtml.includes("Loading preview status…"), "admin.html no longer contains blank loading text");
+
+  // Verify admin-previews.js progressive decoupled functions
+  assert.ok(adminPreviewsJs.includes("export function renderSkeletons"), "admin-previews exports renderSkeletons");
+  assert.ok(adminPreviewsJs.includes("export async function loadCoverage"), "admin-previews exports loadCoverage");
+  assert.ok(adminPreviewsJs.includes("loadCoverage({ fresh"), "admin-previews kicks off background coverage fetch");
+  assert.ok(adminPreviewsJs.includes("renderCoverageLoading"), "admin-previews has renderCoverageLoading skeleton");
+  assert.ok(adminPreviewsJs.includes("updateStatCards"), "admin-previews updates stat cards in place");
+
+  // Verify CSS skeleton and spinner rules
+  assert.ok(css.includes(".skel-bone"), "style.css includes .skel-bone");
+  assert.ok(css.includes("@keyframes skel-wave"), "style.css includes @keyframes skel-wave");
+  assert.ok(css.includes(".stat-card.v3.skel"), "style.css includes .stat-card.v3.skel");
+  assert.ok(css.includes(".coverage-loading-badge"), "style.css includes .coverage-loading-badge");
+  assert.ok(css.includes("@keyframes spin"), "style.css includes @keyframes spin");
+
+  // Verify Worker & backend routes
+  assert.ok(workerJs.includes('rest === "coverage"'), "worker.js routes GET /api/admin/previews/coverage");
+  assert.ok(previewsJs.includes("export async function previewsCoverage"), "previews.js exports previewsCoverage");
+  assert.ok(previewsJs.includes("foldersLoading"), "previewsOverview supports foldersLoading");
+
+  console.log("✓ Progressive previews UI contracts, skeletons & decoupled routes verified");
+}
+
 console.log("\nAll video transcoder tests passed successfully!");
+
