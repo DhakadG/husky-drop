@@ -8335,3 +8335,82 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   white-space: nowrap;
 }
 
+/* ---------- Skeleton loading states & shimmer ---------- */
+@keyframes skel-wave {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+.skel-bone {
+  background: linear-gradient(90deg, rgba(12, 26, 43, 0.05) 25%, rgba(12, 26, 43, 0.12) 50%, rgba(12, 26, 43, 0.05) 75%);
+  background-size: 200% 100%;
+  animation: skel-wave 1.6s ease-in-out infinite;
+  border-radius: var(--r-xs, 8px);
+  display: inline-block;
+}
+.stat-card.v3.skel {
+  border-color: rgba(12, 26, 43, 0.06);
+  background: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+.stat-skel-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+}
+.stat-skel-val {
+  height: 24px;
+  width: 68px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+}
+.stat-skel-lbl {
+  height: 13px;
+  width: 100px;
+  border-radius: 4px;
+}
+.table-skel-row td {
+  padding: 12px 14px;
+}
+.table-skel-cell {
+  height: 14px;
+  border-radius: 4px;
+}
+.coverage-loading-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 12px var(--font-mono);
+  color: var(--accent);
+  background: rgba(47, 107, 255, 0.09);
+  border: 1px solid rgba(47, 107, 255, 0.2);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.coverage-loading-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: rgba(47, 107, 255, 0.04);
+  border: 1px dashed rgba(47, 107, 255, 0.2);
+}
+.coverage-error-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  margin-top: 10px;
+  border-radius: var(--r-sm);
+  background: rgba(240, 85, 107, 0.08);
+  border: 1px solid rgba(240, 85, 107, 0.22);
+}
+
+

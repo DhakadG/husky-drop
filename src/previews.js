@@ -57,13 +57,24 @@ async function previewFolderId(env) {
   return folder.id;
 }
 
-// ---- share tree scan (Drive reads only; memoised per isolate for 60s) ----
+// ---- share tree scan (Drive reads with memory & KV cache) ----
+const TREE_CACHE_KEY = "previews:tree_cache";
 let scanMemo = { at: 0, tree: null };
+
 async function scanShares(env, fresh = false) {
-  if (!fresh && scanMemo.tree && Date.now() - scanMemo.at < 60_000) return scanMemo.tree;
+  if (!fresh && scanMemo.tree && Date.now() - scanMemo.at < 300_000) return scanMemo.tree;
+  if (!fresh) {
+    const cached = await env.KV.get(TREE_CACHE_KEY, "json").catch(() => null);
+    if (cached && Array.isArray(cached) && cached.length) {
+      scanMemo = { at: Date.now(), tree: cached };
+      return cached;
+    }
+  }
+
   const slugs = (await env.KV.get("shares:index", "json")) || [];
   const folders = []; // {slug, label, folderId, name, depth, videos: [{id,name,size,mime}]}
   const seen = new Set();
+
   const walk = async (slug, label, folderId, name, depth) => {
     if (depth > 3 || seen.has(folderId)) return;
     seen.add(folderId);
@@ -71,20 +82,37 @@ async function scanShares(env, fresh = false) {
     folders.push(node);
     let pageToken = "";
     do {
-      const page = await driveListFolder(env, folderId, pageToken);
-      for (const f of page.files || []) {
-        if (f.mimeType === "application/vnd.google-apps.folder") await walk(slug, label, f.id, f.name, depth + 1);
-        else if (isVideo(f)) node.videos.push({ id: f.id, name: f.name, size: Number(f.size) || 0, mime: f.mimeType });
+      let page;
+      try {
+        page = await driveListFolder(env, folderId, pageToken);
+      } catch {
+        break;
       }
+      const subtasks = [];
+      for (const f of page.files || []) {
+        if (f.mimeType === "application/vnd.google-apps.folder") {
+          subtasks.push(walk(slug, label, f.id, f.name, depth + 1));
+        } else if (isVideo(f)) {
+          node.videos.push({ id: f.id, name: f.name, size: Number(f.size) || 0, mime: f.mimeType });
+        }
+      }
+      if (subtasks.length) await Promise.all(subtasks);
       pageToken = page.nextPageToken || "";
     } while (pageToken);
   };
+
+  const shareTasks = [];
   for (const slug of slugs) {
     const share = await env.KV.get(`share:${slug}`, "json");
     if (shareState(share) !== "active") continue;
-    for (const id of share.folderIds || []) await walk(slug, share.label || slug, id, share.label || slug, 0);
+    for (const id of share.folderIds || []) {
+      shareTasks.push(walk(slug, share.label || slug, id, share.label || slug, 0));
+    }
   }
+  await Promise.all(shareTasks);
+
   scanMemo = { at: Date.now(), tree: folders };
+  env.KV.put(TREE_CACHE_KEY, JSON.stringify(folders), { expirationTtl: 86400 }).catch(() => {});
   return folders;
 }
 
@@ -112,11 +140,19 @@ async function gh(env, path, init = {}) {
 }
 async function activeRun(env) {
   if (!ghConfigured(env)) return null;
-  const r = await gh(env, `workflows/${WORKFLOW}/runs?per_page=3`);
-  if (!r.ok) return null;
-  const { workflow_runs: runs = [] } = await r.json();
-  const live = runs.find((run) => ["queued", "in_progress", "waiting"].includes(run.status));
-  return live ? { id: live.id, status: live.status, startedAt: Date.parse(live.run_started_at || live.created_at), url: live.html_url } : null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3000);
+  try {
+    const r = await gh(env, `workflows/${WORKFLOW}/runs?per_page=3`, { signal: ctrl.signal });
+    if (!r.ok) return null;
+    const { workflow_runs: runs = [] } = await r.json();
+    const live = runs.find((run) => ["queued", "in_progress", "waiting"].includes(run.status));
+    return live ? { id: live.id, status: live.status, startedAt: Date.parse(live.run_started_at || live.created_at), url: live.html_url } : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 function nextScheduledRun(now = Date.now()) {
   const next = new Date(now);
@@ -125,20 +161,7 @@ function nextScheduledRun(now = Date.now()) {
   return next.getTime();
 }
 
-// ---- admin: overview ----
-export async function previewsOverview(request, env) {
-  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
-  const [index, tree, active, live] = await Promise.all([
-    previewIndex(env),
-    scanShares(env, fresh),
-    activeRun(env),
-    env.LIVE_TRACKER
-      ? liveStub(env)
-          .fetch("https://live.internal/transcoder-status")
-          .then((r) => r.json())
-          .catch(() => null)
-      : null,
-  ]);
+function computeCoverage(tree, index) {
   const totals = { videos: 0, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
   const folders = tree.map((node) => {
     const row = { slug: node.slug, label: node.label, folderId: node.folderId, name: node.name, depth: node.depth, videos: node.videos.length, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
@@ -153,9 +176,61 @@ export async function previewsOverview(request, env) {
   });
   const names = new Map(tree.flatMap((node) => node.videos.map((v) => [v.id, v])));
   const failed = Object.entries(index.failed).map(([id, f]) => ({ id, name: names.get(id)?.name || id, ...f }));
+  return { folders, totals, failed };
+}
+
+// ---- admin: fast overview (returns in <50ms without waiting for a full Drive crawl) ----
+export async function previewsOverview(request, env) {
+  const url = new URL(request.url);
+  const fresh = url.searchParams.get("fresh") === "1";
+
+  const [index, active, live] = await Promise.all([
+    previewIndex(env),
+    activeRun(env),
+    env.LIVE_TRACKER
+      ? liveStub(env)
+          .fetch("https://live.internal/transcoder-status")
+          .then((r) => r.json())
+          .catch(() => null)
+      : null,
+  ]);
+
+  // Check if we already have the tree cached in memory or KV
+  let tree = null;
+  if (!fresh && scanMemo.tree && Date.now() - scanMemo.at < 300_000) {
+    tree = scanMemo.tree;
+  } else if (!fresh) {
+    tree = await env.KV.get(TREE_CACHE_KEY, "json").catch(() => null);
+    if (tree) scanMemo = { at: Date.now(), tree };
+  }
+
+  let totals = {
+    videos: Object.keys(index.files).length + Object.keys(index.failed).length,
+    ready: Object.keys(index.files).length,
+    pending: 0,
+    failed: Object.keys(index.failed).length,
+    bytes: 0,
+    previewBytes: 0,
+  };
+  for (const f of Object.values(index.files)) totals.previewBytes += f.size || 0;
+
+  let folders = null;
+  let foldersLoading = false;
+  let failed = Object.entries(index.failed).map(([id, f]) => ({ id, name: id, ...f }));
+
+  if (tree) {
+    const cov = computeCoverage(tree, index);
+    folders = cov.folders;
+    totals = cov.totals;
+    failed = cov.failed;
+  } else {
+    foldersLoading = true;
+  }
+
   return json({
     totals,
     folders,
+    foldersLoading,
     failed,
     runs: index.runs,
     queue: index.queue,
@@ -163,6 +238,23 @@ export async function previewsOverview(request, env) {
     live,
     nextRunAt: nextScheduledRun(),
     dispatchConfigured: ghConfigured(env),
+    scannedAt: scanMemo.at,
+  });
+}
+
+// ---- admin: separate coverage endpoint (can run in background without hanging overview) ----
+export async function previewsCoverage(request, env) {
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+  const [index, tree] = await Promise.all([
+    previewIndex(env),
+    scanShares(env, fresh),
+  ]);
+
+  const cov = computeCoverage(tree, index);
+  return json({
+    totals: cov.totals,
+    folders: cov.folders,
+    failed: cov.failed,
     scannedAt: scanMemo.at,
   });
 }
