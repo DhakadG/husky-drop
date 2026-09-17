@@ -30,7 +30,7 @@ import { toast, fmtDur } from "./share-utils.js";
 import { identify } from "./identity.js";
 import { trackEvent, installTracking } from "./share-beacon.js";
 import { downloadFile } from "./share-download.js";
-import { heatVideoTile, installHoverPreview, probeVideoMetadata, warmVideoTile } from "./share-preview.js";
+import { ensureVideoPoster, heatVideoTile, installHoverPreview, probeVideoMetadata, warmVideoTile } from "./share-preview.js";
 import { openViewer } from "./share-viewer.js";
 import {
   cancelTouchSelection,
@@ -70,6 +70,9 @@ const cardObserver =
             }
             warmVideoTile(file, entry.isIntersecting);
             if (entry.isIntersecting && !file.aspect && !file.thumb) probeVideoMetadata(file);
+            // A video with no Drive thumbnail used to stay a blank chip until
+            // the pointer landed on it. Pull its own poster as it scrolls near.
+            if (entry.isIntersecting && !file.thumb) ensureVideoPoster(file, entry.target);
           }
         },
         { rootMargin: "700px" },
@@ -652,6 +655,33 @@ export function renderMeta() {
   }
 }
 
+// How far a tile grows when hovered. Zoom only earns its keep when tiles are
+// small: at the densest setting a tile has room to grow and needs the detail,
+// at the largest it already fills the row and growing it just shoves the grid
+// about. So the chosen strength is scaled down as tiles get bigger, and even
+// "large" on the biggest tiles settles near 1.
+const ZOOM_STRENGTH = { off: 0, s: 0.14, m: 0.3, l: 0.52, auto: 0.34 };
+let hoverZoomPref = localStorage.getItem("lhdb_hover_zoom") || "auto";
+
+export function applyHoverZoom() {
+  const density = 1 - (clampTileScale(tileScale) - 1) / 8; // 1 = densest, 0 = largest
+  const zoom = 1 + (ZOOM_STRENGTH[hoverZoomPref] ?? ZOOM_STRENGTH.auto) * density;
+  document.documentElement.style.setProperty("--hover-zoom", zoom.toFixed(3));
+}
+
+function installHoverZoomControl() {
+  const select = $("hover-zoom");
+  if (!select) return;
+  select.value = hoverZoomPref;
+  select.addEventListener("change", () => {
+    hoverZoomPref = select.value;
+    localStorage.setItem("lhdb_hover_zoom", hoverZoomPref);
+    applyHoverZoom();
+    trackEvent("layout", `hover zoom ${hoverZoomPref}`, { control: "hover-zoom" });
+  });
+  applyHoverZoom();
+}
+
 function installTileSizeControl() {
   const control = $("tile-size");
   const range = $("tile-size-range");
@@ -665,6 +695,7 @@ function installTileSizeControl() {
     control.style.setProperty("--size-progress", `${((tileScale - 1) / 8) * 100}%`);
     control.style.setProperty("--size-frac", String((tileScale - 1) / 8));
     localStorage.setItem("lhdb_gallery_scale", String(tileScale));
+    applyHoverZoom();
     scheduleLayout();
     if (report) trackEvent("layout", label, { control: "tile-size", step: tileScale });
   };
@@ -676,6 +707,7 @@ function installTileSizeControl() {
   }, { passive: false });
   control.addEventListener("dblclick", () => apply(5, true));
   apply(tileScale);
+  installHoverZoomControl();
 }
 
 const galleryToolsMedia = matchMedia("(max-width: 640px)");
@@ -820,8 +852,7 @@ export function card(file) {
   const blocked = !!file.downloadBlocked;
   fig.className = `g-card${media ? "" : " plain"}${isVideo ? " video-card" : ""}${blocked ? " download-blocked" : ""}`;
   fig.dataset.cursor = isVideo ? "video" : media ? "photo" : "";
-  const dur = file.dur ? `<span class="g-dur">${fmtDur(file.dur)}</span>` : "";
-  const play = isVideo ? `<span class="g-play">${uiIcon("play")}</span>` : "";
+  const dur = isVideo ? `<span class="g-dur">${file.dur ? fmtDur(file.dur) : "video"}</span>` : "";
   fig.innerHTML = `
     <button class="g-check" type="button" aria-label="select ${escAttr(file.name)}" data-cursor="link">
       ${uiIcon("check")}
@@ -829,7 +860,7 @@ export function card(file) {
     <a class="g-dl${blocked ? " blocked" : ""}" href="${escAttr(file.dl)}" download aria-label="${blocked ? "download blocked for" : "download"} ${escAttr(file.name)}" title="${blocked ? escAttr(file.downloadBlockReason || "Download blocked") : ""}" data-cursor="link">
       ${uiIcon("download")}
     </a>
-    ${play}${dur}
+    ${dur}
     <figcaption><b>${esc(file.name)}</b><span>${fmtBytes(file.size)}</span></figcaption>`;
 
   if (file.thumb) {

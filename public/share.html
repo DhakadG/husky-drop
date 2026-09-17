@@ -111,6 +111,16 @@
             <span class="size-control-end"><svg class="ico large" aria-hidden="true"><use href="/icons.svg#grid-2x2"></use></svg></span>
           </div>
           <span class="sort-control">
+            <select id="hover-zoom" class="sort-select" aria-label="How much a tile grows on hover" title="How much a tile grows when you hover it">
+              <option value="auto">Hover zoom: auto</option>
+              <option value="off">Hover zoom: off</option>
+              <option value="s">Hover zoom: subtle</option>
+              <option value="m">Hover zoom: medium</option>
+              <option value="l">Hover zoom: large</option>
+            </select>
+            <svg class="ico" aria-hidden="true"><use href="/icons.svg#chevron-down"></use></svg>
+          </span>
+          <span class="sort-control">
             <select id="sort" class="sort-select" aria-label="sort files">
               <option value="name">Name A-Z</option>
               <option value="new">Newest first</option>
