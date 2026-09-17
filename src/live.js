@@ -30,6 +30,7 @@ const BROADCAST_COALESCE_MS = 200;
 const FOLDER_ID_TTL_MS = 6 * 3600_000;
 const SESSION_STALE_MS = 2 * 60_000;
 const RECENT_DONE_KEY = "recentDone";
+const TRANSCODER_STALE_MS = 120_000; // no telemetry for 2 min = the runner is gone
 
 const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
@@ -90,7 +91,7 @@ export class LiveTracker {
       this.recentDone = (await this.state.storage.get(RECENT_DONE_KEY)) || [];
     } catch {}
     for (const socket of this.adminSockets()) {
-      this.safeSend(socket, { type: "snapshot", active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderState });
+      this.safeSend(socket, { type: "snapshot", active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderView() });
     }
   }
 
@@ -119,8 +120,8 @@ export class LiveTracker {
     const isPost = request.method === "POST";
     const body = isPost ? await request.json().catch(() => ({})) : {};
 
-    if (path === "/snapshot") return reply({ active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderState });
-    if (path === "/transcoder-status") return reply(this.transcoderState);
+    if (path === "/snapshot") return reply({ active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderView() });
+    if (path === "/transcoder-status") return reply(this.transcoderView());
 
     if (path === "/timeseries") {
       const days = clamp(Number(url.searchParams.get("days")) || 30, 1, 120);
@@ -273,7 +274,7 @@ export class LiveTracker {
     this.state.acceptWebSocket(server, [role]);
     server.serializeAttachment({ role, slug, sessionId: "" });
     if (role === "admin") {
-      this.safeSend(server, { type: "snapshot", active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderState });
+      this.safeSend(server, { type: "snapshot", active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderView() });
     } else if (role === "transcoder") {
       this.safeSend(server, { type: "transcoder:ack", ok: true });
     }
@@ -435,6 +436,14 @@ export class LiveTracker {
     }
   }
 
+  // A runner that is killed (cancelled workflow, dead runner) may never send
+  // "bye" or close cleanly, which used to pin the dashboard to "live" forever.
+  transcoderView() {
+    const stale = Date.now() - (this.transcoderState.updatedAt || 0) > TRANSCODER_STALE_MS;
+    if (!stale) return this.transcoderState;
+    return { ...this.transcoderState, active: false, workers: {} };
+  }
+
   queueTranscoderBroadcast() {
     this.transcoderTimer ??= setTimeout(() => {
       this.transcoderTimer = null;
@@ -445,7 +454,7 @@ export class LiveTracker {
   broadcastTranscoderState() {
     const payload = JSON.stringify({
       type: "previews:live",
-      live: this.transcoderState,
+      live: this.transcoderView(),
     });
     for (const socket of this.adminSockets()) {
       this.safeSend(socket, payload);

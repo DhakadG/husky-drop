@@ -282,6 +282,15 @@ class MockWebSocket {
   assert.ok(adminPreviewsJs.includes("renderCoverageLoading"), "admin-previews has renderCoverageLoading skeleton");
   assert.ok(adminPreviewsJs.includes("updateStatCards"), "admin-previews updates stat cards in place");
 
+  // Anti-flicker contract. A telemetry tick or a poll must patch panels in
+  // place; re-rendering the whole tab reset folder checkboxes mid-click and
+  // re-triggered a full Drive crawl every 20s.
+  const liveFn = adminPreviewsJs.slice(adminPreviewsJs.indexOf("export function updatePreviewsLive"));
+  assert.ok(!liveFn.split("\n}")[0].includes("render()"), "a live telemetry tick never re-renders the whole tab");
+  assert.ok(adminPreviewsJs.includes("function patch()"), "admin-previews patches panels in place");
+  assert.ok(adminPreviewsJs.includes("next.folders = data.folders"), "a refreshed overview keeps folders already loaded");
+  assert.ok(adminPreviewsJs.includes("if (coverageLoading) return;"), "only one Drive crawl runs at a time");
+
   // Verify CSS skeleton and spinner rules
   assert.ok(css.includes(".skel-bone"), "style.css includes .skel-bone");
   assert.ok(css.includes("@keyframes skel-wave"), "style.css includes @keyframes skel-wave");

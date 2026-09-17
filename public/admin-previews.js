@@ -9,6 +9,7 @@ import { flash } from "./admin.js";
 let data = null;
 let liveState = null;
 let coverageLoading = false;
+let rendered = false;
 let pollTimer = 0;
 let selectedFolders = new Set();
 
@@ -85,45 +86,57 @@ export async function refreshPreviews({ fresh = false } = {}) {
     renderSkeletons();
   }
 
-  // If live transcoder is active, mount it immediately into live wrap
-  if (liveState?.active) {
-    const liveWrap = $("previews-live-wrap");
-    if (liveWrap) liveWrap.innerHTML = renderLivePanel(liveState);
-  }
-
-  const refreshBtn = $("previews-refresh");
-  if (refreshBtn) {
-    refreshBtn.disabled = true;
-    refreshBtn.innerHTML = `<svg class="ico ico-sm spin" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg> Scanning…`;
-  }
-
   try {
     const r = await fetch(`/api/admin/previews/overview${fresh ? "?fresh=1" : ""}`);
     if (!r.ok) throw new Error(`overview ${r.status}`);
-    data = await r.json();
-    if (data?.live) liveState = data.live;
-    render();
-
-    // If folder coverage was not in cache, load it in the background
-    if (data.foldersLoading || !data.folders) {
-      loadCoverage({ fresh });
+    const next = await r.json();
+    // Coverage lives behind its own endpoint. A refresh must never throw away
+    // folders we already have, or the table collapses back to a skeleton and
+    // kicks off another 3k-file Drive crawl on every poll.
+    if (data?.folders && !next.folders) {
+      next.folders = data.folders;
+      // Keep the crawl's video count, take the index's fresh ready/failed.
+      next.totals = {
+        ...data.totals,
+        ready: next.totals.ready,
+        failed: next.totals.failed,
+        previewBytes: next.totals.previewBytes,
+        pending: Math.max(0, data.totals.videos - next.totals.ready - next.totals.failed),
+      };
+      next.foldersLoading = false;
     }
+    data = next;
+    if (data.live) liveState = data.live;
+    if (rendered) patch();
+    else render();
+
+    if (!data.folders && !coverageLoading) loadCoverage();
   } catch (error) {
     if (!data) {
+      rendered = false;
       host.innerHTML = `<div class="empty-state"><p>${icon("circle-alert")} Could not load preview status.</p><p class="muted">${esc(error.message)}</p></div>`;
-    }
-  } finally {
-    if (refreshBtn && (!coverageLoading || data?.folders)) {
-      refreshBtn.disabled = false;
-      refreshBtn.innerHTML = `${icon("refresh-cw", "ico-sm")} Rescan`;
     }
   }
 
   clearTimeout(pollTimer);
   // Gentle fallback poll only if an active GitHub action run is reported and WebSocket is inactive
   if ((data?.active || liveState?.active) && !$("tab-previews")?.classList.contains("hidden")) {
-    pollTimer = setTimeout(() => refreshPreviews({ fresh: true }), 20_000);
+    pollTimer = setTimeout(() => refreshPreviews(), 20_000);
   }
+}
+
+// In-place refresh of everything except the coverage table. A full re-render on
+// every poll/WebSocket tick is what made the tab flicker and dropped folder
+// checkboxes and scroll position mid-click.
+function patch() {
+  if (!data) return;
+  updateStatCards(data.totals);
+  const liveWrap = $("previews-live-wrap");
+  if (liveWrap) liveWrap.innerHTML = liveState?.active ? renderLivePanel(liveState) : "";
+  const runs = $("previews-runs-section");
+  if (runs) runs.outerHTML = renderRunsPanel();
+  const failedWrap = $("previews-failed-wrap");
+  if (failedWrap) failedWrap.innerHTML = renderFailedSection(data.failed || []);
 }
 
 export function stopPreviewsPolling() {
@@ -133,16 +146,18 @@ export function stopPreviewsPolling() {
 
 // Background decoupled folder coverage loader
 export async function loadCoverage({ fresh = false } = {}) {
-  if (coverageLoading && !fresh) return;
+  if (coverageLoading) return; // one Drive crawl at a time, `fresh` included
   coverageLoading = true;
 
+  // Keep any table we already have on screen while re-scanning; only the very
+  // first load gets the skeleton.
   const coverageSection = $("previews-coverage-section");
-  if (coverageSection && (!data?.folders || fresh)) {
-    coverageSection.innerHTML = renderCoverageLoading();
-  }
+  if (coverageSection && !data?.folders) coverageSection.outerHTML = renderCoverageLoading();
 
   try {
-    const r = await fetch(`/api/admin/previews/coverage${fresh ? "?fresh=1" : ""}`);
+    // A cold Drive crawl can hang until Cloudflare gives up with a 524. Bound it
+    // here too, or `coverageLoading` stays true and blocks every later scan.
+    const r = await fetch(`/api/admin/previews/coverage${fresh ? "?fresh=1" : ""}`, { signal: AbortSignal.timeout(60_000) });
     if (!r.ok) throw new Error(`coverage ${r.status}`);
     const cov = await r.json();
     if (!data) data = {};
@@ -154,12 +169,10 @@ export async function loadCoverage({ fresh = false } = {}) {
     // Update stat card counters in place
     updateStatCards(data.totals);
 
-    // Update the coverage section DOM smoothly
+    // Swap in the real table. Selection belongs to the rows being replaced.
+    selectedFolders = new Set();
     const curSection = $("previews-coverage-section");
-    if (curSection) {
-      curSection.outerHTML = renderCoveragePanel(data.folders);
-      wireCoverage();
-    }
+    if (curSection) curSection.outerHTML = renderCoveragePanel(data.folders);
 
     // Update failed files section if new failures detected
     if (data.failed && data.failed.length) {
@@ -178,15 +191,9 @@ export async function loadCoverage({ fresh = false } = {}) {
           <span class="muted">Stats and runs above remain functional</span>
         </div>
       `;
-      section.querySelector("#previews-retry-coverage")?.addEventListener("click", () => loadCoverage({ fresh: true }));
     }
   } finally {
     coverageLoading = false;
-    const refreshBtn = $("previews-refresh");
-    if (refreshBtn) {
-      refreshBtn.disabled = false;
-      refreshBtn.innerHTML = `${icon("refresh-cw", "ico-sm")} Rescan`;
-    }
   }
 }
 
@@ -196,53 +203,46 @@ export function updatePreviewsLive(live) {
   const wasActive = liveState?.active;
   liveState = live;
 
-  // If previews tab is currently visible, update the UI live
+  // Only the live panel changes on a telemetry tick - never re-render the tab.
   if ($("tab-previews") && !$("tab-previews").classList.contains("hidden")) {
     const liveWrap = $("previews-live-wrap");
-    if (liveWrap && live.active) {
-      liveWrap.innerHTML = renderLivePanel(live);
-      updateTopCountersLive(live);
-    } else {
-      render();
-    }
+    if (liveWrap) liveWrap.innerHTML = live.active ? renderLivePanel(live) : "";
+    if (live.active) updateTopCountersLive(live);
   }
 
-  // When a run ends, trigger a fresh overview and coverage fetch
-  if (wasActive && !live.active) {
-    setTimeout(() => {
-      refreshPreviews({ fresh: true });
-      loadCoverage({ fresh: true });
-    }, 1500);
-  }
+  // When a run ends, pick up the final numbers once.
+  if (wasActive && !live.active) setTimeout(() => { refreshPreviews(); loadCoverage(); }, 1500);
 }
 
 function updateTopCountersLive(live) {
-  if (!data?.totals) return;
+  if (!data?.totals || live.done == null) return;
   const readyEl = $("stat-previews-ready");
   const waitEl = $("stat-previews-waiting");
-  if (readyEl && live.done != null) {
-    const effectiveReady = data.totals.ready + (live.done || 0);
-    readyEl.textContent = `${effectiveReady} · ${pct(effectiveReady, data.totals.videos)}%`;
-  }
-  if (waitEl && live.done != null) {
-    const effectiveWait = Math.max(0, data.totals.pending - (live.done || 0));
-    waitEl.textContent = String(effectiveWait);
+  const effectiveReady = data.totals.ready + (live.done || 0);
+  if (readyEl) readyEl.textContent = readyLabel(effectiveReady, data.totals.videos);
+  if (waitEl && data.totals.pending != null) {
+    waitEl.textContent = String(Math.max(0, data.totals.pending - (live.done || 0)));
   }
 }
 
+// Totals that depend on the Drive crawl are null until coverage lands. Show a
+// placeholder rather than a confident wrong number (the old code reported
+// "420 · 100%" while 3,200 videos had no preview at all).
+const num = (v) => (v == null ? "…" : String(v));
+const readyLabel = (ready, videos) => (videos == null ? String(ready) : `${ready} · ${pct(ready, videos)}%`);
+
 function updateStatCards(t) {
   if (!t) return;
-  const done = t.ready;
   const vTotal = $("stat-previews-total");
   const vReady = $("stat-previews-ready");
   const vWait = $("stat-previews-waiting");
   const vFail = $("stat-previews-failed");
   const vStore = $("stat-previews-storage");
 
-  if (vTotal) vTotal.textContent = String(t.videos);
-  if (vReady) vReady.textContent = `${done} · ${pct(done, t.videos)}%`;
-  if (vWait) vWait.textContent = String(t.pending);
-  if (vFail) vFail.textContent = String(t.failed);
+  if (vTotal) vTotal.textContent = num(t.videos);
+  if (vReady) vReady.textContent = readyLabel(t.ready, t.videos);
+  if (vWait) vWait.textContent = num(t.pending);
+  if (vFail) vFail.textContent = num(t.failed);
   if (vStore) vStore.textContent = `${fmtBytes(t.previewBytes)}${t.bytes ? ` (originals ${fmtBytes(t.bytes)})` : ""}`;
 }
 
@@ -250,18 +250,38 @@ function render() {
   const host = $("previews-body");
   if (!host || !data) return;
 
-  const { totals: t, folders, failed = [], runs = [], active, nextRunAt, dispatchConfigured, queue, foldersLoading } = data;
-  const done = t.ready;
-  const saved = t.bytes && t.previewBytes ? t.bytes - t.previewBytes : 0;
-  const isTranscoderActive = liveState?.active;
+  const { totals: t, folders, failed = [] } = data;
 
   const cards = [
-    ["film", t.videos, "Videos in shares", "stat-previews-total"],
-    ["circle-check", `${done} · ${pct(done, t.videos)}%`, "Previews ready", "stat-previews-ready"],
-    ["clock", foldersLoading && !folders ? "…" : t.pending, "Waiting", "stat-previews-waiting"],
-    ["triangle-alert", t.failed, "Failed (3 tries)", "stat-previews-failed"],
+    ["film", num(t.videos), "Videos in shares", "stat-previews-total"],
+    ["circle-check", readyLabel(t.ready, t.videos), "Previews ready", "stat-previews-ready"],
+    ["clock", num(t.pending), "Waiting", "stat-previews-waiting"],
+    ["triangle-alert", num(t.failed), "Failed (3 tries)", "stat-previews-failed"],
     ["hard-drive", fmtBytes(t.previewBytes), t.bytes ? `Preview storage (originals ${fmtBytes(t.bytes)})` : "Preview storage", "stat-previews-storage"],
   ];
+
+  host.innerHTML = `
+    <div class="stat-grid" id="previews-stat-grid">${cards.map(([name, value, label, id]) => `<div class="stat-card v3"><span class="stat-ico">${icon(name)}</span><div><b id="${id}">${esc(String(value))}</b><span class="stat-label">${esc(label)}</span></div></div>`).join("")}</div>
+
+    <div id="previews-live-wrap">${liveState?.active ? renderLivePanel(liveState) : ""}</div>
+
+    ${renderRunsPanel()}
+
+    ${folders && Array.isArray(folders) ? renderCoveragePanel(folders) : renderCoverageLoading()}
+
+    <div id="previews-failed-wrap">
+      ${failed && failed.length ? renderFailedSection(failed) : ""}
+    </div>
+  `;
+  rendered = true;
+  wire();
+}
+
+function renderRunsPanel() {
+  const { totals: t, runs = [], active, nextRunAt, dispatchConfigured, queue } = data;
+  const saved = t.bytes && t.previewBytes ? t.bytes - t.previewBytes : 0;
+  const isTranscoderActive = liveState?.active;
+  const limit = $("previews-limit")?.value || "300";
 
   const stateLine = isTranscoderActive
     ? `<span class="status-pill" data-state="live"><i class="status-dot-pulse"></i> real-time transcoder active · ${liveState.parallel || 1} workers</span>`
@@ -276,15 +296,11 @@ function render() {
     ? ""
     : `<p class="muted">${icon("info", "ico-sm")} "Run now" needs a <code>GITHUB_TOKEN</code> secret on the worker (fine-grained PAT, Actions: read &amp; write). Until then, queued work runs on the nightly schedule.</p>`;
 
-  host.innerHTML = `
-    <div class="stat-grid" id="previews-stat-grid">${cards.map(([name, value, label, id]) => `<div class="stat-card v3"><span class="stat-ico">${icon(name)}</span><div><b id="${id}">${esc(String(value))}</b><span class="stat-label">${esc(label)}</span></div></div>`).join("")}</div>
-
-    <div id="previews-live-wrap">${isTranscoderActive ? renderLivePanel(liveState) : ""}</div>
-
+  return `
     <section class="panel" id="previews-runs-section">
       <div class="section-title"><div><p class="eyebrow">transcoder</p><h2>${icon("zap")} Runs</h2></div>
         <div class="section-tools previews-tools">
-          <label class="muted">limit <input id="previews-limit" class="previews-limit" type="number" min="1" max="1000" value="300" aria-label="Videos per run"></label>
+          <label class="muted">limit <input id="previews-limit" class="previews-limit" type="number" min="1" max="1000" value="${escAttr(limit)}" aria-label="Videos per run"></label>
           <button class="btn" id="previews-run" type="button" ${active || isTranscoderActive ? "disabled" : ""}>${icon("play", "ico-sm")} Run now</button>
           <button class="mini" id="previews-refresh" type="button">${icon("refresh-cw", "ico-sm")} Rescan</button>
         </div>
@@ -292,16 +308,9 @@ function render() {
       <div class="previews-state">${stateLine}</div>
       ${queueLine}${dispatchNote}
       <p class="muted">Saved ${fmtBytes(saved)} of streaming per full playthrough: viewers get a 720p copy on hover and first play, HD on demand.</p>
-      ${runs.length ? `<div class="upload-table-wrap"><table class="uploads previews-runs"><thead><tr><th>Run</th><th>Started</th><th class="num">Done</th><th class="num">Skipped</th><th class="num">In → out</th><th>Status</th></tr></thead><tbody>${runs.map(runRow).join("")}</tbody></table></div>` : `<p class="muted">No runs recorded yet.</p>`}
+      ${runs.length ? `<div class="upload-table-wrap"><table class="uploads previews-runs"><thead><tr><th>Run</th><th>Started</th><th class="num">Done</th><th class="num">Skipped</th><th class="num">In → out</th><th>Status</th></tr></thead><tbody>${runs.map((run) => runRow(run, active)).join("")}</tbody></table></div>` : `<p class="muted">No runs recorded yet.</p>`}
     </section>
-
-    ${folders && Array.isArray(folders) ? renderCoveragePanel(folders) : renderCoverageLoading()}
-
-    <div id="previews-failed-wrap">
-      ${failed && failed.length ? renderFailedSection(failed) : ""}
-    </div>
   `;
-  wire();
 }
 
 function renderCoverageLoading() {
@@ -470,9 +479,16 @@ function renderWorkerSlot(slotIndex, w) {
   `;
 }
 
-function runRow(run) {
+function runRow(run, active) {
   const finished = !!run.finishedAt;
-  const status = finished ? `${icon("circle-check", "ico-sm")} finished ${ago(run.finishedAt)}${run.pendingLeft ? ` · ${run.pendingLeft} left` : ""}` : `${icon("loader-circle", "ico-sm")} running`;
+  // A run that was cancelled never reports finishedAt. Without this it showed
+  // "running" forever, which is also what kept the fallback poll alive.
+  const stopped = !finished && String(active?.id || "") !== String(run.id);
+  const status = finished
+    ? `${icon("circle-check", "ico-sm")} finished ${ago(run.finishedAt)}${run.pendingLeft ? ` · ${run.pendingLeft} left` : ""}`
+    : stopped
+    ? `${icon("circle-x", "ico-sm")} stopped ${ago(run.startedAt)}`
+    : `${icon("loader-circle", "ico-sm")} running`;
   const items = run.items || [];
   const detail = items.length ? `<details class="previews-run-items"><summary>${items.length} files</summary><ul>${items.slice().reverse().map((i) => `<li>${i.ok ? icon("check", "ico-sm") : icon("circle-x", "ico-sm")} ${esc(i.name)} ${i.ok ? `<span class="muted">${fmtBytes(i.size)} → ${fmtBytes(i.previewSize)} · ${fmtTime(i.ms / 1000)}</span>` : `<span class="muted">${esc(i.error)}</span>`}</li>`).join("")}</ul></details>` : "";
   return `<tr><td>${esc(run.trigger)} <span class="muted">#${esc(String(run.id).slice(-6))}</span>${detail}</td><td>${ago(run.startedAt)}</td><td class="num">${run.done}</td><td class="num">${run.skipped}</td><td class="num">${fmtBytes(run.bytes)} → ${fmtBytes(run.previewBytes)}</td><td>${status}</td></tr>`;
@@ -488,37 +504,42 @@ function folderRow(f) {
     <td>${f.videos && f.ready < f.videos ? `<button class="mini" data-run-folder="${escAttr(f.folderId)}" type="button">process</button>` : `<span class="muted">${f.videos ? "done" : "—"}</span>`}</td></tr>`;
 }
 
+// One delegated listener set on the tab body, attached once. Panels are swapped
+// in and out as the run progresses, so per-element listeners either vanish or
+// stack up duplicates.
+let wired = false;
 function wire() {
   const host = $("previews-body");
-  if (!host) return;
-  selectedFolders = new Set();
-  host.querySelector("#previews-refresh")?.addEventListener("click", () => {
-    refreshPreviews({ fresh: true });
-    loadCoverage({ fresh: true });
-  });
-  host.querySelector("#previews-run")?.addEventListener("click", (e) => run(e.currentTarget, { limit: Number($("previews-limit")?.value) || 300 }));
-  host.querySelector("#previews-retry-all")?.addEventListener("click", (e) => retry(e.currentTarget, []));
+  if (!host || wired) return;
+  wired = true;
+
+  const limit = () => Number($("previews-limit")?.value) || 300;
+
   host.addEventListener("click", (e) => {
-    const one = e.target.closest("[data-retry]");
+    const hit = (sel) => e.target.closest(sel);
+    if (hit("#previews-refresh")) {
+      refreshPreviews();
+      return loadCoverage({ fresh: true });
+    }
+    if (hit("#previews-rescan-coverage")) return loadCoverage({ fresh: true });
+    if (hit("#previews-retry-coverage")) return loadCoverage({ fresh: true });
+    const runBtn = hit("#previews-run");
+    if (runBtn) return run(runBtn, { limit: limit() });
+    const runSelected = hit("#previews-run-selected");
+    if (runSelected) return run(runSelected, { folderIds: [...selectedFolders], limit: limit() });
+    const folder = hit("[data-run-folder]");
+    if (folder) return run(folder, { folderIds: [folder.dataset.runFolder], limit: 500 });
+    const all = hit("#previews-retry-all");
+    if (all) return retry(all, []);
+    const one = hit("[data-retry]");
     if (one) return retry(one, [one.dataset.retry]);
   });
-  wireCoverage();
-}
 
-function wireCoverage() {
-  const coverageSection = $("previews-coverage-section");
-  if (!coverageSection) return;
-  coverageSection.querySelector("#previews-rescan-coverage")?.addEventListener("click", () => loadCoverage({ fresh: true }));
-  coverageSection.querySelector("#previews-run-selected")?.addEventListener("click", (e) => run(e.currentTarget, { folderIds: [...selectedFolders], limit: Number($("previews-limit")?.value) || 300 }));
-  coverageSection.addEventListener("click", (e) => {
-    const folder = e.target.closest("[data-run-folder]");
-    if (folder) return run(folder, { folderIds: [folder.dataset.runFolder], limit: 500 });
-  });
-  coverageSection.addEventListener("change", (e) => {
+  host.addEventListener("change", (e) => {
     const box = e.target.closest("[data-folder]");
     if (!box) return;
     box.checked ? selectedFolders.add(box.dataset.folder) : selectedFolders.delete(box.dataset.folder);
-    const runSelectedBtn = coverageSection.querySelector("#previews-run-selected");
+    const runSelectedBtn = $("previews-run-selected");
     if (runSelectedBtn) runSelectedBtn.disabled = !selectedFolders.size;
   });
 }
@@ -529,10 +550,7 @@ async function run(button, body) {
     const r = await post("/api/admin/previews/run", body);
     const d = await r.json().catch(() => ({}));
     flash(button, d.dispatched ? "run started" : d.reason || "queued for the nightly run");
-    setTimeout(() => {
-      refreshPreviews({ fresh: true });
-      loadCoverage({ fresh: true });
-    }, 2500);
+    setTimeout(() => { refreshPreviews(); loadCoverage(); }, 2500);
   } catch (error) {
     flash(button, error.message);
     button.disabled = false;
@@ -543,8 +561,5 @@ async function retry(button, fileIds) {
   button.disabled = true;
   const r = await post("/api/admin/previews/retry", { fileIds });
   flash(button, r.ok ? "cleared - picked up next run" : "retry failed");
-  setTimeout(() => {
-    refreshPreviews();
-    loadCoverage();
-  }, 800);
+  setTimeout(() => { refreshPreviews(); loadCoverage(); }, 800);
 }
