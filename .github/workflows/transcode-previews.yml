@@ -3,6 +3,12 @@ name: transcode-previews
 # Makes 720p previews for share videos that don't have one yet.
 # Needs one repository secret: HUSKY_ADMIN_TOKEN (the worker's ADMIN_TOKEN).
 # All Drive access goes through the worker; no Google credentials live here.
+#
+# The work is split across several runners. GitHub's hosted Linux runners give
+# 4 vCPU / 16 GB RAM / 14 GB SSD each, a 6-hour job ceiling, and a public repo
+# may run 20 of them at once for free, so `shards` fans out up to 20 ways.
+# Each runner asks the worker for every Nth pending video, which needs no
+# coordination between runners and cannot hand the same file to two of them.
 
 on:
   schedule:
@@ -10,20 +16,48 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: "Max videos to transcode this run"
+        description: "Max videos to transcode this run (all runners combined)"
         default: "300"
+      shards:
+        description: "Runners to spread the work over (1-20)"
+        default: "4"
       parallel:
-        description: "Parallel worker concurrency (default 3)"
-        default: "3"
+        description: "Concurrent transcodes per runner (blank = auto from CPU count)"
+        default: ""
 
 concurrency:
   group: transcode-previews
   cancel-in-progress: false
 
 jobs:
-  transcode:
+  # Builds the shard list and warms the worker's Drive tree cache once, so the
+  # runners below can all pass cached=1 instead of each crawling Drive.
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 15
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - id: plan
+        env:
+          HUSKY_ORIGIN: https://dropbox.losthusky.qzz.io
+          HUSKY_ADMIN_TOKEN: ${{ secrets.HUSKY_ADMIN_TOKEN }}
+          SHARDS: ${{ inputs.shards || '4' }}
+        run: |
+          n=$(( SHARDS < 1 ? 1 : (SHARDS > 20 ? 20 : SHARDS) ))
+          curl -sS -m 600 -H "authorization: Bearer $HUSKY_ADMIN_TOKEN" \
+            "$HUSKY_ORIGIN/api/admin/previews/pending?limit=1" > /dev/null || true
+          echo "shards=$(seq 0 $((n - 1)) | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  transcode:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -35,5 +69,7 @@ jobs:
           HUSKY_ORIGIN: https://dropbox.losthusky.qzz.io
           HUSKY_ADMIN_TOKEN: ${{ secrets.HUSKY_ADMIN_TOKEN }}
           LIMIT: ${{ inputs.limit || '300' }}
-          PARALLEL: ${{ inputs.parallel || '3' }}
-          TIME_BUDGET_MIN: "270"
+          PARALLEL: ${{ inputs.parallel }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+          TIME_BUDGET_MIN: "300"

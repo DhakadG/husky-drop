@@ -120,9 +120,9 @@ class MockWebSocket {
     })
   );
 
-  assert.ok(tracker.transcoderState.workers["0"], "worker 0 recorded");
-  assert.equal(tracker.transcoderState.workers["0"].name, "vacation.mp4");
-  assert.equal(tracker.transcoderState.workers["0"].percent, 45);
+  assert.ok(tracker.transcoderState.workers["0:0"], "worker 0 of runner 0 recorded");
+  assert.equal(tracker.transcoderState.workers["0:0"].name, "vacation.mp4");
+  assert.equal(tracker.transcoderState.workers["0:0"].percent, 45);
 
   // 3. Send file completion
   tracker.webSocketMessage(
@@ -140,7 +140,7 @@ class MockWebSocket {
   );
 
   assert.equal(tracker.transcoderState.done, 1);
-  assert.equal(tracker.transcoderState.workers["0"], undefined, "worker 0 cleared after completion");
+  assert.equal(tracker.transcoderState.workers["0:0"], undefined, "worker 0 cleared after completion");
   assert.equal(tracker.transcoderState.recent.length, 1);
   assert.equal(tracker.transcoderState.recent[0].previewSize, 5_000_000);
 
@@ -170,6 +170,31 @@ class MockWebSocket {
     })
   );
   assert.equal(tracker.transcoderState.active, false);
+
+  // 6. Fan-out: a second runner joining the same run must add to the totals,
+  // not reset them, and the run is only over when every runner has gone.
+  const runnerA = new MockWebSocket();
+  const runnerB = new MockWebSocket();
+  for (const [ws, shard] of [[runnerA, 0], [runnerB, 1]]) {
+    state.acceptWebSocket(ws, ["transcoder"]);
+    ws.serializeAttachment({ role: "transcoder" });
+    tracker.webSocketMessage(ws, JSON.stringify({ type: "transcoder:hello", runId: "run-fan", trigger: "manual", parallel: 4, shards: 2, shard, total: 500 }));
+  }
+  assert.equal(tracker.transcoderState.parallel, 8, "both runners' workers are counted");
+  assert.equal(tracker.transcoderState.total, 1000, "both runners' shares are counted");
+  assert.equal(Object.keys(tracker.transcoderState.runners).length, 2);
+
+  tracker.webSocketMessage(runnerA, JSON.stringify({ type: "transcoder:progress", shard: 0, slot: 1, fileId: "a", name: "a.mp4", size: 1, stage: "transcoding", percent: 10 }));
+  tracker.webSocketMessage(runnerB, JSON.stringify({ type: "transcoder:progress", shard: 1, slot: 1, fileId: "b", name: "b.mp4", size: 1, stage: "transcoding", percent: 20 }));
+  assert.equal(tracker.transcoderState.workers["0:1"].name, "a.mp4", "slot 1 of each runner is its own worker");
+  assert.equal(tracker.transcoderState.workers["1:1"].name, "b.mp4");
+
+  tracker.webSocketMessage(runnerA, JSON.stringify({ type: "transcoder:bye", shard: 0, runId: "run-fan" }));
+  assert.equal(tracker.transcoderState.active, true, "one runner leaving does not end the run");
+  assert.equal(tracker.transcoderState.workers["0:1"], undefined, "that runner's slots are forgotten");
+  assert.equal(tracker.transcoderState.workers["1:1"].name, "b.mp4", "the other runner keeps going");
+  tracker.webSocketMessage(runnerB, JSON.stringify({ type: "transcoder:bye", shard: 1, runId: "run-fan" }));
+  assert.equal(tracker.transcoderState.active, false, "the run ends when the last runner leaves");
 
   console.log("✓ LiveTracker WebSocket telemetry tests passed");
 }
@@ -291,6 +316,43 @@ class MockWebSocket {
   assert.ok(adminPreviewsJs.includes("next.folders = data.folders"), "a refreshed overview keeps folders already loaded");
   assert.ok(adminPreviewsJs.includes("if (coverageLoading) return;"), "only one Drive crawl runs at a time");
 
+  // Coverage panel: bulk selection, search, filters and a real folder tree.
+  assert.ok(adminPreviewsJs.includes('id="coverage-all"'), "coverage has a select-all checkbox");
+  assert.ok(adminPreviewsJs.includes('id="coverage-search"'), "coverage has a search box");
+  assert.ok(adminPreviewsJs.includes("data-filter="), "coverage has filter buttons");
+  assert.ok(adminPreviewsJs.includes("data-collapse="), "folder rows can fold their subtree away");
+  assert.ok(adminPreviewsJs.includes("pointerover"), "rows can be drag-selected");
+  assert.ok(adminPreviewsJs.includes("shiftKey"), "rows can be range-selected");
+  assert.ok(adminPreviewsJs.includes('id="previews-stop"'), "a run in progress can be stopped");
+  assert.ok(adminPreviewsJs.includes('id="previews-shards"'), "the runner count is settable");
+  assert.ok(!adminPreviewsJs.includes('max="1000"'), "the videos-per-run cap is no longer 1000");
+  assert.ok(css.includes(".pick {"), "style.css has the compact checkbox");
+  assert.ok(css.includes("#previews-body {"), "style.css spaces the previews panels apart");
+  assert.ok(css.includes(".tree-caret"), "style.css has the folder tree caret");
+
+  // Run limits and fan-out.
+  assert.ok(previewsJs.includes("const MAX_RUN_LIMIT = 5000;"), "a run may ask for more than 300 videos");
+  assert.ok(previewsJs.includes("const MAX_SHARDS = 20;"), "up to 20 runners, GitHub's free concurrent job limit");
+  assert.ok(previewsJs.includes("export async function cancelPreviewRun"), "previews.js can cancel a run");
+  assert.ok(workerJs.includes('rest === "cancel"'), "worker.js routes POST /api/admin/previews/cancel");
+
+  // Sharding must survive the pending list shrinking under it.
+  const shardOf = (id, shards) => {
+    let h = 2166136261;
+    for (let i = 0; i < id.length; i += 1) {
+      h ^= id.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0) % shards;
+  };
+  const ids = Array.from({ length: 500 }, (_, i) => `drive-file-${i}`);
+  const owners = new Map(ids.map((id) => [id, shardOf(id, 8)]));
+  const half = ids.filter((_, i) => i % 2);
+  for (const id of half) assert.equal(shardOf(id, 8), owners.get(id), "a file keeps its runner as the queue drains");
+  const counts = new Array(8).fill(0);
+  for (const id of ids) counts[shardOf(id, 8)] += 1;
+  assert.ok(Math.min(...counts) > 500 / 8 / 2, "the hash spreads work over every runner");
+
   // Verify CSS skeleton and spinner rules
   assert.ok(css.includes(".skel-bone"), "style.css includes .skel-bone");
   assert.ok(css.includes("@keyframes skel-wave"), "style.css includes @keyframes skel-wave");
@@ -308,3 +370,32 @@ class MockWebSocket {
 
 console.log("\nAll video transcoder tests passed successfully!");
 
+
+// ---- Test 5: folder tree is rebuilt from parent ids, not list order ----
+{
+  const fs = await import("node:fs");
+  const src = fs.readFileSync(new URL("../public/admin-previews.js", import.meta.url), "utf8");
+  const body = src.slice(src.indexOf("function indexTree"), src.indexOf("// ---------- live telemetry"));
+  const indexTree = new Function(`${body}; return indexTree;`)();
+
+  // scanShares walks siblings concurrently, so children can arrive before the
+  // parent they belong to. Depth alone would nest these wrongly.
+  const scrambled = [
+    { folderId: "b1", parentId: "b", name: "b-child", depth: 1, videos: 1, ready: 0, pending: 1, failed: 0 },
+    { folderId: "b", parentId: null, name: "beta", depth: 0, videos: 1, ready: 0, pending: 1, failed: 0 },
+    { folderId: "a", parentId: null, name: "alpha", depth: 0, videos: 1, ready: 0, pending: 1, failed: 0 },
+    { folderId: "a1", parentId: "a", name: "a-child", depth: 1, videos: 1, ready: 0, pending: 1, failed: 0 },
+  ];
+  const tree = indexTree(scrambled);
+  assert.deepEqual(tree.map((f) => f.folderId), ["a", "a1", "b", "b1"], "rows come back depth-first under their own parent");
+  assert.deepEqual(tree.map((f) => f.depth), [0, 1, 0, 1], "depth follows the parent chain");
+  assert.equal(tree[0].hasKids, true, "a parent knows it has children");
+  assert.equal(tree[1].hasKids, false);
+  assert.equal(tree[1].parent, "a", "a child points at its parent so collapsing works");
+
+  // An orphan (its share went away mid-scan) is still listed, not swallowed.
+  const orphaned = indexTree([{ folderId: "x1", parentId: "gone", name: "orphan", depth: 1, videos: 1, ready: 0, pending: 1, failed: 0 }]);
+  assert.equal(orphaned.length, 1, "a folder whose parent vanished is still shown");
+
+  console.log("\u2713 Folder tree ordering verified");
+}

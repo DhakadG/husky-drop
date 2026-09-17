@@ -75,6 +75,7 @@ import {
   linkFolder,
 } from "./admin-api.js";
 import {
+  cancelPreviewRun,
   deletePreview,
   listPendingPreviews,
   previewSource,
@@ -290,6 +291,7 @@ async function api(request, env, url, ctx) {
       if (m === "GET" && rest === "coverage") return previewsCoverage(request, env);
       if (m === "POST" && rest === "report") return reportPreviewRun(request, env, ctx);
       if (m === "POST" && rest === "run") return startPreviewRun(request, env);
+      if (m === "POST" && rest === "cancel") return cancelPreviewRun(request, env);
       if (m === "POST" && rest === "retry") return retryFailedPreviews(request, env);
       if (m === "POST" && rest === "reindex") return reindexPreviews(request, env);
       if (m === "GET" && rest.startsWith("source/")) return previewSource(request, env, rest.slice(7));

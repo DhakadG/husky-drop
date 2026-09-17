@@ -23,6 +23,22 @@ const PREVIEW_TTL = 4 * 3600;
 const MAX_PREVIEW_BYTES = 90 * 1024 * 1024; // Workers request-body ceiling with margin
 const MAX_TRIES = 3;
 const RUNS_KEPT = 20;
+// GitHub-hosted Linux runners: 4 vCPU each, 20 concurrent jobs on a public repo.
+const MAX_SHARDS = 20;
+const MAX_RUN_LIMIT = 5000;
+// One runner clears roughly 300 videos in the 4h30m budget, so ask for as many
+// as the queue needs and let the cap do the rest.
+// Hash the file id so a video always belongs to the same runner, however much
+// the pending list has shrunk since that runner last asked.
+function shardOf(id, shards) {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i += 1) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) % shards;
+}
+const defaultShards = (limit) => Math.max(1, Math.min(MAX_SHARDS, Math.ceil(limit / 300)));
 const CRON_UTC = { hour: 21, minute: 30 }; // keep in sync with the workflow schedule
 const WORKFLOW = "transcode-previews.yml";
 const isVideo = (f) => /^video\//.test(f?.mimeType || f?.mime || "");
@@ -58,7 +74,7 @@ async function previewFolderId(env) {
 }
 
 // ---- share tree scan (Drive reads with memory & KV cache) ----
-const TREE_CACHE_KEY = "previews:tree_cache";
+const TREE_CACHE_KEY = "previews:tree_cache2";
 let scanMemo = { at: 0, tree: null };
 
 async function scanShares(env, fresh = false) {
@@ -75,10 +91,10 @@ async function scanShares(env, fresh = false) {
   const folders = []; // {slug, label, folderId, name, depth, videos: [{id,name,size,mime}]}
   const seen = new Set();
 
-  const walk = async (slug, label, folderId, name, depth) => {
+  const walk = async (slug, label, folderId, name, depth, parentId = null) => {
     if (depth > 3 || seen.has(folderId)) return;
     seen.add(folderId);
-    const node = { slug, label, folderId, name, depth, videos: [] };
+    const node = { slug, label, folderId, parentId, name, depth, videos: [] };
     folders.push(node);
     let pageToken = "";
     do {
@@ -91,7 +107,7 @@ async function scanShares(env, fresh = false) {
       const subtasks = [];
       for (const f of page.files || []) {
         if (f.mimeType === "application/vnd.google-apps.folder") {
-          subtasks.push(walk(slug, label, f.id, f.name, depth + 1));
+          subtasks.push(walk(slug, label, f.id, f.name, depth + 1, folderId));
         } else if (isVideo(f)) {
           node.videos.push({ id: f.id, name: f.name, size: Number(f.size) || 0, mime: f.mimeType });
         }
@@ -164,7 +180,7 @@ function nextScheduledRun(now = Date.now()) {
 function computeCoverage(tree, index) {
   const totals = { videos: 0, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
   const folders = tree.map((node) => {
-    const row = { slug: node.slug, label: node.label, folderId: node.folderId, name: node.name, depth: node.depth, videos: node.videos.length, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
+    const row = { slug: node.slug, label: node.label, folderId: node.folderId, parentId: node.parentId || null, name: node.name, depth: node.depth, videos: node.videos.length, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
     for (const v of node.videos) {
       const state = fileState(index, v.id);
       row[state] += 1;
@@ -263,7 +279,11 @@ export async function previewsCoverage(request, env) {
 // Files that failed MAX_TRIES times are skipped until retried from the admin.
 export async function listPendingPreviews(request, env) {
   const url = new URL(request.url);
-  const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit")) || 20));
+  const limit = Math.max(1, Math.min(MAX_RUN_LIMIT, Number(url.searchParams.get("limit")) || 20));
+  // Shards let several runners drain one queue without talking to each other:
+  // every runner gets the same ordered list and keeps every Nth entry.
+  const shards = Math.max(1, Math.min(MAX_SHARDS, Number(url.searchParams.get("shards")) || 1));
+  const shard = Math.max(0, Math.min(shards - 1, Number(url.searchParams.get("shard")) || 0));
   const cached = url.searchParams.get("cached") === "1";
   const index = await previewIndex(env);
   // Trust the folder over the index: a preview that exists in Drive but was
@@ -287,10 +307,14 @@ export async function listPendingPreviews(request, env) {
   for (const id of queue.fileIds || []) push(byId.get(id));
   for (const node of tree) if ((queue.folderIds || []).includes(node.folderId)) node.videos.forEach(push);
   for (const node of tree) node.videos.forEach(push);
+  const wanted = Math.max(limit, Number(queue.limit) || 0);
+  const mine = shards > 1 ? ordered.filter((v) => shardOf(v.id, shards) === shard) : ordered;
   return json({
-    pending: ordered.slice(0, Math.max(limit, Number(queue.limit) || 0)),
+    pending: mine.slice(0, Math.ceil(wanted / shards)),
     indexed: Object.keys(index.files).length,
     total: ordered.length,
+    shard,
+    shards,
   });
 }
 
@@ -381,7 +405,8 @@ export async function startPreviewRun(request, env) {
   const index = await previewIndex(env);
   const folderIds = (b.folderIds || []).map((id) => cleanText(id, 120)).filter(Boolean).slice(0, 50);
   const fileIds = (b.fileIds || []).map((id) => cleanText(id, 120)).filter(Boolean).slice(0, 500);
-  const limit = Math.max(1, Math.min(300, Number(b.limit) || 40));
+  const limit = Math.max(1, Math.min(MAX_RUN_LIMIT, Number(b.limit) || 40));
+  const shards = Math.max(1, Math.min(MAX_SHARDS, Number(b.shards) || defaultShards(limit)));
   if (b.retryFailed) index.failed = {};
   index.queue = { folderIds, fileIds, limit, at: Date.now() };
   await saveIndex(env, index);
@@ -390,10 +415,21 @@ export async function startPreviewRun(request, env) {
   const r = await gh(env, `workflows/${WORKFLOW}/dispatches`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ref: "main", inputs: { limit: String(limit) } }),
+    body: JSON.stringify({ ref: "main", inputs: { limit: String(limit), shards: String(shards) } }),
   });
   if (r.status !== 204) return json({ ok: false, queued: true, dispatched: false, reason: `GitHub refused: ${r.status} ${(await r.text()).slice(0, 120)}` }, 502);
-  return json({ ok: true, queued: true, dispatched: true }, 202);
+  return json({ ok: true, queued: true, dispatched: true, limit, shards }, 202);
+}
+
+// Stop the workflow run that is going. GitHub has no pause, so this cancels;
+// previews already reported stay, the rest are picked up by the next run.
+export async function cancelPreviewRun(request, env) {
+  if (!ghConfigured(env)) return json({ error: "GITHUB_TOKEN not set" }, 400);
+  const live = await activeRun(env);
+  if (!live) return json({ ok: true, cancelled: false, reason: "no run in progress" });
+  const r = await gh(env, `runs/${live.id}/cancel`, { method: "POST" });
+  if (r.status !== 202) return json({ ok: false, cancelled: false, reason: `GitHub refused: ${r.status}` }, 502);
+  return json({ ok: true, cancelled: true, id: live.id });
 }
 
 export async function retryFailedPreviews(request, env) {

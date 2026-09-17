@@ -28,7 +28,10 @@ const execFileAsync = promisify(execFile);
 // ---- Configuration & CLI inputs ----
 const origin = (process.env.HUSKY_ORIGIN || "").replace(/\/$/, "");
 const token = process.env.HUSKY_ADMIN_TOKEN || "";
-const totalLimit = Math.max(1, Number(process.env.LIMIT) || 1000);
+// LIMIT is the whole run; this runner only owns its slice of it.
+const shards = Math.max(1, Math.min(20, Number(process.env.SHARDS) || 1));
+const shard = Math.max(0, Math.min(shards - 1, Number(process.env.SHARD) || 0));
+const totalLimit = Math.ceil(Math.max(1, Number(process.env.LIMIT) || 1000) / shards);
 const budgetMs = (Number(process.env.TIME_BUDGET_MIN) || 270) * 60_000;
 const runId = process.env.GITHUB_RUN_ID || `local-${Date.now()}`;
 const trigger = process.env.GITHUB_EVENT_NAME === "workflow_dispatch" ? "manual" : process.env.GITHUB_EVENT_NAME ? "schedule" : "local";
@@ -42,9 +45,12 @@ const BUDGET_PREVIEW_BYTES = 78 * 1024 * 1024;
 // allows processing 4,000+ files with only ~160 KV writes total.
 const REPORT_EVERY = Math.max(5, Number(process.env.REPORT_EVERY) || 25);
 
-// Concurrency: default 3 in CI, or 1 to 6 based on available CPU cores
+// Each job is download -> probe -> ffmpeg -> upload, so a worker spends a good
+// share of its life on the network. Running more workers than cores keeps the
+// CPU fed. ponytail: capped at 6 because the runner has 14 GB of disk and one
+// source file can be 1.5 GB; raise it only with a disk check in the loop.
 const detectedCpus = Math.max(1, cpus()?.length || 2);
-const parallel = Math.max(1, Math.min(8, Number(process.env.PARALLEL) || (detectedCpus >= 4 ? 3 : 2)));
+const parallel = Math.max(1, Math.min(6, Number(process.env.PARALLEL) || Math.min(6, detectedCpus + 2)));
 
 if (!origin || !token) {
   console.error("HUSKY_ORIGIN and HUSKY_ADMIN_TOKEN are required");
@@ -82,6 +88,8 @@ function initWebSocket() {
       runId,
       trigger,
       parallel,
+      shard,
+      shards,
       total: totalLimit,
       startedAt: started,
     });
@@ -111,7 +119,9 @@ function initWebSocket() {
 function sendWs(payload) {
   if (!ws || !wsConnected || ws.readyState !== 1) return;
   try {
-    ws.send(JSON.stringify(payload));
+    // Every runner in the fan-out shares one Durable Object, so each message
+    // says which runner it came from.
+    ws.send(JSON.stringify({ shard, ...payload }));
   } catch {}
 }
 
@@ -466,12 +476,15 @@ try {
     // Fetch batch of videos (use cached=1 after the first fetch to avoid repeated Drive tree scans)
     const batchSize = Math.max(parallel * 4, 24);
     const fetchLimit = Math.min(batchSize, totalLimit - processedCount);
-    const cachedParam = isFirstBatch ? "" : "&cached=1";
+    // The plan job warms the Drive tree before the runners start, so shards
+    // never make 20 machines crawl Drive at the same moment.
+    const cachedParam = isFirstBatch && shards === 1 ? "" : "&cached=1";
+    const shardParam = shards > 1 ? `&shard=${shard}&shards=${shards}` : "";
     isFirstBatch = false;
 
     let res;
     try {
-      res = await api(`/api/admin/previews/pending?limit=${fetchLimit}${cachedParam}`);
+      res = await api(`/api/admin/previews/pending?limit=${fetchLimit}${cachedParam}${shardParam}`);
     } catch (err) {
       console.warn(`[pending] fetch failed: ${err.message}, retrying in 5s...`);
       await new Promise((r) => setTimeout(r, 5000));
@@ -492,7 +505,7 @@ try {
     }
 
     console.log(
-      `[batch] processing ${pending.length} videos (${parallel} parallel workers, ${totalPendingRemaining} remaining in queue)`
+      `[batch] processing ${pending.length} videos (${parallel} workers${shards > 1 ? `, shard ${shard + 1}/${shards}` : ""}, ${totalPendingRemaining} remaining in queue)`
     );
 
     const queue = [...pending];
