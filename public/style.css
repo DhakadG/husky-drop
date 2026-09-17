@@ -8927,3 +8927,41 @@ body.drop-page .g-card {
 body.share-page .g-card:not(:hover):not(.previewing) {
   content-visibility: auto;
 }
+
+
+/* The card scales as a whole, which drags the chrome up with it - a 1.5x zoom
+   was giving a 1.5x filename, checkbox and download button. Counter-scale the
+   overlays by the same factor so only the picture grows. Each anchors to its
+   own corner so it stays put while it shrinks back. */
+.g-card:hover .g-check {
+  transform: scale(calc(1 / var(--hover-zoom, 1)));
+  transform-origin: top left;
+}
+.g-card:hover .g-dl {
+  transform: scale(calc(1 / var(--hover-zoom, 1)));
+  transform-origin: top right;
+}
+.g-card:hover .g-dur {
+  transform: scale(calc(1 / var(--hover-zoom, 1)));
+  transform-origin: bottom right;
+}
+.g-card:hover figcaption {
+  transform: scale(calc(1 / var(--hover-zoom, 1)));
+  transform-origin: bottom left;
+  width: calc(100% * var(--hover-zoom, 1));
+}
+.g-card .g-check,
+.g-card .g-dl,
+.g-card .g-dur,
+.g-card figcaption {
+  transition:
+    transform 130ms cubic-bezier(0.2, 0.7, 0.3, 1),
+    opacity 160ms ease;
+}
+/* The bar spans the tile, so it only needs to keep its thickness. */
+.g-card:hover .buffer-bar {
+  height: calc(4px / var(--hover-zoom, 1));
+}
+.g-card.scrubbing .buffer-bar {
+  height: calc(6px / var(--hover-zoom, 1));
+}

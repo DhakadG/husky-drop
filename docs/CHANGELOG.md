@@ -4,6 +4,29 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-17 — Where the missing thumbnails and durations actually went (PR #80)
+
+The tiles with no still are exactly the tiles whose badge reads "video", and
+that is not a coincidence. `thumb` and `dur` came from one place only: Drive's
+own `thumbnailLink` and `videoMediaMetadata`. Drive generates both itself, after
+upload, and for a good number of these files it never did - so both were empty
+while `size`, which comes straight off the file, was always right.
+
+- Every one of those files now has a 720p H.264 preview, which Drive is
+  perfectly happy to describe. A file missing Drive metadata now borrows the
+  preview's: the duration and shape that ffprobe already measured on the runner
+  and reports with the batch, and a thumbnail served from the preview file.
+  Anything Drive did supply still wins.
+- **Hover stopped producing a still at all** after PR #79: a poster attempt set
+  a guard it never released and could mark the file as permanently unthumbable,
+  so the hover-time capture was skipped afterwards. The guard is released after
+  every attempt and a failed poster no longer disables hovering.
+- Poster capture asked for metadata only, which stops at `readyState 1` and
+  leaves no frame to draw. It asks for data now.
+- **Hover zoom scaled the chrome with the tile**: at 1.5x the filename, checkbox
+  and download button were 1.5x too. Each overlay scales back by the same
+  factor from its own corner, so only the picture grows.
+
 ## 2026-09-17 — Share gallery: posters on load, hover card rebuilt (PR #79)
 
 - **Videos with no Drive thumbnail stayed blank chips** until you pointed at
