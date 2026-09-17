@@ -8515,6 +8515,8 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .coverage-search input {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  padding: 0;
   border: 0;
   background: transparent;
   font: inherit;
@@ -8546,25 +8548,32 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 }
 
 /* A checkbox that does not eat a whole row of vertical space. */
+/* The global `input, select` rule sets width:100%, min-height:48px and
+   12px padding. Without undoing all three, a checkbox renders as a 48px slab
+   and stretches every row it sits in. */
 .pick {
   appearance: none;
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
+  box-sizing: border-box;
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  padding: 0;
   margin: 0;
   flex: none;
   border: 1.5px solid var(--line-strong, rgba(12, 26, 43, 0.28));
   border-radius: 5px;
   background: var(--card);
   cursor: pointer;
-  display: grid;
+  display: inline-grid;
   place-content: center;
+  vertical-align: middle;
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
 }
 .pick::after {
   content: "";
-  width: 9px;
-  height: 5px;
+  width: 8px;
+  height: 4px;
   border: 2px solid #fff;
   border-top: 0;
   border-right: 0;
@@ -8586,7 +8595,7 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 }
 .pick:indeterminate::after {
   opacity: 1;
-  width: 9px;
+  width: 8px;
   height: 0;
   border-bottom-width: 2px;
   transform: none;
@@ -8608,14 +8617,15 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   user-select: none;
 }
 .pick-col {
-  width: 34px;
+  width: 30px;
   padding-right: 0 !important;
+  text-align: center;
 }
 .pick-done {
   display: inline-grid;
   place-content: center;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   color: var(--green);
   opacity: 0.55;
 }
@@ -8624,8 +8634,16 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
    folds the whole subtree away. */
 .previews-folders td,
 .previews-folders th {
-  padding-top: 7px;
-  padding-bottom: 7px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  line-height: 1.35;
+}
+.previews-folders .mini {
+  min-height: 26px;
+  padding: 3px 10px;
+}
+.previews-folders .previews-bar {
+  width: 68px;
 }
 .previews-folders tbody tr {
   transition: background 140ms ease;
@@ -8641,9 +8659,6 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   background: rgba(47, 107, 255, 0.12);
 }
 .tree-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   padding-left: calc(6px + var(--depth, 0) * 18px) !important;
   position: relative;
   color: var(--ink);
@@ -8658,6 +8673,12 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   background: var(--line);
   opacity: var(--depth, 0);
 }
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .tree-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8666,8 +8687,9 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 }
 .tree-caret {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
   display: grid;
   place-content: center;
   border: 0;
@@ -8689,7 +8711,7 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   cursor: default;
   pointer-events: none;
 }
-.bar-cell {
+.bar-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -8699,10 +8721,10 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   font: 600 11px var(--font-mono);
   min-width: 34px;
 }
-.previews-folders tr[data-state="done"] .bar-cell i {
+.previews-folders tr[data-state="done"] .bar-row i {
   background: var(--green);
 }
-.previews-folders tr[data-state="failed"] .bar-cell i {
+.previews-folders tr[data-state="failed"] .bar-row i {
   background: var(--red);
 }
 

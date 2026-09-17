@@ -399,3 +399,33 @@ console.log("\nAll video transcoder tests passed successfully!");
 
   console.log("\u2713 Folder tree ordering verified");
 }
+
+// ---- Test 6: the coverage table survives the global form styles ----
+{
+  const fs = await import("node:fs");
+  const css = fs.readFileSync(new URL("../public/style.css", import.meta.url), "utf8");
+  const js = fs.readFileSync(new URL("../public/admin-previews.js", import.meta.url), "utf8");
+  const rule = (selector) => {
+    const at = css.indexOf(`\n${selector} {`);
+    assert.ok(at > -1, `${selector} is defined`);
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  // `input, select` sets width:100%, min-height:48px and 12px padding. A
+  // checkbox that only overrides width/height renders as a 48px slab and
+  // stretches every row it sits in.
+  const pick = rule(".pick");
+  for (const prop of ["min-height: 0", "padding: 0", "box-sizing: border-box"]) {
+    assert.ok(pick.includes(prop), `.pick undoes the global input ${prop.split(":")[0]}`);
+  }
+  assert.ok(rule(".coverage-search input").includes("min-height: 0"), "the search field undoes the global input height too");
+
+  // A <td> that is display:flex drops out of the table's column layout, which
+  // smeared selected rows sideways over the neighbouring columns.
+  assert.ok(!rule(".tree-cell").includes("display: flex"), "the folder cell stays a table cell");
+  assert.ok(rule(".tree-row").includes("display: flex"), "the span inside it does the laying out");
+  assert.ok(js.includes('<span class="tree-row">'), "folder rows wrap their contents in that span");
+  assert.ok(!js.includes('class="bar-cell"'), "the progress cell is not a flex container either");
+
+  console.log("\u2713 Coverage table form-style overrides verified");
+}

@@ -458,13 +458,13 @@ function folderRow(f) {
     : `<span class="tree-caret ghost"></span>`;
   return `<tr class="${selected.has(f.folderId) ? "picked" : ""}" data-state="${state}" data-folder-row="${escAttr(f.folderId)}">
     <td class="pick-col">${pick ? `<input class="pick" type="checkbox" data-folder="${escAttr(f.folderId)}" ${selected.has(f.folderId) ? "checked" : ""} aria-label="Select ${escAttr(f.name)}">` : `<span class="pick-done" title="${state === "done" ? "every video has a preview" : "no videos here"}">${state === "done" ? icon("check", "ico-sm") : ""}</span>`}</td>
-    <td class="tree-cell" style="--depth:${f.depth}">${caret}${icon(f.hasKids ? "folder-open" : "folder", "ico-sm")}<span class="tree-name" title="${escAttr(f.name)}">${esc(f.name)}</span></td>
+    <td class="tree-cell" style="--depth:${f.depth}"><span class="tree-row">${caret}${icon(f.hasKids ? "folder-open" : "folder", "ico-sm")}<span class="tree-name" title="${escAttr(f.name)}">${esc(f.name)}</span></span></td>
     <td class="muted">${esc(f.label)}</td>
     <td class="num">${f.videos}</td>
     <td class="num">${f.ready}</td>
     <td class="num">${f.pending || ""}</td>
     <td class="num">${f.failed || ""}</td>
-    <td class="bar-cell"><span class="previews-bar" aria-label="${p}% ready"><i style="width:${p}%"></i></span><span class="muted bar-pct">${p}%</span></td>
+    <td><span class="bar-row"><span class="previews-bar" aria-label="${p}% ready"><i style="width:${p}%"></i></span><span class="muted bar-pct">${p}%</span></span></td>
     <td>${pick ? `<button class="mini" data-run-folder="${escAttr(f.folderId)}" type="button">process</button>` : `<span class="muted">${f.videos ? "done" : "—"}</span>`}</td>
   </tr>`;
 }

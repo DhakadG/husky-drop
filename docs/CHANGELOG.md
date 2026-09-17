@@ -4,6 +4,23 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-17 — Coverage table: undo the global form styles (PR #76)
+
+The folder checkboxes rendered as 48px slabs and selected rows smeared
+sideways over the neighbouring columns.
+
+- `input, select` sets `width: 100%`, `min-height: 48px` and 12px of padding for
+  every field on the site. `.pick` set only width and height, so the height and
+  padding still applied: a 48px checkbox that stretched every row with it. It
+  now resets `min-height`, `padding` and `box-sizing` as well. The coverage search
+  field had the same problem.
+- `.tree-cell` was `display: flex` on a `<td>`, which takes the cell out of the
+  table’s column layout - that is what pushed the selected rows’ background
+  across the Share and Progress columns. The cell is a table cell again and a
+  span inside it does the laying out; same for the progress cell.
+- Rows are tighter: 4px of vertical padding, a 15px checkbox, smaller process
+  buttons and a narrower progress bar, so more of the 115 folders fit on screen.
+
 ## 2026-09-17 — Previews: fan out to 20 runners, rebuilt coverage panel (PR #74)
 
 Asking for 4,000 videos ran 300 of them, on one runner, for 50 minutes.
