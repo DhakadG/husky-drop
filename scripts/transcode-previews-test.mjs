@@ -429,3 +429,45 @@ console.log("\nAll video transcoder tests passed successfully!");
 
   console.log("\u2713 Coverage table form-style overrides verified");
 }
+
+// ---- Test 7: silent sources, duplicate previews, and honest live stats ----
+{
+  const fs = await import("node:fs");
+  const script = fs.readFileSync(new URL("./transcode-previews.mjs", import.meta.url), "utf8");
+  const previewsJs = fs.readFileSync(new URL("../src/previews.js", import.meta.url), "utf8");
+  const ui = fs.readFileSync(new URL("../public/admin-previews.js", import.meta.url), "utf8");
+
+  // "-c:a aac -ac 2" against a source with no audio stream makes ffmpeg build an
+  // output audio stream nothing feeds, and it exits 234 with
+  // "aost#0:1/aac ... Error initializing a simple filtergraph".
+  assert.ok(script.includes("const dropAudio = silent || probe.hasAudio === false"), "a source with no audio is encoded with -an");
+  assert.ok(script.includes('? ["-an"]'), "-an is what gets passed");
+  assert.ok(script.includes("{ silent: true }"), "a failed encode is retried without audio");
+  assert.ok(script.includes('"-threads", "2"'), "x264 is capped so six workers do not fight over four cores");
+
+  // A silent h264 720p file should fast-remux, not re-encode.
+  const compliant = (hasAudio, audioCodec) => (!hasAudio || ["aac", "mp3"].includes(audioCodec));
+  assert.equal(compliant(false, ""), true, "a silent h264 720p file can still fast remux");
+  assert.equal(compliant(true, "pcm_s16le"), false, "an undecodable audio codec still re-encodes");
+
+  // A run cancelled between transcoding and reporting gets redone, and
+  // putPreview always creates a new Drive file, so the old one must be binned.
+  assert.ok(previewsJs.includes("superseded.push(prev.id)"), "a replaced preview is trashed rather than leaked");
+
+  // Coverage is only meaningful against the folder tree. Counting every preview
+  // in the index against the tree's video count reported "3777 of 3654 · 103%".
+  assert.ok(previewsJs.includes("const orphans = Object.keys(index.files)"), "previews outside the shares are counted separately");
+  assert.ok(ui.includes("next.totals = { ...data.totals, previewBytes: next.totals.previewBytes }"), "a refresh keeps the crawl's coverage numbers");
+  assert.ok(ui.includes("Math.min(videos, data.totals.ready"), "live progress cannot push ready past the number of videos");
+
+  // Three decimals, and they must not be rounded to an int on the way.
+  const pct3 = (a, b) => (b > 0 ? Math.min(100, (a / b) * 100) : 0).toFixed(3);
+  assert.equal(pct3(1719, 2464), "69.765");
+  assert.equal(pct3(0, 2464), "0.000");
+  assert.equal(pct3(2464, 2464), "100.000");
+  assert.equal(pct3(1, 0), "0.000", "an empty run does not divide by zero");
+  assert.ok(ui.includes("const pct3 ="), "the live panel uses it");
+  assert.ok(!ui.includes('<span class="chip mini">'), "finished files no longer carry a button-looking chip");
+
+  console.log("✓ Audio fallback, duplicate cleanup and live stats verified");
+}

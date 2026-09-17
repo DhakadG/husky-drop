@@ -542,7 +542,8 @@ async function main() {
   const previewsOverviewBody = await res.json();
   assert.equal(previewsOverviewBody.totals.videos, null, "overview leaves total videos unknown until the folder crawl lands");
   assert.equal(previewsOverviewBody.totals.pending, null, "overview leaves pending unknown until the folder crawl lands");
-  assert.equal(previewsOverviewBody.totals.ready, 1, "overview still reports what the index knows");
+  assert.equal(previewsOverviewBody.totals.ready, null, "coverage is unknowable without the tree, including how many are ready");
+  assert.equal(previewsOverviewBody.indexed, 1, "the index size is reported separately from coverage");
   assert.equal(previewsOverviewBody.totals.failed, 0, "one try is not a failure yet (3 tries)");
   assert.equal(previewsOverviewBody.foldersLoading, true, "overview tells the dashboard coverage is still loading");
 

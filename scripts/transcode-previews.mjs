@@ -146,6 +146,7 @@ async function probeVideo(filePath) {
     const height = Number(videoStream?.height) || 0;
     const videoCodec = videoStream?.codec_name || "";
     const audioCodec = audioStream?.codec_name || "";
+    const hasAudio = !!audioStream;
     const bitrate = Number(info.format?.bit_rate) || 0;
     const rotation = Number(videoStream?.tags?.rotate) || 0;
 
@@ -155,11 +156,12 @@ async function probeVideo(filePath) {
       height,
       videoCodec,
       audioCodec,
+      hasAudio,
       bitrate,
       rotation,
       isCompliant:
         videoCodec === "h264" &&
-        ["aac", "mp3"].includes(audioCodec) &&
+        (!hasAudio || ["aac", "mp3"].includes(audioCodec)) &&
         width > 0 && width <= 1280 &&
         height > 0 && height <= 720 &&
         bitrate > 0 && bitrate <= 2_600_000,
@@ -171,6 +173,7 @@ async function probeVideo(filePath) {
       height: 0,
       videoCodec: "",
       audioCodec: "",
+      hasAudio: true,
       bitrate: 0,
       rotation: 0,
       isCompliant: false,
@@ -179,8 +182,13 @@ async function probeVideo(filePath) {
 }
 
 // ---- FFmpeg Runner with Live Progress Tracking & Bitrate Budgeting ----
-function transcodeVideo(input, output, probe, onProgress) {
+function transcodeVideo(input, output, probe, onProgress, { silent = false } = {}) {
   const duration = probe.duration || 0;
+  // "-c:a aac -ac 2" against a source with no audio stream makes ffmpeg build an
+  // output audio stream with nothing feeding it, and it exits 234 with
+  // "aost#0:1/aac ... Error initializing a simple filtergraph". `silent` is also
+  // the retry path for audio we cannot decode or resample.
+  const dropAudio = silent || probe.hasAudio === false;
 
   // Fast remux: if original is already 720p or smaller, H.264 + AAC, and fits budget,
   // skip CPU-intensive re-encoding and just remux with +faststart!
@@ -254,9 +262,12 @@ function transcodeVideo(input, output, probe, onProgress) {
     "-maxrate", maxrateStr,
     "-bufsize", bufsizeStr,
     "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
-    "-b:a", audioBitrateStr,
-    "-ac", "2",
+    // Six workers share four vCPUs; letting each x264 grab every core just makes
+    // them fight. ponytail: fixed at 2, revisit if runners get bigger.
+    "-threads", "2",
+    ...(dropAudio
+      ? ["-an"]
+      : ["-c:a", "aac", "-b:a", audioBitrateStr, "-ac", "2", "-ar", "48000"]),
     "-movflags", "+faststart",
     "-map_metadata", "-1",
     output,
@@ -353,9 +364,20 @@ async function transcodeOne(file, dir, slot) {
 
   // Step 3: Transcode / Remux
   reportStage("transcoding", { percent: 10, speed: "1.0x" });
-  const { via } = await transcodeVideo(input, output, probe, ({ percent, fps, speed, etaSec }) => {
-    reportStage("transcoding", { percent, fps, speed, etaSec });
-  });
+  const onTick = ({ percent, fps, speed, etaSec }) => reportStage("transcoding", { percent, fps, speed, etaSec });
+  let via;
+  try {
+    ({ via } = await transcodeVideo(input, output, probe, onTick));
+  } catch (error) {
+    // Audio is the usual reason ffmpeg refuses a file: no stream at all, a
+    // channel layout it will not resample, or a codec it cannot decode. A
+    // silent 720p preview beats no preview, so try once more without it.
+    if (probe.hasAudio === false) throw error;
+    console.log(`retry [w${slot}] ${file.name}: dropping audio after ${error.message.slice(0, 90)}`);
+    reportStage("transcoding", { percent: 10, speed: "1.0x" });
+    ({ via } = await transcodeVideo(input, output, probe, onTick, { silent: true }));
+    via = `${via}-silent`;
+  }
 
   const { size } = await stat(output);
   if (!size) throw new Error("transcoder produced empty file");

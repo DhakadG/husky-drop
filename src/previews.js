@@ -192,7 +192,11 @@ function computeCoverage(tree, index) {
   });
   const names = new Map(tree.flatMap((node) => node.videos.map((v) => [v.id, v])));
   const failed = Object.entries(index.failed).map(([id, f]) => ({ id, name: names.get(id)?.name || id, ...f }));
-  return { folders, totals, failed };
+  // Previews whose original is no longer in any active share: deleted, moved,
+  // or nested deeper than the scan goes. They are real storage, so they belong
+  // in the byte totals, but they are not coverage.
+  const orphans = Object.keys(index.files).filter((id) => !names.has(id)).length;
+  return { folders, totals, failed, orphans };
 }
 
 // ---- admin: fast overview (returns in <50ms without waiting for a full Drive crawl) ----
@@ -217,11 +221,12 @@ export async function previewsOverview(request, env) {
     if (tree) scanMemo = { at: Date.now(), tree };
   }
 
-  // Without the tree we only know what the index knows. `videos` and `pending`
-  // stay null so the dashboard shows "…" instead of claiming 100% coverage.
+  // Without the tree, nothing about coverage is knowable. `ready` counts every
+  // preview in the index, including ones whose original has left the shares, so
+  // reporting it beside a tree-wide `videos` produced "3777 of 3654, 103%".
   let totals = {
     videos: null,
-    ready: Object.keys(index.files).length,
+    ready: null,
     pending: null,
     failed: Object.values(index.failed).filter((f) => (f.tries || 0) >= MAX_TRIES).length,
     bytes: 0,
@@ -231,6 +236,7 @@ export async function previewsOverview(request, env) {
 
   let folders = null;
   let foldersLoading = false;
+  let orphans = 0;
   let failed = Object.entries(index.failed).map(([id, f]) => ({ id, name: id, ...f }));
 
   if (tree) {
@@ -238,6 +244,7 @@ export async function previewsOverview(request, env) {
     folders = cov.folders;
     totals = cov.totals;
     failed = cov.failed;
+    orphans = cov.orphans;
   } else {
     foldersLoading = true;
   }
@@ -246,6 +253,8 @@ export async function previewsOverview(request, env) {
     totals,
     folders,
     foldersLoading,
+    orphans,
+    indexed: Object.keys(index.files).length,
     failed,
     runs: index.runs,
     queue: index.queue,
@@ -270,6 +279,8 @@ export async function previewsCoverage(request, env) {
     totals: cov.totals,
     folders: cov.folders,
     failed: cov.failed,
+    orphans: cov.orphans,
+    indexed: Object.keys(index.files).length,
     scannedAt: scanMemo.at,
   });
 }
@@ -364,10 +375,20 @@ export async function reportPreviewRun(request, env, ctx) {
   if (!b || !b.runId) return json({ error: "runId required" }, 400);
   const index = await previewIndex(env);
   const now = Date.now();
+  const superseded = [];
   for (const d of b.done || []) {
     if (!d.id || !d.previewId) continue;
+    // A run that was cancelled between transcoding and reporting leaves work
+    // that the next run redoes, and putPreview always creates a new Drive file.
+    // Bin the one we are replacing instead of leaking it.
+    const prev = index.files[d.id];
+    if (prev && prev.id !== d.previewId) superseded.push(prev.id);
     index.files[d.id] = { id: d.previewId, size: Number(d.previewSize) || 0, at: now };
     delete index.failed[d.id];
+  }
+  if (superseded.length) {
+    ctx?.waitUntil?.(Promise.all(superseded.map((id) => driveTrashFile(env, id).catch(() => {}))));
+    appLog(env, ctx, { level: "warn", area: "previews", message: `replaced ${superseded.length} duplicate preview(s)` });
   }
   for (const s of b.skipped || []) {
     if (!s.id) continue;
