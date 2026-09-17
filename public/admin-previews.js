@@ -98,13 +98,12 @@ export async function refreshPreviews({ fresh = false } = {}) {
     // kicks off another 3k-file Drive crawl on every poll.
     if (data?.folders && !next.folders) {
       next.folders = data.folders;
-      next.totals = {
-        ...data.totals,
-        ready: next.totals.ready,
-        failed: next.totals.failed,
-        previewBytes: next.totals.previewBytes,
-        pending: Math.max(0, data.totals.videos - next.totals.ready - next.totals.failed),
-      };
+      next.orphans = data.orphans;
+      // Coverage numbers only mean anything against the folder tree. The index
+      // knows how many previews exist, not how many of them are still in a
+      // share, and mixing the two is what produced "3777 of 3654 · 103%".
+      // Preview bytes are index-wide by nature, so that one is taken fresh.
+      next.totals = { ...data.totals, previewBytes: next.totals.previewBytes };
       next.foldersLoading = false;
     }
     data = next;
@@ -166,6 +165,7 @@ export async function loadCoverage({ fresh = false } = {}) {
     if (!data) data = {};
     data.folders = indexTree(cov.folders || []);
     data.totals = cov.totals || data.totals;
+    data.orphans = cov.orphans || 0;
     data.failed = cov.failed || data.failed;
     data.foldersLoading = false;
 
@@ -245,7 +245,8 @@ export function updatePreviewsLive(live) {
 
 function updateTopCountersLive(live) {
   if (!data?.totals || live.done == null) return;
-  const ready = data.totals.ready + (live.done || 0);
+  const { videos } = data.totals;
+  const ready = videos == null ? data.totals.ready + (live.done || 0) : Math.min(videos, data.totals.ready + (live.done || 0));
   const readyEl = $("stat-previews-ready");
   const waitEl = $("stat-previews-waiting");
   if (readyEl) readyEl.textContent = readyLabel(ready, data.totals.videos);
@@ -422,6 +423,7 @@ function renderCoveragePanel() {
     <section class="panel" id="previews-coverage-section">
       ${coverageHead(`
         <span class="coverage-count muted">${rows.length} of ${(data.folders || []).length} folders</span>
+        ${data.orphans ? `<span class="coverage-count muted" title="Previews whose original is no longer in an active share. They still take storage but are not part of coverage.">${data.orphans} orphaned</span>` : ""}
         <button class="mini" id="previews-rescan-coverage" type="button" title="Re-read the share folders from Drive">${icon("refresh-cw", "ico-sm")} Rescan</button>`)}
 
       <div class="coverage-toolbar">
@@ -458,7 +460,7 @@ function folderRow(f) {
     : `<span class="tree-caret ghost"></span>`;
   return `<tr class="${selected.has(f.folderId) ? "picked" : ""}" data-state="${state}" data-folder-row="${escAttr(f.folderId)}">
     <td class="pick-col">${pick ? `<input class="pick" type="checkbox" data-folder="${escAttr(f.folderId)}" ${selected.has(f.folderId) ? "checked" : ""} aria-label="Select ${escAttr(f.name)}">` : `<span class="pick-done" title="${state === "done" ? "every video has a preview" : "no videos here"}">${state === "done" ? icon("check", "ico-sm") : ""}</span>`}</td>
-    <td class="tree-cell" style="--depth:${f.depth}"><span class="tree-row">${caret}${icon(f.hasKids ? "folder-open" : "folder", "ico-sm")}<span class="tree-name" title="${escAttr(f.name)}">${esc(f.name)}</span></span></td>
+    <td class="tree-cell" style="--depth:${f.depth};--hue:${(f.depth * 58) % 360}"><span class="tree-row">${caret}${icon(f.hasKids ? "folder-open" : "folder", "ico-sm")}<span class="tree-name" title="${escAttr(f.name)}">${esc(f.name)}</span></span></td>
     <td class="muted">${esc(f.label)}</td>
     <td class="num">${f.videos}</td>
     <td class="num">${f.ready}</td>
@@ -485,6 +487,10 @@ function renderFailedSection(failed) {
 
 // ---------- live monitor ----------
 
+// Three decimals: with thousands of videos the second decimal moves often
+// enough to read as progress, and the third keeps it from ever looking stuck.
+const pct3 = (a, b) => (b > 0 ? Math.min(100, (a / b) * 100) : 0).toFixed(3);
+
 function renderLivePanel(live) {
   if (!live || !live.active) return "";
   const workers = live.workers || {};
@@ -492,9 +498,15 @@ function renderLivePanel(live) {
   const busy = Object.entries(workers).filter(([, w]) => w?.fileId);
   const idle = Math.max(0, (live.parallel || 0) - busy.length);
   const total = live.total || 0;
-  const progress = total ? pct(live.done, total) : 0;
+  const done = live.done || 0;
+  const progress = pct3(done, total);
   const saved = live.bytesIn && live.bytesOut ? pct(live.bytesIn - live.bytesOut, live.bytesIn) : 0;
   const recent = (live.recent || []).slice(0, 8);
+
+  // Rate from the whole run so far, which is steadier than the last few files.
+  const elapsed = live.startedAt ? Math.max(1, (Date.now() - live.startedAt) / 1000) : 0;
+  const perSec = elapsed && done ? done / elapsed : 0;
+  const eta = perSec && total > done ? fmtTime(Math.round((total - done) / perSec)) : "";
 
   return `
     <section class="panel previews-live-monitor">
@@ -503,14 +515,20 @@ function renderLivePanel(live) {
         <span class="status-pill live-pill" data-state="live"><span class="pulse-indicator"></span> ${runners || 1} runner${runners === 1 ? "" : "s"} · ${live.parallel || 1} workers</span>
       </div>
 
-      <div class="previews-live-stats">
-        <div class="previews-live-stat"><span class="muted">Run</span><b>${esc(live.trigger || "manual")} #${esc(String(live.runId || "").slice(-6))}</b></div>
-        <div class="previews-live-stat"><span class="muted">Completed</span><b>${live.done || 0}${total ? ` / ${total}` : ""} (${progress}%)</b></div>
-        <div class="previews-live-stat"><span class="muted">Processed</span><b>${fmtBytes(live.bytesIn || 0)} → ${fmtBytes(live.bytesOut || 0)}</b>${saved ? ` <small class="chip ok">−${saved}%</small>` : ""}</div>
-        <div class="previews-live-stat"><span class="muted">Failures</span><b class="${live.skipped ? "img-bad" : ""}">${live.skipped || 0}</b></div>
+      <div class="live-hero">
+        <div class="live-hero-top">
+          <p class="live-pct"><span class="live-pct-num">${progress}</span><span class="live-pct-sign">%</span></p>
+          <dl class="live-facts">
+            <div><dt>Done</dt><dd>${done.toLocaleString()} <span class="muted">of ${total.toLocaleString()}</span></dd></div>
+            <div><dt>Shrunk</dt><dd>${fmtBytes(live.bytesIn || 0)} <span class="muted">→</span> ${fmtBytes(live.bytesOut || 0)}${saved ? ` <span class="live-save">−${saved}%</span>` : ""}</dd></div>
+            <div><dt>Rate</dt><dd>${perSec ? `${(perSec * 60).toFixed(1)} <span class="muted">/min</span>` : "<span class=\"muted\">…</span>"}</dd></div>
+            <div><dt>Left</dt><dd>${eta ? esc(eta) : "<span class=\"muted\">…</span>"}</dd></div>
+            <div><dt>Failed</dt><dd class="${live.skipped ? "img-bad" : ""}">${live.skipped || 0}</dd></div>
+          </dl>
+        </div>
+        <div class="previews-bar mega" role="progressbar" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100" aria-label="${progress}% of this run transcoded"><i style="width:${progress}%"></i></div>
+        <p class="live-hero-foot muted">${esc(live.trigger || "manual")} run #${esc(String(live.runId || "").slice(-6))} · started ${ago(live.startedAt || Date.now())}</p>
       </div>
-
-      <div class="previews-bar big" aria-label="${progress}% completed"><i style="width:${progress}%"></i></div>
 
       <div class="transcoder-slots-grid">
         ${busy.map(([key, w]) => renderWorkerSlot(key, w, (live.shards || 1) > 1)).join("")}
@@ -522,7 +540,7 @@ function renderLivePanel(live) {
             .map(
               (r) => `<li>${r.ok ? icon("circle-check", "ico-sm") : icon("circle-x", "ico-sm")}<span class="recent-name" title="${escAttr(r.name)}">${esc(r.name)}</span>${
                 r.ok
-                  ? `<span class="muted">${fmtBytes(r.size)} → ${fmtBytes(r.previewSize)}</span><span class="chip mini">${esc(r.via || "ffmpeg")}</span><span class="muted">${fmtTime(r.ms / 1000)}</span>`
+                  ? `<span class="muted">${fmtBytes(r.size)} → ${fmtBytes(r.previewSize)} · ${fmtTime(r.ms / 1000)}</span>`
                   : `<span class="muted img-bad">${esc(r.error)}</span>`
               }</li>`
             )

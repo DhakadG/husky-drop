@@ -4,6 +4,38 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-17 — Silent sources, honest stats, transcoding hero (PR #77)
+
+- **ffmpeg exit 234 on videos with no audio.** `-c:a aac -b:a X -ac 2` was passed
+  unconditionally, so for a source with no audio stream ffmpeg built an output
+  audio stream with nothing feeding it and died with
+  `aost#0:1/aac … Error initializing a simple filtergraph`. The probe now
+  reports `hasAudio` and those files encode with `-an`. Any other encode failure
+  is retried once without audio, which also covers channel layouts ffmpeg will
+  not resample and codecs it cannot decode - a silent preview beats none.
+  A silent H.264 720p file can now fast-remux too; it used to re-encode because
+  the compliance check demanded an aac or mp3 track.
+- **"3777 · 103%" ready out of 3654 videos.** Nothing was transcoded twice. The
+  overview counted every preview in the index - including ones whose original
+  has left the shares - and the dashboard showed that against the folder tree's
+  video count. Coverage numbers now come from the tree only, the index size is
+  reported separately, and previews outside the shares are counted as
+  `orphans` and shown in the Coverage header. "Waiting" was hitting 0 for the
+  same reason.
+- **Duplicate previews in Drive.** A run cancelled between transcoding and its
+  batch report gets redone next time, and `putPreview` always creates a new
+  Drive file, so the old one was leaked forever. The report now trashes the
+  preview it replaces.
+- `-threads 2` on x264: six workers sharing four vCPUs were each trying to use
+  every core.
+- **Transcoding now** is rebuilt around one large progress bar and a large
+  percentage to three decimals, with done/total, compression, throughput per
+  minute, estimated time left and failures beside it.
+- Finished files in the live feed no longer carry a chip that reads like a
+  "transcode" button.
+- Folder indent guides are coloured per depth, VS Code style, so nesting reads
+  without counting pixels.
+
 ## 2026-09-17 — Coverage table: undo the global form styles (PR #76)
 
 The folder checkboxes rendered as 48px slabs and selected rows smeared
