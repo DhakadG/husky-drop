@@ -439,6 +439,7 @@ async function report(extra = {}) {
     ...batch,
     ...extra,
   });
+  const sent = batch;
   batch = { done: [], skipped: [] };
   lastReportTime = Date.now();
 
@@ -453,7 +454,12 @@ async function report(extra = {}) {
     } catch {}
     await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
   }
-  console.warn("[report] batch report failed after retries");
+  // The index never heard about this work, so the server will hand the same
+  // files out again. Keep them queued for the next flush instead of dropping
+  // them and paying to transcode them twice.
+  batch.done.unshift(...sent.done);
+  batch.skipped.unshift(...sent.skipped);
+  console.warn(`[report] batch report failed after retries; ${sent.done.length + sent.skipped.length} result(s) held for the next flush`);
   return null;
 }
 
@@ -485,6 +491,10 @@ process.on("SIGTERM", async () => {
 
 let processedCount = 0;
 let totalPendingRemaining = 0;
+// Ids this runner has already claimed. The server decides what is pending from
+// the index, which only learns about a file once its batch is reported, so a
+// lost or slow report can otherwise hand the same file back to us.
+const taken = new Set();
 
 try {
   let isFirstBatch = true;
@@ -518,13 +528,23 @@ try {
       throw new Error(`pending request failed ${res.status}: ${errText}`);
     }
 
-    const { pending = [], indexed = 0, total = 0 } = await res.json();
-    totalPendingRemaining = total || pending.length;
+    const { pending: offered = [], indexed = 0, total = 0 } = await res.json();
+    totalPendingRemaining = total || offered.length;
 
-    if (!pending.length) {
+    if (!offered.length) {
       console.log(`[queue] no more pending videos; indexed: ${indexed}`);
       break;
     }
+
+    const pending = offered.filter((f) => !taken.has(f.id));
+    if (!pending.length) {
+      console.log(`[queue] all ${offered.length} offered file(s) were already done here; stopping`);
+      break;
+    }
+    if (pending.length < offered.length) {
+      console.log(`[queue] skipped ${offered.length - pending.length} file(s) this runner had already processed`);
+    }
+    for (const f of pending) taken.add(f.id);
 
     console.log(
       `[batch] processing ${pending.length} videos (${parallel} workers${shards > 1 ? `, shard ${shard + 1}/${shards}` : ""}, ${totalPendingRemaining} remaining in queue)`
