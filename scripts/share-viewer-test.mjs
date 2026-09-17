@@ -420,4 +420,50 @@ for (const tracker of ["public/share-trekker.js", "public/drop-trekker.js"]) {
   assert.match(source, /data-track/);
 }
 
+// ---- hover media card: poster, progress bar, zoom, no play glyph ----
+{
+  const preview = await read("public/share-preview.js");
+
+  // A video with no Drive thumbnail only got a frame grabbed inside the hover
+  // preview, so until you pointed at it the tile stayed a blank file chip.
+  assert.match(preview, /export function ensureVideoPoster/, "tiles can pull their own poster");
+  assert.match(shareJs, /ensureVideoPoster\(file, entry\.target\)/, "the intersection observer asks for one");
+  assert.match(preview, /POSTER_PARALLEL = 3/, "poster capture is throttled; each one downloads a preview");
+
+  // attachBufferBar ran only on the hover that first parented the video, and
+  // the bar removed itself on every pointerleave, so hovers 2+ had no bar.
+  assert.match(preview, /if \(media\) attachBufferBar\(media, video, fig\);/, "the bar is rebuilt on every hover");
+  const parented = preview.indexOf("media.appendChild(video)");
+  assert.ok(preview.indexOf("if (media) attachBufferBar") > parented, "and outside the branch that only runs once");
+
+  // z-index 3 put the bar underneath the figcaption's readability gradient at 4.
+  // lastIndexOf(".buffer-bar {") would land on ".g-card.scrubbing .buffer-bar {".
+  const barRule = shareCss.slice(shareCss.lastIndexOf("\n.buffer-bar {"));
+  assert.match(barRule.slice(0, barRule.indexOf("}")), /z-index: 6/, "the bar sits above the caption gradient");
+
+  // Hovering already plays the clip; the duration badge marks a video instead.
+  assert.doesNotMatch(shareJs, /g-play/, "no play glyph in the markup");
+  assert.doesNotMatch(shareCss, /^\.g-play \{/m, "and none left in the stylesheet");
+  assert.match(shareJs, /const dur = isVideo \?/, "every video gets a badge, even with no duration");
+
+  // Zoom is worth more the denser the grid, so the preference is scaled by it.
+  assert.match(shareJs, /export function applyHoverZoom/, "hover zoom is computed, not hard-coded");
+  assert.match(shareJs, /ZOOM_STRENGTH = \{ off: 0/, "including an off setting");
+  assert.match(shareCss, /transform: scale\(var\(--hover-zoom/, "and the card reads it");
+  assert.match(shareHtml, /id="hover-zoom"/, "with a control in the toolbar");
+
+  // The zoom curve itself: strength falls away as tiles get bigger.
+  const ZOOM = { off: 0, s: 0.14, m: 0.3, l: 0.52, auto: 0.34 };
+  const zoom = (pref, scale) => 1 + ZOOM[pref] * (1 - (scale - 1) / 8);
+  assert.equal(zoom("off", 1), 1, "off means off at any density");
+  assert.ok(zoom("auto", 1) > zoom("auto", 5), "denser grids zoom more");
+  assert.ok(zoom("auto", 5) > zoom("auto", 9), "and the largest tiles barely move");
+  assert.equal(zoom("l", 9).toFixed(3), "1.000", "even 'large' settles at 1 on full-size tiles");
+  assert.ok(zoom("l", 1) <= 1.6, "and never balloons past 1.6");
+
+  // Wheel scrolling is left alone; smooth applies to anchor jumps only.
+  assert.match(shareCss, /scroll-behavior: smooth/, "anchor jumps are smoothed");
+  assert.match(shareCss, /contain: layout paint style/, "tiles are paint islands so scrolling stops re-costing the page");
+}
+
 console.log("share viewer regression checks passed");

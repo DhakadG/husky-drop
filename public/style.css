@@ -690,7 +690,7 @@ h2 {
 /* Icon tiles and icon-only controls: no text follows, so no side margin. */
 .icon-tile .ico, .stat-ico .ico, .gate-icon .ico, .dropzone-icon .ico, .success-check .ico,
 .live-empty-icon .ico, .share-mode-icon .ico, .mini-drop-icon .ico, .auth-lock .ico,
-.g-play .ico, .strip-play .ico, .g-check .ico, .g-dl .ico, .size-control-end .ico,
+.strip-play .ico, .g-check .ico, .g-dl .ico, .size-control-end .ico,
 .activity-type-icon .ico, .icon-btn .ico, .settings-role-icon, .settings-chevron,
 .tab-icon .ico, .mini-file > .ico, .pswp .ico, .sort-control > .ico { margin: 0; }
 .ico-sm { width: 14px; height: 14px; }
@@ -2303,8 +2303,10 @@ body.has-fx-cursor .mobile-select-bar * {
 .g-card:hover {
   /* Scale-up, not lift - a slight spread+blur shadow behind the tile does
      the "depth" work instead of a translateY, which reads as more modern
-     and doesn't shove neighbouring rows around. */
-  transform: scale(1.045);
+     and doesn't shove neighbouring rows around. The amount comes from
+     --hover-zoom, which share.js works out from the density slider and the
+     viewer's preference: growing a tile only helps when it is small. */
+  transform: scale(var(--hover-zoom, 1.045));
   z-index: 6;
   border-radius: 8px;
   box-shadow:
@@ -2346,10 +2348,6 @@ body.has-fx-cursor .mobile-select-bar * {
 }
 .g-card.previewing .g-video-preview {
   opacity: 1;
-}
-.g-card.previewing .g-play {
-  opacity: 0;
-  transition: opacity 140ms ease;
 }
 
 /* Buffering spinner: keeps the still thumbnail visible underneath instead
@@ -2615,23 +2613,6 @@ body.selecting .g-check {
 }
 
 /* Video hints */
-.g-play {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-.g-play svg {
-  /* scales with the tile: dense grids get a small glyph, big tiles a big one */
-  width: clamp(16px, 16cqw, 40px);
-  height: clamp(16px, 16cqw, 40px);
-  fill: rgba(255, 255, 255, 0.92);
-  stroke: rgba(255, 255, 255, 0.92);
-  filter: drop-shadow(0 4px 12px rgba(8, 16, 28, 0.55));
-}
 .g-dur {
   position: absolute;
   right: 8px;
@@ -8864,4 +8845,85 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   .previews-bar.mega i::after {
     animation: none;
   }
+}
+
+/* ---------- Hover media card: progress bar, duration badge, zoom ---------- */
+/* The bar sat at z-index 3, under the figcaption's readability gradient at 4,
+   so the thing telling you how much has buffered was the one thing you could
+   not see. It goes above the caption, and the caption reserves room for it. */
+.buffer-bar {
+  z-index: 6;
+  height: 4px;
+  background: rgba(4, 12, 24, 0.45);
+  box-shadow: 0 -1px 6px rgba(4, 12, 24, 0.35);
+}
+.g-card.scrubbing .buffer-bar {
+  height: 6px;
+}
+.buffer-bar .buffered {
+  background: rgba(255, 255, 255, 0.5);
+}
+.buffer-bar .played {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
+  box-shadow: 0 0 10px -1px var(--accent);
+}
+.g-card.previewing figcaption {
+  padding-bottom: 12px;
+}
+.buffer-bar .scrub-time {
+  bottom: 12px;
+}
+
+/* The duration badge is now the only "this is a video" marker, so it shows
+   without hovering and stays legible on a bright frame. It lifts clear of the
+   caption and the progress bar on hover. */
+.g-dur {
+  backdrop-filter: blur(6px);
+  background: rgba(8, 16, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  letter-spacing: 0.02em;
+  transition:
+    bottom 160ms ease,
+    background 160ms ease;
+}
+.g-card:hover .g-dur {
+  bottom: 38px;
+  background: rgba(8, 16, 28, 0.72);
+}
+.g-card.previewing .g-dur {
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+/* A zoomed tile paints over its neighbours, so it needs to win the stacking
+   order for the whole hover, not just while the shadow animates. */
+.g-card:hover,
+.g-card.previewing {
+  z-index: 6;
+}
+
+/* ---------- Scrolling ---------- */
+/* Smooth only applies to programmatic and anchor jumps: hijacking the wheel
+   would change how far a flick travels, which is the one thing not to touch.
+   The jitter is paint cost, so the work is in containment below. */
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+/* Each tile is its own layout/paint island, and off-screen rows are skipped
+   entirely, so scrolling a few thousand of them stops re-costing the page.
+   contain-intrinsic-size keeps the scrollbar honest for skipped rows. */
+body.share-page .g-card,
+body.drop-page .g-card {
+  contain: layout paint style;
+}
+/* Cards are absolutely positioned by the justified layout with their size set
+   inline, so skipping off-screen ones costs nothing and needs no intrinsic
+   size hint. A hovering card keeps rendering so the zoom never pops. */
+body.share-page .g-card:not(:hover):not(.previewing) {
+  content-visibility: auto;
 }

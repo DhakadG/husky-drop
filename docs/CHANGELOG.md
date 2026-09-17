@@ -4,6 +4,33 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-17 — Share gallery: posters on load, hover card rebuilt (PR #79)
+
+- **Videos with no Drive thumbnail stayed blank chips** until you pointed at
+  them: grabbing a frame only happened inside the hover preview. Tiles now pull
+  their own poster as they scroll into range, three at a time since each one
+  downloads the 720p preview to decode a frame.
+- **The progress bar only appeared on the first hover.** `attachBufferBar` ran
+  only on the hover that first parented the video element, and the bar removed
+  itself on every `pointerleave` - so from the second hover on there was none.
+  It is rebuilt each time now.
+- **And it was invisible anyway**: the bar sat at `z-index: 3`, under the
+  caption's readability gradient at `4`. It goes above the caption, is taller,
+  has its own dark track and a glow on the played portion, and the caption
+  leaves room for it.
+- **The play glyph is gone.** Hovering already plays the clip; the duration
+  badge is what marks a video, so every video carries one - clips with no known
+  duration read "video" - and it stays visible without hovering.
+- **Hover zoom is now a choice**: auto, off, subtle, medium, large, in the
+  gallery toolbar. Whatever is picked is scaled by the density slider, because
+  growing a tile only helps when the tile is small: at the densest setting a
+  tile has room and needs the detail, at the largest it already fills the row.
+  Even "large" settles at 1.0 on full-size tiles.
+- **Scrolling**: anchor and programmatic jumps are smoothed. The wheel is left
+  alone on purpose - smoothing it changes how far a flick travels. The jitter
+  was paint cost, so tiles are now layout/paint islands and off-screen ones skip
+  rendering entirely.
+
 ## 2026-09-17 — Never transcode the same file twice (PR #78)
 
 The worker decides what is pending from `previews:index`, and the index only
