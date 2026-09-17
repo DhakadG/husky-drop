@@ -14,7 +14,7 @@ import { accessToken, driveCreateFolder, driveFindFolder, driveListFolder, drive
 import { json, shareState, cleanText } from "./util.js";
 import { signShareTokenWithExpiry } from "./share-token.js";
 import { appLog } from "./applog.js";
-import { sendNotify } from "./store.js";
+import { liveStub, sendNotify } from "./store.js";
 
 const INDEX_KEY = "previews:index";
 const FOLDER_KEY = "previews:folder";
@@ -128,7 +128,17 @@ function nextScheduledRun(now = Date.now()) {
 // ---- admin: overview ----
 export async function previewsOverview(request, env) {
   const fresh = new URL(request.url).searchParams.get("fresh") === "1";
-  const [index, tree, active] = await Promise.all([previewIndex(env), scanShares(env, fresh), activeRun(env)]);
+  const [index, tree, active, live] = await Promise.all([
+    previewIndex(env),
+    scanShares(env, fresh),
+    activeRun(env),
+    env.LIVE_TRACKER
+      ? liveStub(env)
+          .fetch("https://live.internal/transcoder-status")
+          .then((r) => r.json())
+          .catch(() => null)
+      : null,
+  ]);
   const totals = { videos: 0, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
   const folders = tree.map((node) => {
     const row = { slug: node.slug, label: node.label, folderId: node.folderId, name: node.name, depth: node.depth, videos: node.videos.length, ready: 0, pending: 0, failed: 0, bytes: 0, previewBytes: 0 };
@@ -150,6 +160,7 @@ export async function previewsOverview(request, env) {
     runs: index.runs,
     queue: index.queue,
     active,
+    live,
     nextRunAt: nextScheduledRun(),
     dispatchConfigured: ghConfigured(env),
     scannedAt: scanMemo.at,
@@ -160,19 +171,23 @@ export async function previewsOverview(request, env) {
 // Queue (explicit folders/files from the admin) first, then everything else.
 // Files that failed MAX_TRIES times are skipped until retried from the admin.
 export async function listPendingPreviews(request, env) {
-  const limit = Math.max(1, Math.min(300, Number(new URL(request.url).searchParams.get("limit")) || 20));
+  const url = new URL(request.url);
+  const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit")) || 20));
+  const cached = url.searchParams.get("cached") === "1";
   const index = await previewIndex(env);
   // Trust the folder over the index: a preview that exists in Drive but was
   // never reported (run killed before its batch) must not be made twice.
-  const inDrive = await previewsInFolder(env);
-  let repaired = 0;
-  for (const [of, entry] of Object.entries(inDrive)) {
-    if (index.files[of]) continue;
-    index.files[of] = entry;
-    repaired += 1;
+  if (!cached) {
+    const inDrive = await previewsInFolder(env);
+    let repaired = 0;
+    for (const [of, entry] of Object.entries(inDrive)) {
+      if (index.files[of]) continue;
+      index.files[of] = entry;
+      repaired += 1;
+    }
+    if (repaired) await saveIndex(env, index);
   }
-  if (repaired) await saveIndex(env, index);
-  const tree = await scanShares(env, true);
+  const tree = await scanShares(env, !cached);
   const byId = new Map(tree.flatMap((node) => node.videos.map((v) => [v.id, v])));
   const eligible = (id) => !index.files[id] && (index.failed[id]?.tries || 0) < MAX_TRIES;
   const ordered = [];
@@ -181,7 +196,11 @@ export async function listPendingPreviews(request, env) {
   for (const id of queue.fileIds || []) push(byId.get(id));
   for (const node of tree) if ((queue.folderIds || []).includes(node.folderId)) node.videos.forEach(push);
   for (const node of tree) node.videos.forEach(push);
-  return json({ pending: ordered.slice(0, Math.max(limit, Number(queue.limit) || 0)), indexed: Object.keys(index.files).length });
+  return json({
+    pending: ordered.slice(0, Math.max(limit, Number(queue.limit) || 0)),
+    indexed: Object.keys(index.files).length,
+    total: ordered.length,
+  });
 }
 
 // Stream the original to the transcoder.

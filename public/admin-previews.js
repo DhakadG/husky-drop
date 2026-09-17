@@ -1,10 +1,11 @@
 import { $, icon } from "./admin-state.js";
 import { flash } from "./admin.js";
 
-// Video previews tab: what the transcoder has done, what is left, per
-// folder, run history, and "process now" controls.
+// Video previews tab: real-time transcoder status, coverage, run history,
+// and process/retry controls. Powered by live WebSocket updates from the runner.
 
 let data = null;
+let liveState = null;
 let pollTimer = 0;
 let selectedFolders = new Set();
 
@@ -15,10 +16,12 @@ const ago = (ts) => {
   if (s < 86400) return `${Math.round(s / 3600)}h ago`;
   return `${Math.round(s / 86400)}d ago`;
 };
+
 const until = (ts) => {
   const s = Math.max(0, Math.round((ts - Date.now()) / 1000));
   return s < 3600 ? `in ${Math.max(1, Math.round(s / 60))} min` : `in ${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
 };
+
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const post = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
 
@@ -30,6 +33,7 @@ export async function refreshPreviews({ fresh = false } = {}) {
     const r = await fetch(`/api/admin/previews/overview${fresh ? "?fresh=1" : ""}`);
     if (!r.ok) throw new Error(`overview ${r.status}`);
     data = await r.json();
+    if (data?.live) liveState = data.live;
     render();
   } catch (error) {
     host.innerHTML = `<div class="empty-state"><p>${icon("circle-alert")} Could not load preview status.</p><p class="muted">${esc(error.message)}</p></div>`;
@@ -37,8 +41,10 @@ export async function refreshPreviews({ fresh = false } = {}) {
     host.removeAttribute("aria-busy");
   }
   clearTimeout(pollTimer);
-  // Poll while a run is active so the counters move without a manual refresh.
-  if (data?.active && !$("tab-previews").classList.contains("hidden")) pollTimer = setTimeout(() => refreshPreviews({ fresh: true }), 20_000);
+  // Gentle fallback poll only if an active GitHub action run is reported and WebSocket is inactive
+  if ((data?.active || liveState?.active) && !$("tab-previews")?.classList.contains("hidden")) {
+    pollTimer = setTimeout(() => refreshPreviews({ fresh: true }), 20_000);
+  }
 }
 
 export function stopPreviewsPolling() {
@@ -46,20 +52,66 @@ export function stopPreviewsPolling() {
   pollTimer = 0;
 }
 
+// Real-time update dispatched directly from the WebSocket connection
+export function updatePreviewsLive(live) {
+  if (!live) return;
+  const wasActive = liveState?.active;
+  liveState = live;
+
+  // If previews tab is currently visible, update the UI live
+  if ($("tab-previews") && !$("tab-previews").classList.contains("hidden")) {
+    const liveWrap = $("previews-live-wrap");
+    if (liveWrap && live.active) {
+      liveWrap.innerHTML = renderLivePanel(live);
+      updateTopCountersLive(live);
+    } else {
+      render();
+    }
+  }
+
+  // When a run ends, trigger a fresh overview fetch to record the completed run in the history table
+  if (wasActive && !live.active) {
+    setTimeout(() => refreshPreviews({ fresh: true }), 1500);
+  }
+}
+
+function updateTopCountersLive(live) {
+  if (!data?.totals) return;
+  const readyEl = $("stat-previews-ready");
+  const waitEl = $("stat-previews-waiting");
+  if (readyEl && live.done != null) {
+    const effectiveReady = data.totals.ready + (live.done || 0);
+    readyEl.textContent = `${effectiveReady} · ${pct(effectiveReady, data.totals.videos)}%`;
+  }
+  if (waitEl && live.done != null) {
+    const effectiveWait = Math.max(0, data.totals.pending - (live.done || 0));
+    waitEl.textContent = String(effectiveWait);
+  }
+}
+
 function render() {
+  const host = $("previews-body");
+  if (!host || !data) return;
+
   const { totals: t, folders, failed, runs, active, nextRunAt, dispatchConfigured, queue } = data;
   const done = t.ready;
   const saved = t.bytes && t.previewBytes ? t.bytes - t.previewBytes : 0;
+  const isTranscoderActive = liveState?.active;
+
   const cards = [
-    ["film", t.videos, "Videos in shares"],
-    ["circle-check", `${done} · ${pct(done, t.videos)}%`, "Previews ready"],
-    ["clock", t.pending, "Waiting"],
-    ["triangle-alert", t.failed, "Failed (3 tries)"],
-    ["hard-drive", fmtBytes(t.previewBytes), `Preview storage (originals ${fmtBytes(t.bytes)})`],
+    ["film", t.videos, "Videos in shares", "stat-previews-total"],
+    ["circle-check", `${done} · ${pct(done, t.videos)}%`, "Previews ready", "stat-previews-ready"],
+    ["clock", t.pending, "Waiting", "stat-previews-waiting"],
+    ["triangle-alert", t.failed, "Failed (3 tries)", "stat-previews-failed"],
+    ["hard-drive", fmtBytes(t.previewBytes), `Preview storage (originals ${fmtBytes(t.bytes)})`, "stat-previews-storage"],
   ];
-  const stateLine = active
+
+  const stateLine = isTranscoderActive
+    ? `<span class="status-pill" data-state="live"><i class="status-dot-pulse"></i> real-time transcoder active · ${liveState.parallel || 1} workers</span>`
+    : active
     ? `<span class="status-pill" data-state="live">run in progress · started ${ago(active.startedAt)}</span> <a class="mini" href="${esc(active.url)}" target="_blank" rel="noopener">open on GitHub ${icon("external-link", "ico-sm")}</a>`
     : `<span class="status-pill" data-state="paused">idle · next scheduled run ${until(nextRunAt)} (03:00 IST)</span>`;
+
   const queueLine = queue && (queue.folderIds?.length || queue.fileIds?.length)
     ? `<p class="muted">Queued for the next run: ${queue.folderIds.length} folder(s), ${queue.fileIds.length} file(s).</p>`
     : "";
@@ -67,13 +119,16 @@ function render() {
     ? ""
     : `<p class="muted">${icon("info", "ico-sm")} "Run now" needs a <code>GITHUB_TOKEN</code> secret on the worker (fine-grained PAT, Actions: read &amp; write). Until then, queued work runs on the nightly schedule.</p>`;
 
-  $("previews-body").innerHTML = `
-    <div class="stat-grid">${cards.map(([name, value, label]) => `<div class="stat-card v3"><span class="stat-ico">${icon(name)}</span><div><b>${esc(String(value))}</b><span class="stat-label">${esc(label)}</span></div></div>`).join("")}</div>
+  host.innerHTML = `
+    <div class="stat-grid">${cards.map(([name, value, label, id]) => `<div class="stat-card v3"><span class="stat-ico">${icon(name)}</span><div><b id="${id}">${esc(String(value))}</b><span class="stat-label">${esc(label)}</span></div></div>`).join("")}</div>
+
+    <div id="previews-live-wrap">${isTranscoderActive ? renderLivePanel(liveState) : ""}</div>
+
     <section class="panel">
       <div class="section-title"><div><p class="eyebrow">transcoder</p><h2>${icon("zap")} Runs</h2></div>
         <div class="section-tools previews-tools">
-          <label class="muted">limit <input id="previews-limit" class="previews-limit" type="number" min="1" max="300" value="40" aria-label="Videos per run"></label>
-          <button class="btn" id="previews-run" type="button" ${active ? "disabled" : ""}>${icon("play", "ico-sm")} Run now</button>
+          <label class="muted">limit <input id="previews-limit" class="previews-limit" type="number" min="1" max="1000" value="300" aria-label="Videos per run"></label>
+          <button class="btn" id="previews-run" type="button" ${active || isTranscoderActive ? "disabled" : ""}>${icon("play", "ico-sm")} Run now</button>
           <button class="mini" id="previews-refresh" type="button">${icon("refresh-cw", "ico-sm")} Rescan</button>
         </div>
       </div>
@@ -82,12 +137,14 @@ function render() {
       <p class="muted">Saved ${fmtBytes(saved)} of streaming per full playthrough: viewers get a 720p copy on hover and first play, HD on demand.</p>
       ${runs.length ? `<div class="upload-table-wrap"><table class="uploads previews-runs"><thead><tr><th>Run</th><th>Started</th><th class="num">Done</th><th class="num">Skipped</th><th class="num">In → out</th><th>Status</th></tr></thead><tbody>${runs.map(runRow).join("")}</tbody></table></div>` : `<p class="muted">No runs recorded yet.</p>`}
     </section>
+
     <section class="panel">
       <div class="section-title"><div><p class="eyebrow">by folder</p><h2>${icon("folder")} Coverage</h2></div>
         <div class="section-tools"><button class="mini" id="previews-run-selected" type="button" disabled>${icon("play", "ico-sm")} Process selected</button></div>
       </div>
       ${folders.length ? `<div class="upload-table-wrap"><table class="uploads previews-folders"><thead><tr><th></th><th>Folder</th><th>Share</th><th class="num">Videos</th><th class="num">Ready</th><th class="num">Waiting</th><th class="num">Failed</th><th>Progress</th><th></th></tr></thead><tbody>${folders.map(folderRow).join("")}</tbody></table></div>` : `<p class="muted">No active shares with folders.</p>`}
     </section>
+
     ${failed.length ? `<section class="panel">
       <div class="section-title"><div><p class="eyebrow">needs attention</p><h2>${icon("triangle-alert")} Failed files</h2></div>
         <div class="section-tools"><button class="mini" id="previews-retry-all" type="button">${icon("refresh-cw", "ico-sm")} Retry all</button></div></div>
@@ -97,6 +154,122 @@ function render() {
     </section>` : ""}
   `;
   wire();
+}
+
+function renderLivePanel(live) {
+  if (!live || !live.active) return "";
+  const workers = live.workers || {};
+  const slots = Array.from({ length: live.parallel || Object.keys(workers).length || 1 }, (_, i) => String(i));
+  const recent = (live.recent || []).slice(0, 8);
+  const total = live.total || 0;
+  const progressPct = total ? pct(live.done, total) : 0;
+  const ratioSaved = live.bytesIn && live.bytesOut ? pct(live.bytesIn - live.bytesOut, live.bytesIn) : 0;
+
+  return `
+    <section class="panel previews-live-monitor">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">realtime streaming</p>
+          <h2>${icon("zap")} Active Transcoder Monitor</h2>
+        </div>
+        <span class="status-pill live-pill" data-state="live">
+          <span class="pulse-indicator"></span> ${live.parallel || 1} Workers Connected
+        </span>
+      </div>
+
+      <div class="previews-live-stats">
+        <div class="previews-live-stat">
+          <span class="muted">Run</span>
+          <b>${esc(live.trigger || "manual")} #${esc(String(live.runId || "").slice(-6))}</b>
+        </div>
+        <div class="previews-live-stat">
+          <span class="muted">Completed</span>
+          <b>${live.done || 0}${total ? ` / ${total}` : ""} (${progressPct}%)</b>
+        </div>
+        <div class="previews-live-stat">
+          <span class="muted">Processed</span>
+          <b>${fmtBytes(live.bytesIn || 0)} → ${fmtBytes(live.bytesOut || 0)}</b>
+          ${ratioSaved ? `<small class="chip ok">−${ratioSaved}%</small>` : ""}
+        </div>
+        <div class="previews-live-stat">
+          <span class="muted">Failures</span>
+          <b class="${live.skipped ? "img-bad" : ""}">${live.skipped || 0}</b>
+        </div>
+      </div>
+
+      <div class="previews-overall-progress">
+        <div class="previews-bar big" aria-label="${progressPct}% completed">
+          <i style="width:${progressPct}%"></i>
+        </div>
+      </div>
+
+      <div class="transcoder-slots-grid">
+        ${slots.map((s) => renderWorkerSlot(s, workers[s])).join("")}
+      </div>
+
+      ${recent.length ? `
+        <div class="previews-live-recent">
+          <p class="eyebrow">recently completed files</p>
+          <ul class="previews-recent-list">
+            ${recent.map((r) => `
+              <li>
+                ${r.ok ? icon("circle-check", "ico-sm") : icon("circle-x", "ico-sm")}
+                <span class="recent-name" title="${escAttr(r.name)}">${esc(r.name)}</span>
+                ${r.ok ? `
+                  <span class="muted">${fmtBytes(r.size)} → ${fmtBytes(r.previewSize)}</span>
+                  <span class="chip mini">${r.via || "ffmpeg"}</span>
+                  <span class="muted">${fmtTime(r.ms / 1000)}</span>
+                ` : `
+                  <span class="muted img-bad">${esc(r.error)}</span>
+                `}
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
+function renderWorkerSlot(slotIndex, w) {
+  if (!w || !w.fileId) {
+    return `
+      <div class="transcoder-slot-card idle">
+        <div class="slot-head">
+          <span class="slot-num">Worker #${Number(slotIndex) + 1}</span>
+          <span class="slot-badge idle">idle</span>
+        </div>
+        <p class="slot-empty muted">Waiting for next video...</p>
+      </div>
+    `;
+  }
+
+  const stage = w.stage || "transcoding";
+  const stageClass = stage === "downloading" ? "info" : stage === "uploading" ? "cyan" : "ok";
+  const speedStr = w.speed ? ` · ${esc(w.speed)}` : "";
+  const fpsStr = w.fps ? ` (${w.fps} fps)` : "";
+  const etaStr = w.etaSec ? ` · ~${fmtTime(w.etaSec)} left` : "";
+
+  return `
+    <div class="transcoder-slot-card active">
+      <div class="slot-head">
+        <span class="slot-num">Worker #${Number(slotIndex) + 1}</span>
+        <span class="slot-badge ${stageClass}">${esc(stage)}</span>
+      </div>
+      <div class="slot-title" title="${escAttr(w.name)}">
+        ${icon("film", "ico-sm")} <span>${esc(w.name)}</span>
+      </div>
+      <div class="slot-meta muted">
+        ${fmtBytes(w.size)}${speedStr}${fpsStr}${etaStr}
+      </div>
+      <div class="previews-bar" aria-label="${w.percent || 0}%">
+        <i style="width:${w.percent || 0}%"></i>
+      </div>
+      <div class="slot-foot">
+        <small class="muted">${w.percent || 0}%</small>
+      </div>
+    </div>
+  `;
 }
 
 function runRow(run) {
@@ -119,14 +292,15 @@ function folderRow(f) {
 
 function wire() {
   const host = $("previews-body");
+  if (!host) return;
   selectedFolders = new Set();
   host.querySelector("#previews-refresh")?.addEventListener("click", () => refreshPreviews({ fresh: true }));
-  host.querySelector("#previews-run")?.addEventListener("click", (e) => run(e.currentTarget, { limit: Number($("previews-limit").value) || 40 }));
-  host.querySelector("#previews-run-selected")?.addEventListener("click", (e) => run(e.currentTarget, { folderIds: [...selectedFolders], limit: Number($("previews-limit").value) || 40 }));
+  host.querySelector("#previews-run")?.addEventListener("click", (e) => run(e.currentTarget, { limit: Number($("previews-limit").value) || 300 }));
+  host.querySelector("#previews-run-selected")?.addEventListener("click", (e) => run(e.currentTarget, { folderIds: [...selectedFolders], limit: Number($("previews-limit").value) || 300 }));
   host.querySelector("#previews-retry-all")?.addEventListener("click", (e) => retry(e.currentTarget, []));
   host.addEventListener("click", (e) => {
     const folder = e.target.closest("[data-run-folder]");
-    if (folder) return run(folder, { folderIds: [folder.dataset.runFolder], limit: 300 });
+    if (folder) return run(folder, { folderIds: [folder.dataset.runFolder], limit: 500 });
     const one = e.target.closest("[data-retry]");
     if (one) return retry(one, [one.dataset.retry]);
   });
@@ -134,7 +308,8 @@ function wire() {
     const box = e.target.closest("[data-folder]");
     if (!box) return;
     box.checked ? selectedFolders.add(box.dataset.folder) : selectedFolders.delete(box.dataset.folder);
-    host.querySelector("#previews-run-selected").disabled = !selectedFolders.size;
+    const runSelectedBtn = host.querySelector("#previews-run-selected");
+    if (runSelectedBtn) runSelectedBtn.disabled = !selectedFolders.size;
   });
 }
 
