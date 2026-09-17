@@ -535,6 +535,16 @@ async function main() {
   assert.equal(previewIndex.files["vid-1"].id, "prev-1", "report indexes finished previews");
   assert.equal(previewIndex.failed["vid-2"].tries, 1, "report counts failures");
   assert.equal(previewIndex.runs[0].done, 1, "report keeps the run summary");
+  // The overview must not invent coverage numbers from the index alone: it once
+  // reported "420 of 420 ready, 100%" while thousands of videos had no preview.
+  res = await worker.fetch(request("/api/admin/previews/overview", { headers: { authorization: "Bearer test-admin" } }), env);
+  assert.equal(res.status, 200, "previews overview is admin readable");
+  const previewsOverviewBody = await res.json();
+  assert.equal(previewsOverviewBody.totals.videos, null, "overview leaves total videos unknown until the folder crawl lands");
+  assert.equal(previewsOverviewBody.totals.pending, null, "overview leaves pending unknown until the folder crawl lands");
+  assert.equal(previewsOverviewBody.totals.ready, 1, "overview still reports what the index knows");
+  assert.equal(previewsOverviewBody.totals.failed, 0, "one try is not a failure yet (3 tries)");
+  assert.equal(previewsOverviewBody.foldersLoading, true, "overview tells the dashboard coverage is still loading");
 
   // Image archive jobs: admin only, a plan needs folders, reports need a known job.
   res = await worker.fetch(request("/api/admin/images/jobs"), env);

@@ -181,9 +181,6 @@ function computeCoverage(tree, index) {
 
 // ---- admin: fast overview (returns in <50ms without waiting for a full Drive crawl) ----
 export async function previewsOverview(request, env) {
-  const url = new URL(request.url);
-  const fresh = url.searchParams.get("fresh") === "1";
-
   const [index, active, live] = await Promise.all([
     previewIndex(env),
     activeRun(env),
@@ -195,20 +192,22 @@ export async function previewsOverview(request, env) {
       : null,
   ]);
 
-  // Check if we already have the tree cached in memory or KV
-  let tree = null;
-  if (!fresh && scanMemo.tree && Date.now() - scanMemo.at < 300_000) {
-    tree = scanMemo.tree;
-  } else if (!fresh) {
+  // Use whatever tree we already have. `fresh` is about re-crawling Drive, and
+  // that is the coverage endpoint's job - the overview must stay fast and must
+  // not drop the numbers it can already answer.
+  let tree = scanMemo.tree && Date.now() - scanMemo.at < 300_000 ? scanMemo.tree : null;
+  if (!tree) {
     tree = await env.KV.get(TREE_CACHE_KEY, "json").catch(() => null);
     if (tree) scanMemo = { at: Date.now(), tree };
   }
 
+  // Without the tree we only know what the index knows. `videos` and `pending`
+  // stay null so the dashboard shows "…" instead of claiming 100% coverage.
   let totals = {
-    videos: Object.keys(index.files).length + Object.keys(index.failed).length,
+    videos: null,
     ready: Object.keys(index.files).length,
-    pending: 0,
-    failed: Object.keys(index.failed).length,
+    pending: null,
+    failed: Object.values(index.failed).filter((f) => (f.tries || 0) >= MAX_TRIES).length,
     bytes: 0,
     previewBytes: 0,
   };

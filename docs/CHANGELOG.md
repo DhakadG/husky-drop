@@ -4,6 +4,34 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-17 — Video previews tab: stop the flicker loop (PR #73)
+
+The dashboard rebuilt the whole Video previews tab on every WebSocket tick and
+every 20s poll, and each rebuild asked for a fresh Google Drive crawl of ~3,600
+files. Clicking "retry" on a failed transcode landed in that loop, so the tab
+flickered, reset folder checkboxes mid-click, and stalled on a scan that
+Cloudflare eventually cut off with a 524.
+
+- A poll or telemetry tick now patches the stat cards, live monitor, runs table
+  and failed list in place. Only the first paint renders the whole tab, and the
+  coverage table is left alone unless coverage itself reloaded.
+- A refreshed overview keeps the folders it already has instead of dropping them
+  and re-crawling. `?fresh=1` is now only about re-crawling Drive, which is the
+  coverage endpoint's job; the overview always answers from cache.
+- One Drive crawl at a time, bounded at 60s on the client so a hung scan fails
+  into the inline retry strip instead of wedging every later scan.
+- Retry / run / run-end refresh coverage from the cached tree (one KV read)
+  instead of forcing a full re-crawl.
+- The overview no longer invents coverage from the index: it reported "420 · 100%
+  ready" while 3,200 videos had no preview. `videos` and `pending` are null until
+  the crawl lands and the cards show "…". "Failed" counts files that used all 3
+  tries, matching its label and the coverage numbers.
+- A cancelled run no longer shows as "running" forever, and a runner that dies
+  without saying goodbye stops pinning the dashboard to "live" (no telemetry for
+  2 minutes = gone).
+- Event handlers are delegated on the tab body and attached once, so swapping
+  panels can neither lose them nor stack duplicates.
+
 ## 2026-09-16 — Archive links, rules verdicts, overview skeleton fix (PR #69)
 
 - Drop and share links can be **archived** (PATCH `{archived}`): closed to
