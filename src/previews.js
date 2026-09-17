@@ -58,7 +58,25 @@ export async function previewFields(env, slug, file, index) {
   const entry = index.files[file.id];
   if (entry) {
     const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", slug, entry.id, PREVIEW_TTL);
-    return { preview: `/api/share/dl/${token}`, previewExpiresAt: expiresAt, previewState: "ready" };
+    const fields = { preview: `/api/share/dl/${token}`, previewExpiresAt: expiresAt, previewState: "ready" };
+    // Drive generates thumbnails and videoMediaMetadata itself, and for a fair
+    // number of these originals it simply never did - which is why those tiles
+    // had no still and no duration while their size showed fine. The 720p
+    // preview is a plain H.264 MP4 that Drive is happy to describe, so borrow
+    // its metadata for whatever the original is missing.
+    if (!Number(file.videoMediaMetadata?.durationMillis) && entry.ms) fields.dur = entry.ms;
+    if (!Number(file.videoMediaMetadata?.width) && entry.w && entry.h) {
+      fields.w = entry.w;
+      fields.h = entry.h;
+      fields.aspect = entry.w / entry.h;
+    }
+    if (!file.thumbnailLink) {
+      const th = await signShareTokenWithExpiry(env, "th", slug, entry.id);
+      fields.thumbs = Object.fromEntries(["base", "mid", "max"].map((tier) => [tier, `/api/share/thumb/${th.token}/${tier}`]));
+      fields.thumb = fields.thumbs.base;
+      fields.thumbsExpireAt = th.expiresAt;
+    }
+    return fields;
   }
   const failed = index.failed[file.id];
   return { previewState: failed && failed.tries >= MAX_TRIES ? "failed" : "queued" };
@@ -383,7 +401,17 @@ export async function reportPreviewRun(request, env, ctx) {
     // Bin the one we are replacing instead of leaking it.
     const prev = index.files[d.id];
     if (prev && prev.id !== d.previewId) superseded.push(prev.id);
-    index.files[d.id] = { id: d.previewId, size: Number(d.previewSize) || 0, at: now };
+    // ffprobe already read the duration and shape on the runner. Drive never
+    // produced either for some of these originals, so this is the only place
+    // the share page can get them.
+    index.files[d.id] = {
+      id: d.previewId,
+      size: Number(d.previewSize) || 0,
+      at: now,
+      ms: Math.max(0, Math.round(Number(d.durationMs) || 0)),
+      w: Math.max(0, Math.round(Number(d.w) || 0)),
+      h: Math.max(0, Math.round(Number(d.h) || 0)),
+    };
     delete index.failed[d.id];
   }
   if (superseded.length) {

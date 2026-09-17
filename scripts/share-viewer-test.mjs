@@ -461,6 +461,20 @@ for (const tracker of ["public/share-trekker.js", "public/drop-trekker.js"]) {
   assert.equal(zoom("l", 9).toFixed(3), "1.000", "even 'large' settles at 1 on full-size tiles");
   assert.ok(zoom("l", 1) <= 1.6, "and never balloons past 1.6");
 
+  // A poster attempt that produced nothing must not latch: hovering has to be
+  // free to try again, or a tile that failed once stays blank forever.
+  assert.match(preview, /file\._posterBusy = false/, "the poster guard is released after every attempt");
+  assert.doesNotMatch(preview.slice(preview.indexOf("async function capturePoster")), /_sessionThumbFailed = true/, "and a failed poster does not disable the hover capture");
+  assert.match(preview, /video\.preload = "auto"/, "capture asks for data; metadata alone leaves no frame to draw");
+
+  // scale() on the card drags its chrome up with it - a 1.5x zoom was giving a
+  // 1.5x filename and download button. Each overlay scales back by the same
+  // factor from its own corner.
+  for (const sel of [".g-check", ".g-dl", ".g-dur", "figcaption"]) {
+    const rule = shareCss.slice(shareCss.lastIndexOf(`.g-card:hover ${sel} {`));
+    assert.match(rule.slice(0, rule.indexOf("}")), /scale\(calc\(1 \/ var\(--hover-zoom/, `${sel} keeps its size while the tile grows`);
+  }
+
   // Wheel scrolling is left alone; smooth applies to anchor jumps only.
   assert.match(shareCss, /scroll-behavior: smooth/, "anchor jumps are smoothed");
   assert.match(shareCss, /contain: layout paint style/, "tiles are paint islands so scrolling stops re-costing the page");

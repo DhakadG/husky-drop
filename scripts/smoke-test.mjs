@@ -562,6 +562,31 @@ async function main() {
   assert.equal(runs[0].skipped, 0, "and stops counting it as a failure");
   const idx = await env.KV.get("previews:index", "json");
   assert.equal(idx.failed["vid-2"], undefined, "the failure is cleared from the index");
+
+  // Drive generates thumbnails and videoMediaMetadata itself and never did for
+  // a good number of these originals, which is why those tiles had no still and
+  // no duration while their size showed fine. ffprobe knows both, so the runner
+  // reports them and the index keeps them.
+  await sendReport({ done: [{ id: "vid-3", name: "c.mp4", size: 99, previewId: "prev-3", previewSize: 9, ms: 4, durationMs: 12345, w: 1280, h: 720 }] });
+  const withProbe = (await env.KV.get("previews:index", "json")).files["vid-3"];
+  assert.equal(withProbe.ms, 12345, "the probed duration is kept");
+  assert.equal(withProbe.w, 1280, "and the shape");
+
+  const previewsMod = await import("../src/previews.js");
+  const previews = await previewsMod.previewIndex(env);
+  const previewFields = previewsMod.previewFields;
+  const bare = { id: "vid-3", mimeType: "video/mp4" };
+  const filled = await previewFields(env, "s1", bare, previews);
+  assert.equal(filled.previewState, "ready");
+  assert.equal(filled.dur, 12345, "a file Drive gave no duration for borrows the preview's");
+  assert.equal(filled.aspect, 1280 / 720, "and its aspect");
+  assert.ok(filled.thumb?.startsWith("/api/share/thumb/"), "and gets a thumbnail from the preview file");
+
+  // Whatever Drive did supply still wins.
+  const described = { id: "vid-3", mimeType: "video/mp4", thumbnailLink: "https://drive/thumb", videoMediaMetadata: { durationMillis: "500", width: 1920, height: 1080 } };
+  const untouched = await previewFields(env, "s1", described, previews);
+  assert.equal(untouched.dur, undefined, "Drive's own duration is not overwritten");
+  assert.equal(untouched.thumb, undefined, "nor its thumbnail");
   assert.equal(previewsOverviewBody.totals.failed, 0, "one try is not a failure yet (3 tries)");
   assert.equal(previewsOverviewBody.foldersLoading, true, "overview tells the dashboard coverage is still loading");
 

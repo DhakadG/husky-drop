@@ -423,7 +423,7 @@ async function transcodeOne(file, dir, slot) {
     throw new Error(putData.error || `put ${put?.status || "network failure"}`);
   }
 
-  return { previewId: putData.previewId, size, via };
+  return { previewId: putData.previewId, size, via, durationMs: Math.round((probe.duration || 0) * 1000), w: probe.width || 0, h: probe.height || 0 };
 }
 
 // ---- Batched KV Reporting ----
@@ -568,7 +568,7 @@ try {
 
         const t0 = Date.now();
         try {
-          const { previewId, size, via } = await transcodeOne(file, slotDir, slot);
+          const { previewId, size, via, durationMs, w, h } = await transcodeOne(file, slotDir, slot);
           const elapsed = Date.now() - t0;
           processedCount += 1;
 
@@ -579,6 +579,9 @@ try {
             previewId,
             previewSize: size,
             ms: elapsed,
+            durationMs,
+            w,
+            h,
           });
 
           sendWs({

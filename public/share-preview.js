@@ -337,8 +337,8 @@ let posterBusy = 0;
 const POSTER_PARALLEL = 3;
 
 export function ensureVideoPoster(file, fig) {
-  if (!/^video\//.test(file.mime) || file.thumb || file._sessionThumbFailed || file._posterQueued) return;
-  file._posterQueued = true;
+  if (!/^video\//.test(file.mime) || file.thumb || file._sessionThumbFailed || file._posterBusy) return;
+  file._posterBusy = true;
   posterQueue.push([file, fig]);
   pumpPosters();
 }
@@ -348,11 +348,22 @@ function pumpPosters() {
     const [file, fig] = posterQueue.shift();
     posterBusy += 1;
     capturePoster(file, fig).finally(() => {
+      // Never latch: an attempt that produced nothing must leave hovering
+      // free to try again, or a tile that failed once stays blank forever.
+      file._posterBusy = false;
       posterBusy -= 1;
       pumpPosters();
     });
   }
 }
+
+const once = (video, event, ms) =>
+  new Promise((resolve) => {
+    const done = () => resolve();
+    video.addEventListener(event, done, { once: true });
+    video.addEventListener("error", done, { once: true });
+    setTimeout(done, ms);
+  });
 
 async function capturePoster(file, fig) {
   if (!fig.isConnected || file.thumb) return;
@@ -361,32 +372,25 @@ async function capturePoster(file, fig) {
   try {
     const video = await getPreviewVideo(file);
     if (!fig.isConnected || file.thumb) return;
-    if (video.readyState < 1) {
-      await new Promise((resolve) => {
-        const done = () => resolve();
-        video.addEventListener("loadedmetadata", done, { once: true });
-        video.addEventListener("error", done, { once: true });
-        setTimeout(done, 8000);
-      });
-    }
-    if (!video.videoWidth) return;
+    // getPreviewVideo asks for metadata only, which stops at readyState 1 and
+    // leaves no frame to draw. Ask for data before waiting for it.
+    if (video.preload !== "auto") video.preload = "auto";
+    if (video.readyState < 1) await once(video, "loadedmetadata", 12_000);
+    if (!video.videoWidth || !fig.isConnected || file.thumb) return;
     if (!file.aspect) {
       file.aspect = video.videoWidth / video.videoHeight;
       scheduleLayout();
     }
-    // A paused, never-played element has no frame to draw until it has data.
     if (video.readyState < 2) {
-      await new Promise((resolve) => {
-        const done = () => resolve();
-        video.addEventListener("loadeddata", done, { once: true });
-        video.addEventListener("error", done, { once: true });
-        setTimeout(done, 8000);
-      });
+      video.load?.();
+      await once(video, "loadeddata", 12_000);
     }
-    if (video.readyState < 2 || !fig.isConnected || file.thumb) return;
+    if (video.readyState < 2) return;
+    // Seeks to a representative frame and swaps the blank chip for a real
+    // tile; shared with the hover path.
     promoteVideoFrameAsThumb(file, fig, video);
   } catch {
-    file._sessionThumbFailed = true;
+    // Leave _sessionThumbFailed alone: hovering gets another go.
   } finally {
     lease.release("poster");
     lease.scheduleRelease();
