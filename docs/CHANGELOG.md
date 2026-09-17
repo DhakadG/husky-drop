@@ -4,6 +4,41 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-17 — Previews: fan out to 20 runners, rebuilt coverage panel (PR #74)
+
+Asking for 4,000 videos ran 300 of them, on one runner, for 50 minutes.
+
+- **Run limits are honoured.** `startPreviewRun` clamped every request to 300
+  regardless of what the admin typed. The ceiling is now 5,000, and the toolbar
+  input says "videos" so the number means something.
+- **The work is spread over runners.** GitHub gives a public repo 20 concurrent
+  Linux runners, each 4 vCPU / 16 GB / 14 GB SSD with a 6-hour job cap, so the
+  workflow is now a matrix of up to 20 jobs. Each runner asks the worker for the
+  videos whose id hashes to its shard — a stable hash, not a slice of the list,
+  because the list shrinks as the other runners report. A `plan` job warms the
+  Drive tree cache first so 20 machines do not crawl Drive at once.
+- **Per-runner concurrency follows the CPU count** (cores + 2, capped at 6 for
+  the 14 GB disk) instead of a fixed 3. A worker spends much of its life on the
+  network, so more workers than cores keeps ffmpeg fed.
+- **One run, many runners, one live panel.** The Durable Object used to be reset
+  by each runner's hello and keyed workers by slot number alone, so runners
+  overwrote each other. It now tracks runners by shard, keys workers
+  "shard:slot", and only calls a run over once the last runner leaves.
+- **Stop a run** from the dashboard (`POST /api/admin/previews/cancel`). GitHub
+  has no pause, so this cancels; whatever was already reported is kept.
+- **Coverage panel rebuilt**: select-all with a mixed state, shift-click ranges,
+  press-and-drag over the checkboxes, search, All/Waiting/Failed/Done filters, a
+  real folder tree with collapsible subtrees and indent guides, a live "n
+  folders · n videos" selection readout, and a 16px checkbox in place of the one
+  that ate a row of height. Selection survives a rescan.
+- The folder tree is rebuilt from parent ids. The scan walks sibling folders
+  concurrently, so its list is not depth-first and indenting by depth alone
+  nested folders under the wrong parent.
+- **Runs panel**: runner count control, per-run failure count and a "retry this
+  run's failures" button, and the toolbar no longer redraws under your caret
+  while you are typing a limit.
+- Panels in the tab had no gap between them; they do now.
+
 ## 2026-09-17 — Video previews tab: stop the flicker loop (PR #73)
 
 The dashboard rebuilt the whole Video previews tab on every WebSocket tick and

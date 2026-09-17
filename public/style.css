@@ -8414,3 +8414,345 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 }
 
 
+
+/* ---------- Video previews: panel rhythm, coverage toolbar, folder tree ---------- */
+/* Panels in this tab used to butt up against each other with no gap. */
+#previews-body {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+#previews-body > .panel,
+#previews-body .previews-live-monitor {
+  margin: 0;
+}
+#previews-body > div:empty,
+#previews-body > section:empty {
+  display: none;
+}
+
+/* Number inputs in the run toolbar, labelled so 4000 is clearly 4000 videos. */
+.field-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+}
+.field-mini > span {
+  font: 600 11px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.field-mini input {
+  width: 62px;
+  min-height: 30px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  text-align: right;
+}
+.field-mini input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Segmented filter control. */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(12, 26, 43, 0.04);
+}
+.seg-btn {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font: 600 12px var(--font-body);
+  color: var(--muted);
+  transition: background 160ms ease, color 160ms ease;
+}
+.seg-btn:hover {
+  color: var(--ink);
+}
+.seg-btn.on {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(12, 26, 43, 0.12);
+}
+
+.coverage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 10px 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.coverage-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  min-height: 36px;
+  flex: 1 1 200px;
+  max-width: 320px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--muted);
+}
+.coverage-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+}
+.coverage-search input:focus {
+  outline: none;
+}
+.coverage-search:focus-within {
+  border-color: var(--accent);
+}
+.coverage-bulk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.coverage-selection {
+  font: 600 12px var(--font-mono);
+  color: var(--muted);
+  transition: color 160ms ease;
+}
+.coverage-selection.on {
+  color: var(--accent);
+}
+.coverage-count {
+  font: 600 12px var(--font-mono);
+}
+
+/* A checkbox that does not eat a whole row of vertical space. */
+.pick {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  border: 1.5px solid var(--line-strong, rgba(12, 26, 43, 0.28));
+  border-radius: 5px;
+  background: var(--card);
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+.pick::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border: 2px solid #fff;
+  border-top: 0;
+  border-right: 0;
+  transform: rotate(-45deg) scale(0.4);
+  opacity: 0;
+  transition: opacity 120ms ease, transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.pick:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.pick:checked::after {
+  opacity: 1;
+  transform: rotate(-45deg) scale(1);
+}
+.pick:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.pick:indeterminate::after {
+  opacity: 1;
+  width: 9px;
+  height: 0;
+  border-bottom-width: 2px;
+  transform: none;
+}
+.pick:hover {
+  border-color: var(--accent);
+}
+.pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pick-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 12px var(--font-body);
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+.pick-col {
+  width: 34px;
+  padding-right: 0 !important;
+}
+.pick-done {
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--green);
+  opacity: 0.55;
+}
+
+/* Folder tree: one indent step per level with a guide line, and a caret that
+   folds the whole subtree away. */
+.previews-folders td,
+.previews-folders th {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.previews-folders tbody tr {
+  transition: background 140ms ease;
+}
+.previews-folders tbody tr:hover {
+  background: rgba(47, 107, 255, 0.04);
+}
+.previews-folders tr.picked {
+  background: rgba(47, 107, 255, 0.08);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.previews-folders tr.picked:hover {
+  background: rgba(47, 107, 255, 0.12);
+}
+.tree-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: calc(6px + var(--depth, 0) * 18px) !important;
+  position: relative;
+  color: var(--ink);
+}
+.tree-cell::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--depth, 0) * 18px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+  opacity: var(--depth, 0);
+}
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 34ch;
+}
+.tree-caret {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-content: center;
+  border: 0;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 180ms ease, background 140ms ease;
+}
+.tree-caret:hover {
+  background: rgba(12, 26, 43, 0.06);
+  color: var(--ink);
+}
+.tree-caret.closed {
+  transform: rotate(-90deg);
+}
+.tree-caret.ghost {
+  cursor: default;
+  pointer-events: none;
+}
+.bar-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.bar-pct {
+  font: 600 11px var(--font-mono);
+  min-width: 34px;
+}
+.previews-folders tr[data-state="done"] .bar-cell i {
+  background: var(--green);
+}
+.previews-folders tr[data-state="failed"] .bar-cell i {
+  background: var(--red);
+}
+
+/* Rows fade in when the coverage table is redrawn, and the whole panel dims
+   while a rescan is in flight so it reads as busy rather than frozen. */
+@keyframes coverage-row-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.previews-folders tbody tr {
+  animation: coverage-row-in 220ms ease both;
+}
+#previews-coverage-section.is-scanning .coverage-wrap {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+.coverage-wrap {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+/* The run history says at a glance which runs are still going. */
+.previews-runs tr[data-run-state="running"] td:last-child {
+  color: var(--accent);
+  font-weight: 600;
+}
+.previews-runs tr[data-run-state="stopped"] td:last-child {
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .previews-folders tbody tr,
+  .pick,
+  .pick::after,
+  .tree-caret {
+    animation: none;
+    transition: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .coverage-bulk {
+    margin-left: 0;
+    width: 100%;
+  }
+  .coverage-search {
+    max-width: none;
+  }
+  .tree-name {
+    max-width: 18ch;
+  }
+}

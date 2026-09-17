@@ -56,11 +56,15 @@ export class LiveTracker {
     } catch {}
     this.analytics = new Analytics(sql);
     this.completions = new CompletionQueue(env, this.analytics);
+    // One run can be spread over up to 20 runners, all reporting here.
+    // `runners` is keyed by shard; `workers` by "shard:slot".
     this.transcoderState = {
       active: false,
       runId: null,
       trigger: "manual",
       parallel: 0,
+      shards: 0,
+      runners: {},
       total: 0,
       done: 0,
       skipped: 0,
@@ -298,6 +302,9 @@ export class LiveTracker {
       return;
     }
     if (meta.role === "transcoder") {
+      if (msg?.type === "transcoder:hello" && meta.shard !== msg.shard) {
+        ws.serializeAttachment({ ...meta, shard: msg.shard ?? 0 });
+      }
       this.handleTranscoderMessage(msg);
       return;
     }
@@ -310,12 +317,8 @@ export class LiveTracker {
   webSocketClose(ws) {
     const meta = ws.deserializeAttachment() || {};
     if (meta.role === "transcoder") {
-      if (this.transcoderState.active) {
-        this.transcoderState.active = false;
-        this.transcoderState.workers = {};
-        this.transcoderState.updatedAt = Date.now();
-        this.broadcastTranscoderState();
-      }
+      if (meta.shard != null) this.dropRunner(String(meta.shard));
+      this.broadcastTranscoderState();
       try {
         ws.close();
       } catch {}
@@ -342,28 +345,44 @@ export class LiveTracker {
     this.transcoderState.updatedAt = now;
 
     if (msg.type === "transcoder:hello") {
-      this.transcoderState = {
-        ...this.transcoderState,
-        active: true,
-        runId: cleanText(msg.runId || "", 60),
-        trigger: cleanText(msg.trigger || "manual", 20),
-        parallel: Math.max(1, Math.min(16, Number(msg.parallel) || 1)),
+      const runId = cleanText(msg.runId || "", 60);
+      // A second runner joining the same run must add to the totals, not wipe
+      // them. Only a new run id starts the counters over.
+      if (runId !== this.transcoderState.runId) {
+        this.transcoderState = {
+          ...this.transcoderState,
+          runId,
+          trigger: cleanText(msg.trigger || "manual", 20),
+          runners: {},
+          done: 0,
+          skipped: 0,
+          bytesIn: 0,
+          bytesOut: 0,
+          total: 0,
+          parallel: 0,
+          startedAt: Number(msg.startedAt) || now,
+          workers: {},
+          recent: [],
+        };
+      }
+      const shard = String(msg.shard ?? 0);
+      this.transcoderState.runners[shard] = {
+        parallel: clamp(Number(msg.parallel) || 1, 1, 16),
         total: Math.max(0, Number(msg.total) || 0),
-        done: 0,
-        skipped: 0,
-        bytesIn: 0,
-        bytesOut: 0,
         startedAt: Number(msg.startedAt) || now,
-        workers: {},
-        recent: [],
-        updatedAt: now,
+        seenAt: now,
       };
+      this.transcoderState.active = true;
+      this.transcoderState.shards = clamp(Number(msg.shards) || 1, 1, 20);
+      this.transcoderState.parallel = this.sumRunners("parallel");
+      this.transcoderState.total = this.sumRunners("total");
+      this.transcoderState.updatedAt = now;
       this.broadcastTranscoderState();
       return;
     }
 
     if (msg.type === "transcoder:progress") {
-      const slot = String(msg.slot ?? 0);
+      const slot = this.slotKey(msg);
       this.transcoderState.active = true;
       this.transcoderState.workers[slot] = {
         fileId: cleanText(msg.fileId || "", 80),
@@ -381,7 +400,7 @@ export class LiveTracker {
     }
 
     if (msg.type === "transcoder:file_done") {
-      const slot = String(msg.slot ?? 0);
+      const slot = this.slotKey(msg);
       delete this.transcoderState.workers[slot];
       this.transcoderState.done += 1;
       this.transcoderState.bytesIn += Number(msg.size) || 0;
@@ -404,7 +423,7 @@ export class LiveTracker {
     }
 
     if (msg.type === "transcoder:file_skip") {
-      const slot = String(msg.slot ?? 0);
+      const slot = this.slotKey(msg);
       delete this.transcoderState.workers[slot];
       this.transcoderState.skipped += 1;
       this.transcoderState.recent = [
@@ -422,18 +441,39 @@ export class LiveTracker {
     }
 
     if (msg.type === "transcoder:bye") {
-      this.transcoderState.active = false;
-      this.transcoderState.workers = {};
-      this.transcoderState.updatedAt = now;
+      this.dropRunner(String(msg.shard ?? 0), now);
       this.broadcastTranscoderState();
       return;
     }
 
     if (msg.type === "transcoder:heartbeat") {
+      const runner = this.transcoderState.runners[String(msg.shard ?? 0)];
+      if (runner) runner.seenAt = now;
       this.transcoderState.active = true;
       this.transcoderState.updatedAt = now;
       return;
     }
+  }
+
+  // Workers are per runner, so a slot number alone is not unique.
+  slotKey(msg) {
+    return `${String(msg.shard ?? 0)}:${String(msg.slot ?? 0)}`;
+  }
+
+  sumRunners(field) {
+    return Object.values(this.transcoderState.runners).reduce((n, r) => n + (r[field] || 0), 0);
+  }
+
+  // One runner finished or died: forget its slots, and only call the whole run
+  // over once every runner has gone.
+  dropRunner(shard, now = Date.now()) {
+    delete this.transcoderState.runners[shard];
+    for (const key of Object.keys(this.transcoderState.workers)) {
+      if (key.startsWith(`${shard}:`)) delete this.transcoderState.workers[key];
+    }
+    this.transcoderState.parallel = this.sumRunners("parallel");
+    this.transcoderState.active = Object.keys(this.transcoderState.runners).length > 0;
+    this.transcoderState.updatedAt = now;
   }
 
   // A runner that is killed (cancelled workflow, dead runner) may never send
@@ -441,7 +481,7 @@ export class LiveTracker {
   transcoderView() {
     const stale = Date.now() - (this.transcoderState.updatedAt || 0) > TRANSCODER_STALE_MS;
     if (!stale) return this.transcoderState;
-    return { ...this.transcoderState, active: false, workers: {} };
+    return { ...this.transcoderState, active: false, workers: {}, runners: {} };
   }
 
   queueTranscoderBroadcast() {
