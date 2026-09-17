@@ -544,6 +544,24 @@ async function main() {
   assert.equal(previewsOverviewBody.totals.pending, null, "overview leaves pending unknown until the folder crawl lands");
   assert.equal(previewsOverviewBody.totals.ready, null, "coverage is unknowable without the tree, including how many are ready");
   assert.equal(previewsOverviewBody.indexed, 1, "the index size is reported separately from coverage");
+
+  // A report that never reached the worker is re-sent, and a file that failed
+  // once can succeed later in the same run. Counting either twice makes the run
+  // summary claim more videos than exist.
+  const sendReport = (body) =>
+    worker.fetch(request("/api/admin/previews/report", { method: "POST", headers: { authorization: "Bearer test-admin", "content-type": "application/json" }, body: JSON.stringify({ runId: "r1", trigger: "manual", startedAt: 1, ...body }) }), env);
+  await sendReport({ done: [{ id: "vid-1", name: "a.mp4", size: 10, previewId: "prev-1", previewSize: 2, ms: 5 }] });
+  let runs = (await env.KV.get("previews:index", "json")).runs;
+  assert.equal(runs[0].done, 1, "re-reporting the same file does not count it twice");
+  assert.equal(runs[0].bytes, 10, "nor its bytes");
+  assert.equal(runs[0].items.filter((i) => i.id === "vid-1").length, 1, "nor duplicate its row");
+
+  await sendReport({ done: [{ id: "vid-2", name: "b.mp4", size: 40, previewId: "prev-2", previewSize: 4, ms: 9 }] });
+  runs = (await env.KV.get("previews:index", "json")).runs;
+  assert.equal(runs[0].done, 2, "a retry that succeeds moves the file out of skipped");
+  assert.equal(runs[0].skipped, 0, "and stops counting it as a failure");
+  const idx = await env.KV.get("previews:index", "json");
+  assert.equal(idx.failed["vid-2"], undefined, "the failure is cleared from the index");
   assert.equal(previewsOverviewBody.totals.failed, 0, "one try is not a failure yet (3 tries)");
   assert.equal(previewsOverviewBody.foldersLoading, true, "overview tells the dashboard coverage is still loading");
 

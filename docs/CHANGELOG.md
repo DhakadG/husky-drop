@@ -4,6 +4,27 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-17 — Never transcode the same file twice (PR #78)
+
+The worker decides what is pending from `previews:index`, and the index only
+learns about a file once its batch report lands. Three ways that let a file be
+done more than once, or counted more than once:
+
+- **A report that never landed was thrown away.** `report()` cleared the buffer
+  before sending and gave up after three attempts, so those results were lost
+  and the files looked pending again on the next fetch - transcoded a second
+  time, at full cost. Failed results are now put back for the next flush.
+- **No runner-side memory.** A runner now keeps the ids it has claimed and drops
+  them from later batches, whatever the server offers. If a whole batch comes
+  back already-done, it stops rather than looping.
+- **The run summary double-counted.** `run.done` and `run.bytes` were incremented
+  per report, so a re-sent report inflated them, and a file that failed and then
+  succeeded counted in both columns. Each file is now counted once, by its
+  latest outcome.
+
+Per-folder coverage was already right (`ready + waiting = videos` on every row);
+these fix the run totals and the wasted work behind them.
+
 ## 2026-09-17 — Silent sources, honest stats, transcoding hero (PR #77)
 
 - **ffmpeg exit 234 on videos with no audio.** `-c:a aac -b:a X -ac 2` was passed

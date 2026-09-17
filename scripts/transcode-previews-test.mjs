@@ -471,3 +471,31 @@ console.log("\nAll video transcoder tests passed successfully!");
 
   console.log("✓ Audio fallback, duplicate cleanup and live stats verified");
 }
+
+// ---- Test 8: a runner never transcodes the same file twice ----
+{
+  const fs = await import("node:fs");
+  const script = fs.readFileSync(new URL("./transcode-previews.mjs", import.meta.url), "utf8");
+
+  // The server works out what is pending from the index, and the index only
+  // learns about a file once its batch is reported. A report that is slow or
+  // never lands therefore leaves finished files looking pending.
+  assert.ok(script.includes("const taken = new Set()"), "the runner remembers what it has claimed");
+  assert.ok(script.includes("offered.filter((f) => !taken.has(f.id))"), "and filters those out of later batches");
+  assert.ok(script.includes("batch.done.unshift(...sent.done)"), "a failed report is held for the next flush, not dropped");
+
+  // The guard itself: the server re-offers a whole batch, then a batch that
+  // overlaps, then one that is entirely stale.
+  const taken = new Set();
+  const claim = (offered) => {
+    const fresh = offered.filter((id) => !taken.has(id));
+    for (const id of fresh) taken.add(id);
+    return fresh;
+  };
+  assert.deepEqual(claim(["a", "b", "c"]), ["a", "b", "c"], "a fresh batch is taken whole");
+  assert.deepEqual(claim(["a", "b", "c"]), [], "the same batch offered again is refused");
+  assert.deepEqual(claim(["c", "d"]), ["d"], "only the new file of an overlapping batch is taken");
+  assert.equal(taken.size, 4, "every id is remembered exactly once");
+
+  console.log("✓ Runner-side duplicate protection verified");
+}

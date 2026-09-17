@@ -398,13 +398,39 @@ export async function reportPreviewRun(request, env, ctx) {
   const runId = String(b.runId).slice(0, 40);
   const existing = index.runs.find((r) => r.id === runId);
   const run = existing || { id: runId, trigger: cleanText(b.trigger || "schedule", 20), startedAt: Number(b.startedAt) || now, done: 0, skipped: 0, bytes: 0, previewBytes: 0, items: [] };
-  run.done += (b.done || []).length;
-  run.skipped += (b.skipped || []).length;
+  // A held-back report is re-sent, and a file that failed once can succeed
+  // later in the same run. Count each file once, by its latest outcome, or the
+  // run summary drifts above the number of videos that exist.
+  const seen = new Map(run.items.map((i) => [i.id, i]));
+  const record = (item) => {
+    const prev = seen.get(item.id);
+    if (prev) {
+      if (prev.ok === item.ok) return false;
+      // outcome flipped: undo the old one before counting the new
+      if (prev.ok) {
+        run.done -= 1;
+        run.bytes -= prev.size || 0;
+        run.previewBytes -= prev.previewSize || 0;
+      } else {
+        run.skipped -= 1;
+      }
+      run.items = run.items.filter((i) => i.id !== item.id);
+    }
+    seen.set(item.id, item);
+    run.items.push(item);
+    return true;
+  };
   for (const d of b.done || []) {
-    run.bytes += Number(d.size) || 0;
-    run.previewBytes += Number(d.previewSize) || 0;
+    const item = { id: d.id, name: cleanText(d.name || d.id, 120), ok: true, ms: Number(d.ms) || 0, size: Number(d.size) || 0, previewSize: Number(d.previewSize) || 0 };
+    if (!record(item)) continue;
+    run.done += 1;
+    run.bytes += item.size;
+    run.previewBytes += item.previewSize;
   }
-  run.items = [...run.items, ...(b.done || []).map((d) => ({ id: d.id, name: cleanText(d.name || d.id, 120), ok: true, ms: Number(d.ms) || 0, size: Number(d.size) || 0, previewSize: Number(d.previewSize) || 0 })), ...(b.skipped || []).map((s) => ({ id: s.id, name: cleanText(s.name || s.id, 120), ok: false, error: cleanText(s.error || "", 200) }))].slice(-300);
+  for (const s of b.skipped || []) {
+    if (record({ id: s.id, name: cleanText(s.name || s.id, 120), ok: false, error: cleanText(s.error || "", 200) })) run.skipped += 1;
+  }
+  run.items = run.items.slice(-300);
   for (const s of b.skipped || []) appLog(env, ctx, { level: "warn", area: "previews", message: `preview failed: ${s.name || s.id}`, detail: s.error });
   if (b.finishedAt) {
     run.finishedAt = Number(b.finishedAt) || now;
