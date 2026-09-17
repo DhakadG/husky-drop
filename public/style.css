@@ -8149,6 +8149,189 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .person-profile .activity-timeline { display: block; margin: 0; padding: 2px 0 2px 26px; }
 .person-profile .panel { margin: 0; }
 .person-profile .dashboard-grid { gap: 16px; }
-.person-profile .section-title { margin-bottom: 10px; }
-.person-header { padding: 4px 0 2px; }
 .person-actions .mini { white-space: nowrap; }
+
+/* ---------- Real-time Video Transcoder Monitor ---------- */
+.previews-live-monitor {
+  margin-bottom: 20px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+}
+.previews-live-monitor::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent-3));
+}
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.pulse-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(31, 178, 122, 0.7);
+  animation: live-dot-pulse 1.8s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+@keyframes live-dot-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(31, 178, 122, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(31, 178, 122, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(31, 178, 122, 0); }
+}
+.previews-live-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: var(--r-sm);
+  margin-bottom: 12px;
+}
+.previews-live-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.previews-live-stat b {
+  font-size: 14px;
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+.previews-overall-progress {
+  margin-bottom: 16px;
+}
+.previews-bar.big {
+  height: 8px;
+  background: rgba(12, 26, 43, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.previews-bar.big i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.transcoder-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.transcoder-slot-card {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.transcoder-slot-card.active {
+  border-color: rgba(47, 107, 255, 0.35);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 16px -8px rgba(47, 107, 255, 0.2);
+}
+.transcoder-slot-card.idle {
+  opacity: 0.7;
+}
+.slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.slot-num {
+  font: 700 11px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+}
+.slot-badge {
+  font: 600 11px var(--font-mono);
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+.slot-badge.ok {
+  background: rgba(31, 178, 122, 0.12);
+  color: var(--green);
+}
+.slot-badge.info {
+  background: rgba(47, 107, 255, 0.12);
+  color: var(--accent);
+}
+.slot-badge.cyan {
+  background: rgba(21, 192, 201, 0.14);
+  color: #0d9098;
+}
+.slot-badge.idle {
+  background: rgba(12, 26, 43, 0.06);
+  color: var(--muted);
+}
+.slot-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slot-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slot-meta {
+  font-size: 11.5px;
+}
+.slot-empty {
+  margin: 10px 0;
+  font-size: 12.5px;
+}
+.slot-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+.previews-live-recent {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.previews-recent-list {
+  list-style: none;
+  margin: 8px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.previews-recent-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 4px 8px;
+  border-radius: var(--r-xs);
+  background: rgba(255, 255, 255, 0.4);
+}
+.recent-name {
+  font-weight: 500;
+  color: var(--ink);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

@@ -64,7 +64,7 @@ import {
 } from "./admin-shares.js";
 import { previewFile, refreshDetail, renderDetailLive } from "./admin-detail.js";
 import { shareCreatedDrop } from "./admin-folders.js";
-import { refreshPreviews, stopPreviewsPolling } from "./admin-previews.js";
+import { refreshPreviews, stopPreviewsPolling, updatePreviewsLive } from "./admin-previews.js";
 import { refreshImages, stopImagesPolling } from "./admin-images.js";
 import { refreshLogs, refreshAlertsBadge } from "./admin-logs.js";
 import { refreshPeople, openPersonByKey } from "./admin-people.js";
@@ -371,6 +371,7 @@ export function connectLive() {
       if (msg.type === "snapshot") {
         setLiveActive(msg.active || []);
         setLiveRecent(msg.recent || []);
+        if (msg.previewsLive) updatePreviewsLive(msg.previewsLive);
       } else if (msg.type === "patch") {
         // Deltas keyed by session id; the server only resends what changed.
         const byId = new Map(liveActive.map((s) => [s.id, s]));
@@ -378,6 +379,9 @@ export function connectLive() {
         for (const id of msg.removed || []) byId.delete(id);
         setLiveActive([...byId.values()].sort((a, b) => b.lastSeen - a.lastSeen));
         if (msg.recent) setLiveRecent(msg.recent);
+      } else if (msg.type === "previews:live") {
+        updatePreviewsLive(msg.live);
+        return;
       } else {
         return;
       }

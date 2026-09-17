@@ -193,6 +193,7 @@ async function api(request, env, url, ctx) {
     return openUploadLiveSocket(request, env, p.slice("/api/live/upload/".length));
   }
   if (m === "GET" && p === "/api/admin/live") return openAdminLiveSocket(request, env);
+  if (m === "GET" && p === "/api/admin/previews/ws") return openTranscoderLiveSocket(request, env, url);
 
   if (m === "POST" && p === "/api/hello") return clientHello(request, env, ctx);
   // Banned accounts/devices get no session, listing or download.
@@ -386,6 +387,21 @@ async function openAdminLiveSocket(request, env) {
   // upgrades, so the token never appears in a URL anymore.
   if (!(await isAdmin(request, env))) return json({ error: "unauthorized" }, 401);
   const req = new Request("https://live.internal/ws?role=admin", request);
+  return liveStub(env).fetch(req);
+}
+
+async function openTranscoderLiveSocket(request, env, url) {
+  if (request.headers.get("upgrade") !== "websocket") {
+    return json({ error: "expected websocket" }, 426);
+  }
+  const qToken = url.searchParams.get("token") || "";
+  const authHeader = request.headers.get("authorization") || "";
+  const tokenValid = (env.ADMIN_TOKEN && qToken && timingSafeEqual(qToken, env.ADMIN_TOKEN)) ||
+                     (env.ADMIN_TOKEN && authHeader && timingSafeEqual(authHeader, `Bearer ${env.ADMIN_TOKEN}`));
+  if (!tokenValid && !(await isAdmin(request, env))) {
+    return json({ error: "unauthorized" }, 401);
+  }
+  const req = new Request("https://live.internal/ws?role=transcoder", request);
   return liveStub(env).fetch(req);
 }
 

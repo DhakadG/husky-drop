@@ -55,6 +55,21 @@ export class LiveTracker {
     } catch {}
     this.analytics = new Analytics(sql);
     this.completions = new CompletionQueue(env, this.analytics);
+    this.transcoderState = {
+      active: false,
+      runId: null,
+      trigger: "manual",
+      parallel: 0,
+      total: 0,
+      done: 0,
+      skipped: 0,
+      bytesIn: 0,
+      bytesOut: 0,
+      workers: {},
+      recent: [],
+      updatedAt: 0,
+    };
+    this.transcoderTimer = null;
     state.blockConcurrencyWhile(() => this.wake());
   }
 
@@ -75,7 +90,7 @@ export class LiveTracker {
       this.recentDone = (await this.state.storage.get(RECENT_DONE_KEY)) || [];
     } catch {}
     for (const socket of this.adminSockets()) {
-      this.safeSend(socket, { type: "snapshot", active: this.snapshot(), recent: this.recentDone });
+      this.safeSend(socket, { type: "snapshot", active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderState });
     }
   }
 
@@ -104,7 +119,8 @@ export class LiveTracker {
     const isPost = request.method === "POST";
     const body = isPost ? await request.json().catch(() => ({})) : {};
 
-    if (path === "/snapshot") return reply({ active: this.snapshot(), recent: this.recentDone });
+    if (path === "/snapshot") return reply({ active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderState });
+    if (path === "/transcoder-status") return reply(this.transcoderState);
 
     if (path === "/timeseries") {
       const days = clamp(Number(url.searchParams.get("days")) || 30, 1, 120);
@@ -250,13 +266,16 @@ export class LiveTracker {
     // Per-socket state must live in the attachment, not on the object.
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    const role = url.searchParams.get("role") === "admin" ? "admin" : "upload";
+    const reqRole = url.searchParams.get("role");
+    const role = reqRole === "admin" ? "admin" : reqRole === "transcoder" ? "transcoder" : "upload";
     const slug = url.searchParams.get("slug") || "";
 
     this.state.acceptWebSocket(server, [role]);
     server.serializeAttachment({ role, slug, sessionId: "" });
     if (role === "admin") {
-      this.safeSend(server, { type: "snapshot", active: this.snapshot(), recent: this.recentDone });
+      this.safeSend(server, { type: "snapshot", active: this.snapshot(), recent: this.recentDone, previewsLive: this.transcoderState });
+    } else if (role === "transcoder") {
+      this.safeSend(server, { type: "transcoder:ack", ok: true });
     }
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -271,13 +290,17 @@ export class LiveTracker {
 
   webSocketMessage(ws, data) {
     const meta = ws.deserializeAttachment() || {};
-    if (meta.role !== "upload") return;
     let msg;
     try {
       msg = JSON.parse(data);
     } catch {
       return;
     }
+    if (meta.role === "transcoder") {
+      this.handleTranscoderMessage(msg);
+      return;
+    }
+    if (meta.role !== "upload") return;
     if (msg?.type !== "progress") return;
     const session = this.recordProgress({ ...msg, slug: meta.slug });
     if (meta.sessionId !== session.id) ws.serializeAttachment({ ...meta, sessionId: session.id });
@@ -285,6 +308,18 @@ export class LiveTracker {
 
   webSocketClose(ws) {
     const meta = ws.deserializeAttachment() || {};
+    if (meta.role === "transcoder") {
+      if (this.transcoderState.active) {
+        this.transcoderState.active = false;
+        this.transcoderState.workers = {};
+        this.transcoderState.updatedAt = Date.now();
+        this.broadcastTranscoderState();
+      }
+      try {
+        ws.close();
+      } catch {}
+      return;
+    }
     const existing = meta.sessionId && this.sessions.get(meta.sessionId);
     if (existing) {
       existing.state = existing.state === "done" ? "done" : "stale";
@@ -298,6 +333,123 @@ export class LiveTracker {
 
   webSocketError(ws) {
     this.webSocketClose(ws);
+  }
+
+  handleTranscoderMessage(msg) {
+    if (!msg || typeof msg !== "object") return;
+    const now = Date.now();
+    this.transcoderState.updatedAt = now;
+
+    if (msg.type === "transcoder:hello") {
+      this.transcoderState = {
+        ...this.transcoderState,
+        active: true,
+        runId: cleanText(msg.runId || "", 60),
+        trigger: cleanText(msg.trigger || "manual", 20),
+        parallel: Math.max(1, Math.min(16, Number(msg.parallel) || 1)),
+        total: Math.max(0, Number(msg.total) || 0),
+        done: 0,
+        skipped: 0,
+        bytesIn: 0,
+        bytesOut: 0,
+        startedAt: Number(msg.startedAt) || now,
+        workers: {},
+        recent: [],
+        updatedAt: now,
+      };
+      this.broadcastTranscoderState();
+      return;
+    }
+
+    if (msg.type === "transcoder:progress") {
+      const slot = String(msg.slot ?? 0);
+      this.transcoderState.active = true;
+      this.transcoderState.workers[slot] = {
+        fileId: cleanText(msg.fileId || "", 80),
+        name: cleanText(msg.name || "", 120),
+        size: Number(msg.size) || 0,
+        stage: cleanText(msg.stage || "transcoding", 30),
+        percent: clamp(Number(msg.percent) || 0, 0, 100),
+        speed: cleanText(String(msg.speed || ""), 16),
+        fps: Number(msg.fps) || 0,
+        etaSec: Math.max(0, Number(msg.etaSec) || 0),
+        startedAt: Number(msg.startedAt) || now,
+      };
+      this.queueTranscoderBroadcast();
+      return;
+    }
+
+    if (msg.type === "transcoder:file_done") {
+      const slot = String(msg.slot ?? 0);
+      delete this.transcoderState.workers[slot];
+      this.transcoderState.done += 1;
+      this.transcoderState.bytesIn += Number(msg.size) || 0;
+      this.transcoderState.bytesOut += Number(msg.previewSize) || 0;
+      this.transcoderState.recent = [
+        {
+          id: cleanText(msg.id || "", 80),
+          name: cleanText(msg.name || "", 120),
+          ok: true,
+          size: Number(msg.size) || 0,
+          previewSize: Number(msg.previewSize) || 0,
+          ms: Number(msg.ms) || 0,
+          via: cleanText(msg.via || "ffmpeg", 20),
+          at: now,
+        },
+        ...this.transcoderState.recent,
+      ].slice(0, 40);
+      this.broadcastTranscoderState();
+      return;
+    }
+
+    if (msg.type === "transcoder:file_skip") {
+      const slot = String(msg.slot ?? 0);
+      delete this.transcoderState.workers[slot];
+      this.transcoderState.skipped += 1;
+      this.transcoderState.recent = [
+        {
+          id: cleanText(msg.id || "", 80),
+          name: cleanText(msg.name || "", 120),
+          ok: false,
+          error: cleanText(msg.error || "error", 200),
+          at: now,
+        },
+        ...this.transcoderState.recent,
+      ].slice(0, 40);
+      this.broadcastTranscoderState();
+      return;
+    }
+
+    if (msg.type === "transcoder:bye") {
+      this.transcoderState.active = false;
+      this.transcoderState.workers = {};
+      this.transcoderState.updatedAt = now;
+      this.broadcastTranscoderState();
+      return;
+    }
+
+    if (msg.type === "transcoder:heartbeat") {
+      this.transcoderState.active = true;
+      this.transcoderState.updatedAt = now;
+      return;
+    }
+  }
+
+  queueTranscoderBroadcast() {
+    this.transcoderTimer ??= setTimeout(() => {
+      this.transcoderTimer = null;
+      this.broadcastTranscoderState();
+    }, 250);
+  }
+
+  broadcastTranscoderState() {
+    const payload = JSON.stringify({
+      type: "previews:live",
+      live: this.transcoderState,
+    });
+    for (const socket of this.adminSockets()) {
+      this.safeSend(socket, payload);
+    }
   }
 
   // Shared by the WebSocket path and the /api/progress fallback.
