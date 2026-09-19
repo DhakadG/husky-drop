@@ -198,13 +198,16 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
   return job;
 }
 
-// Continuation: the Worker calls its own continue route - a fresh
-// invocation with a fresh subrequest budget.
+// Continuation: the Worker calls its own continue route through the SELF
+// service binding - a fresh invocation with a fresh subrequest budget. (A
+// plain fetch() to our own hostname is refused by Cloudflare, error 1042.)
 function scheduleNextChunk(env, ctx, job, request) {
   const origin = request ? new URL(request.url).origin : env.SELF_ORIGIN || "";
   if (!ctx?.waitUntil || !env.ADMIN_TOKEN || !origin) return;
+  const target = env.SELF?.fetch ? env.SELF : globalThis;
   ctx.waitUntil(
-    fetch(`${origin}/api/admin/share-index/jobs/${encodeURIComponent(job.id)}/continue`, { method: "POST", headers: { authorization: `Bearer ${env.ADMIN_TOKEN}` } })
+    target.fetch(`${origin}/api/admin/share-index/jobs/${encodeURIComponent(job.id)}/continue`, { method: "POST", headers: { authorization: `Bearer ${env.ADMIN_TOKEN}` } })
+      .then((r) => { if (!r.ok) console.warn("share-index continue refused", r.status); })
       .catch((error) => console.warn("share-index continue failed", String(error?.message || error))),
   );
 }

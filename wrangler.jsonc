@@ -20,6 +20,9 @@
   //   npx wrangler r2 bucket create husky-drop-media
   //   npx wrangler r2 bucket lifecycle add husky-drop-media --name media-30d --prefix media/ --expire-days 30
   //   npx wrangler r2 bucket lifecycle add husky-drop-media --name stats-30d --prefix stats/ --expire-days 30
+  // share-index chunks continue by calling this Worker through a binding to
+  // itself: a plain fetch() to our own hostname is refused (error 1042).
+  "services": [{ "binding": "SELF", "service": "husky-drop" }],
   "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "husky-drop-media" }],
   "durable_objects": {
     "bindings": [
