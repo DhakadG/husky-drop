@@ -150,7 +150,8 @@ export async function openViewer(index, sourceEl) {
     syncStrip(vs.pswp.currIndex);
     refreshFileInfo(current);
     if (/^image\//.test(current?.mime || "")) {
-      void vs.viewerAssets.activate(current).then(() => warmViewerNeighbors(vs.pswp.currIndex));
+      // The viewer may close while the asset is still loading.
+      void vs.viewerAssets.activate(current).then(() => vs.pswp && warmViewerNeighbors(vs.pswp.currIndex));
     }
     if (vs.suppressNextViewerTransition) vs.suppressNextViewerTransition = false;
     else applyViewerTransition();
