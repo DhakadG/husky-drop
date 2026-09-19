@@ -44,12 +44,22 @@ export function computeJustifiedRows(items, options) {
 // edge of the grid past the viewport (the left half of a first-column tile
 // vanished off-screen). Measured before the transition starts: whichever
 // edge would clip becomes the transform origin, so the tile grows inward.
-export function hoverZoomOrigin(rect, zoom, vw, vh, margin = 8) {
+// `bounds` is the box the grown tile must stay inside: the viewport minus
+// whatever covers it (the sticky toolbar at the top, a bottom bar on phones).
+// When a tile cannot fit either way the side with more room wins, and a
+// tile larger than the box just grows from its centre (nothing better exists).
+export function hoverZoomOrigin(rect, zoom, vw, vh, margin = 8, bounds = {}) {
   if (!(zoom > 1)) return "";
+  const box = { left: margin, top: margin, right: vw - margin, bottom: vh - margin, ...bounds };
   const gx = (rect.width * (zoom - 1)) / 2;
   const gy = (rect.height * (zoom - 1)) / 2;
-  const x = rect.left - gx < margin ? "left" : rect.right + gx > vw - margin ? "right" : "center";
-  const y = rect.top - gy < margin ? "top" : rect.bottom + gy > vh - margin ? "bottom" : "center";
-  return `${x} ${y}`;
+  const pick = (start, end, grow, lo, hi, first, last) => {
+    const room = end - start;
+    if (start - grow >= lo && end + grow <= hi) return "center";
+    if (grow * 2 + room > hi - lo) return "center";
+    if (start - grow < lo && end + grow > hi) return start - lo >= hi - end ? last : first;
+    return start - grow < lo ? first : last;
+  };
+  return `${pick(rect.left, rect.right, gx, box.left, box.right, "left", "right")} ${pick(rect.top, rect.bottom, gy, box.top, box.bottom, "top", "bottom")}`;
 }
 

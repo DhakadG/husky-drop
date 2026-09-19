@@ -15,6 +15,18 @@ import {
 } from "./util.js";
 import { driveFileMeta, driveGrantAnyoneReader, driveRevokePermission } from "./drive.js";
 import { liveShareStats, logEvent } from "./store.js";
+import { loadJobs, planShareIndex, runShareIndexChunk, statsPointerKey } from "./share-index.js";
+
+// Index pointer + running job per share, for the admin cards (spec §4).
+export async function shareIndexStates(env, shares) {
+  const [pointers, jobs] = await Promise.all([Promise.all(shares.map((share) => env.KV.get(statsPointerKey(share.slug), "json"))), loadJobs(env)]);
+  return shares.map((share, i) => {
+    const pointer = pointers[i];
+    const active = jobs.find((j) => j.slug === share.slug && j.status === "running") || null;
+    const last = jobs.find((j) => j.slug === share.slug && j.status !== "running") || null;
+    return pointer || active || last ? { indexedAt: pointer?.generatedAt || 0, complete: pointer?.complete === true, lastFullAt: pointer?.lastFullAt || 0, needsReindex: !!pointer?.needsReindex, active: active && { id: active.id, startedAt: active.startedAt, trigger: active.trigger, full: active.full }, last: last && { status: last.status, finishedAt: last.finishedAt, error: last.error || "", trigger: last.trigger } } : null;
+  });
+}
 
 export function parseDriveFolderInput(value) {
   const s = String(value || "").trim();
@@ -25,7 +37,7 @@ export function parseDriveFolderInput(value) {
   return "";
 }
 
-export function adminShare(share, stats = {}) {
+export function adminShare(share, stats = {}, index = null) {
   const s = normalizeShareStats(stats);
   const recentViewers = Object.entries(s.viewers)
     .sort((a, b) => (b[1].at || 0) - (a[1].at || 0))
@@ -42,6 +54,8 @@ export function adminShare(share, stats = {}) {
     allowZip: share.allowZip !== false,
     requireAuth: share.requireAuth !== false,
     theme: normalizeTheme(share.theme),
+    indexSchedule: share.indexSchedule || null,
+    index,
     createdAt: share.createdAt,
     expiresAt: share.expiresAt || null,
     disabled: !!share.disabled,
@@ -66,6 +80,7 @@ export async function getAllShares(env) {
 export async function listShares(env) {
   const [shares, deltas] = await Promise.all([getAllShares(env), liveShareStats(env)]);
   const stats = await Promise.all(shares.map((share) => env.KV.get(`sstats:${share.slug}`, "json")));
+  const indexStates = await shareIndexStates(env, shares);
   const out = [];
   for (const [i, share] of shares.entries()) {
     const base = stats[i] || {};
@@ -76,13 +91,13 @@ export async function listShares(env) {
       bytes: (Number(base.bytes) || 0) + (Number(delta.bytes) || 0),
       views: (Number(base.views) || 0) + (Number(delta.views) || 0),
       viewers: { ...(base.viewers || {}), ...(delta.viewers || {}) },
-    }));
+    }, indexStates[i]));
   }
   out.sort((a, b) => b.createdAt - a.createdAt);
   return json({ shares: out });
 }
 
-export async function createShare(request, env) {
+export async function createShare(request, env, ctx) {
   const b = await request.json().catch(() => ({}));
   const label = cleanText(b.label || "", 80);
   if (!label) return json({ error: "label is required" }, 400);
@@ -139,6 +154,11 @@ export async function createShare(request, env) {
     await env.KV.put("shares:index", JSON.stringify(index));
   }
   await logEvent(env, { type: "sharenew", slug, label }, request);
+  // Spec §4: index on creation so the first visitor never pays the cold cost.
+  if (mode === "gallery" && env.MEDIA_BUCKET && env.GOOGLE_CLIENT_ID) {
+    const { job, started } = await planShareIndex(env, ctx, share, { trigger: "create" });
+    if (started && job) ctx?.waitUntil?.(runShareIndexChunk(env, ctx, job.id, request));
+  }
   return json({ ok: true, slug, url: `/s/${slug}` });
 }
 
@@ -183,6 +203,7 @@ export async function patchShare(request, env, slug) {
     share.expiresAt = days > 0 ? Date.now() + days * 86400_000 : null;
   }
   if ("archived" in b) share.archived = !!b.archived;
+  if ("indexSchedule" in b) share.indexSchedule = ["daily", "weekly", "monthly"].includes(b.indexSchedule) ? b.indexSchedule : null;
   if ("disabled" in b) {
     share.disabled = !!b.disabled;
     // Pausing a redirect share revokes Drive access; resuming re-grants it.

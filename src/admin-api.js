@@ -29,7 +29,7 @@ import {
   logEvent,
   recentEvents,
 } from "./store.js";
-import { adminShare, getAllShares, revokeSharePermissions } from "./share-admin.js";
+import { adminShare, getAllShares, revokeSharePermissions, shareIndexStates } from "./share-admin.js";
 import { ensureLinkFolder } from "./drop-api.js";
 
 export async function browseAdminDriveFolders(env, url) {
@@ -219,6 +219,7 @@ export async function adminOverview(env) {
   const shareStatDeltas = await liveShareStats(env);
   const shareRows = [];
   const allShareStats = await Promise.all(shares.map((share) => env.KV.get(`sstats:${share.slug}`, "json")));
+  const indexStates = await shareIndexStates(env, shares);
   for (const [i, share] of shares.entries()) {
     const base = allShareStats[i] || {};
     const delta = shareStatDeltas.get(share.slug) || {};
@@ -228,7 +229,7 @@ export async function adminOverview(env) {
       bytes: (Number(base.bytes) || 0) + (Number(delta.bytes) || 0),
       views: (Number(base.views) || 0) + (Number(delta.views) || 0),
       viewers: { ...(base.viewers || {}), ...(delta.viewers || {}) },
-    }));
+    }, indexStates[i]));
   }
   shareRows.sort((a, b) => b.createdAt - a.createdAt);
   const quota = env.GOOGLE_CLIENT_ID ? await driveQuota(env) : null;

@@ -37,8 +37,14 @@ function updateShareCard(article, share) {
   const access = [share.mode, share.hasPin ? "PIN" : "no PIN", share.requireAuth ? "Google sign-in" : "link access"].join(" · ");
   const viewers = (share.recentViewers || []).map((viewer) => `<span class="viewer-chip" title="${escAttr(viewer.email)}"><i>${esc(initialsOf(viewer.name || viewer.email))}</i><span>${esc(viewer.name || viewer.email)}</span></span>`).join("");
   article.className = `share-card panel ${escAttr(share.state || "active")}`;
+  const ix = share.index;
+  const indexLine = share.mode !== "gallery" ? "" : ix?.active
+    ? `<span class="index-state busy">${icon("loader-circle")}Indexing${ix.active.full ? "" : " changes"}${ix.indexedAt ? ` · last ${esc(fmtAgo(ix.indexedAt))}` : ""}</span>`
+    : ix?.indexedAt
+      ? `<span class="index-state${ix.needsReindex ? " stale" : ""}">${icon("database")}Indexed ${esc(fmtAgo(ix.indexedAt))}${ix.complete ? "" : " (partial)"}${ix.needsReindex ? " · changes pending" : ""}${ix.last?.status === "failed" ? ` · last run failed: ${esc(ix.last.error)}` : ""}</span>`
+      : `<span class="index-state">${icon("database")}Not indexed yet${ix?.last?.status === "failed" ? ` · failed: ${esc(ix.last.error)}` : ""}</span>`;
   article.innerHTML = `
-    <div class="share-card-head"><div><h2>${esc(share.label)}</h2><div class="share-mode-line"><span class="share-mode-pill">${share.mode === "gallery" ? icon("lock") : icon("external-link")}${esc(access)}</span><code>/s/${esc(share.slug)}</code></div><p>${esc((share.folderNames || []).join(" · ") || `${share.folderIds.length} Drive folder${share.folderIds.length === 1 ? "" : "s"}`)} · ${esc(closes)}</p></div><span class="link-status ${escAttr(share.state || "active")}">${esc(share.state || "active")}</span></div>
+    <div class="share-card-head"><div><h2>${esc(share.label)}</h2><div class="share-mode-line"><span class="share-mode-pill">${share.mode === "gallery" ? icon("lock") : icon("external-link")}${esc(access)}</span><code>/s/${esc(share.slug)}</code></div><p>${esc((share.folderNames || []).join(" · ") || `${share.folderIds.length} Drive folder${share.folderIds.length === 1 ? "" : "s"}`)} · ${esc(closes)}</p>${indexLine}</div><span class="link-status ${escAttr(share.state || "active")}">${esc(share.state || "active")}</span></div>
     <div class="share-stat-grid"><div><span>Opens</span><b>${share.stats.opens || 0}</b></div><div><span>Unique viewers</span><b>${share.viewerCount || 0}</b></div><div><span>File views</span><b>${share.stats.views || 0}</b></div><div><span>Downloaded</span><b>${fmtBytes(share.stats.bytes || 0)}</b></div></div>
     <div class="recent-viewers"><div><span class="muted">Recent viewers</span><div class="viewer-chips">${viewers || '<span class="muted">No identified viewers yet.</span>'}</div></div><button class="mini" data-view-share-activity="${escAttr(share.slug)}" type="button">View activity →</button></div>
     <div class="link-action-row">
@@ -46,6 +52,7 @@ function updateShareCard(article, share) {
       ${shareActionButton("qr-code", "QR", `data-qr-link="/s/${escAttr(share.slug)}" data-qr-label="${escAttr(share.label)}"`)}
       ${shareActionButton("share-2", "Share", `data-share-link="/s/${escAttr(share.slug)}"`)}
       ${shareActionButton("sliders-horizontal", "Edit", `data-edit-share="${escAttr(share.slug)}"`)}
+      ${share.mode === "gallery" ? shareActionButton("refresh-cw", ix?.active ? "Indexing…" : "Process now", `data-index-share="${escAttr(share.slug)}"${ix?.active ? " disabled" : ""}`) : ""}
       ${shareActionButton("user-round", share.requireAuth ? "Sign-in on" : "Sign-in off", `data-toggle-share-auth="${escAttr(share.slug)}" data-auth="${share.requireAuth ? "1" : "0"}"`)}
       ${shareActionButton(share.disabled ? "play" : "pause", share.disabled ? "Resume" : "Pause", `data-pause-share="${escAttr(share.slug)}" data-paused="${share.disabled ? "1" : "0"}"`)}
       ${shareActionButton(share.archived ? "rotate-ccw" : "inbox", share.archived ? "Unarchive" : "Archive", `data-archive-share="${escAttr(share.slug)}" data-archived="${share.archived ? "1" : "0"}"`)}
@@ -55,6 +62,52 @@ function updateShareCard(article, share) {
 
 function shareActionButton(name, label, attributes, danger = false) {
   return `<button class="link-action${danger ? " danger" : ""}" ${attributes} type="button">${icon(name)}<span>${esc(label)}</span></button>`;
+}
+
+function fmtAgo(ms) {
+  const diff = Math.max(0, Date.now() - ms);
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h} h ago`;
+  return `${Math.floor(h / 24)} d ago`;
+}
+
+// "Process now" (spec §4): a full walk + thumbnail warm for one share.
+export async function indexShareNow(slug) {
+  const r = await fetch("/api/admin/share-index/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug, full: true }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) alert(d.error || "Could not start indexing.");
+  refreshAll();
+}
+
+// "Clear orphans now" (spec §1.1): sweeps R2 media nobody references,
+// page by page, until the bucket listing is exhausted.
+export async function sweepMediaOrphans(button) {
+  button.disabled = true;
+  let cursor = null;
+  let removed = 0;
+  let scanned = 0;
+  try {
+    do {
+      const r = await fetch("/api/admin/media/orphans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cursor }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "sweep failed");
+      removed += d.removed || 0;
+      scanned += d.scanned || 0;
+      cursor = d.cursor || null;
+      button.querySelector("span").textContent = `Sweeping… ${scanned} checked`;
+    } while (cursor);
+    button.querySelector("span").textContent = `Removed ${removed} orphan${removed === 1 ? "" : "s"} of ${scanned}`;
+  } catch (error) {
+    button.querySelector("span").textContent = error.message;
+  } finally {
+    setTimeout(() => {
+      button.disabled = false;
+      button.querySelector("span").textContent = "Clear orphaned media";
+    }, 6000);
+  }
 }
 
 export async function toggleShareAuth(slug, isRequired) {
@@ -144,6 +197,7 @@ export function openShareEditor(slug) {
   $("se-clear-pin").checked = false;
   $("se-zip").checked = share.allowZip !== false;
   $("se-auth").checked = share.requireAuth !== false;
+  if ($("se-index-schedule")) $("se-index-schedule").value = share.indexSchedule || "";
   $("se-logo").value = share.theme?.logoUrl || "";
   $("se-bg").value = share.theme?.backgroundUrl || "";
   $("se-accent").value = share.theme?.accentColor || "#2f6bff";
@@ -181,6 +235,7 @@ export async function saveShareEditor(event) {
   const body = {
     label: value("se-label"), folders: [...shareEditSelectedFolders.keys()], mode: value("se-mode"),
     expiresDays: Number(value("se-days")) || 0, allowZip: $("se-zip").checked, requireAuth: $("se-auth").checked,
+    indexSchedule: value("se-index-schedule") || null,
     ...($("se-clear-pin").checked ? { pin: "" } : pin ? { pin } : {}),
     theme: { logoUrl: value("se-logo"), backgroundUrl: value("se-bg"), accentColor: value("se-accent"), backgroundColor: value("se-bgcolor"), welcome: value("se-welcome") },
   };

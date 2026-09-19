@@ -33,6 +33,8 @@ import { previewFields, previewIndex } from "./previews.js";
 import { revokeSharePermissions } from "./share-admin.js";
 import { signShareToken, signShareTokenWithExpiry, verifyShareToken, publicDownloadSafety } from "./share-token.js";
 import { mediaThumbs } from "./media-cache.js";
+import { summaryFromStats } from "./share-index.js";
+import { maybeCheckChanges } from "./share-changes.js";
 
 // Expired shares are revoked lazily the first time anyone touches them after
 // expiry (no cron needed on the free tier).
@@ -268,7 +270,7 @@ async function folderFid(env, folderId) {
   return (await sha256(`fid:${folderId}:${env.SHARE_SIGNING_KEY || env.ADMIN_TOKEN || "dev"}`)).slice(0, 16);
 }
 
-export async function listShareFiles(request, env) {
+export async function listShareFiles(request, env, ctx) {
   const b = await request.json().catch(() => ({}));
   const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
   if (error) return error;
@@ -283,6 +285,9 @@ export async function listShareFiles(request, env) {
   const targets = resolved.targets;
   const folderToken = resolved.folderToken;
   const single = !!folderToken || "folderIndex" in b;
+  // The cheap freshness check (spec §3.1): at most one Drive changes.list
+  // call per window across the whole app, off the request path.
+  ctx?.waitUntil?.(maybeCheckChanges(env, ctx, request).catch((error) => console.warn("change check failed", String(error?.message || error))));
 
   const previews = await previewIndex(env);
   const folders = [];
@@ -387,6 +392,11 @@ export async function shareSummary(request, env) {
   }
   const resolved = await resolveShareTargets(env, share, b);
   if (resolved.error) return resolved.error;
+
+  // Indexed share (spec §2.6): the numbers come from the stats blob, no
+  // Drive walk at all. Falls through to the walk until the first index lands.
+  const indexed = await summaryFromStats(env, share, resolved.targets.map(([, id]) => id));
+  if (indexed) return json({ ...indexed, allowZip: share.allowZip !== false });
 
   // Recurses into every subfolder rather than only counting the immediate
   // level: driveListFolder() is a flat, single-level listing, so a share

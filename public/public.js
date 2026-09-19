@@ -75,7 +75,7 @@ const UI_ICON_NAMES = new Set([
   "lock", "lock-keyhole", "key-round", "eye", "eye-off", "shield", "shield-check",
   "shield-alert", "user-round", "user-round-check", "users-round", "google-g",
   // files / storage
-  "file", "file-text", "file-check", "files", "film", "image", "images", "folder",
+  "file", "file-text", "file-check", "files", "film", "image", "images", "video", "folder",
   "folder-open", "folder-plus", "folder-check", "hard-drive", "database",
   // viewer / media
   "aperture", "gauge", "circle-gauge", "gallery-horizontal-end", "grid-2x2", "grid-3x3",

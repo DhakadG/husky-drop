@@ -418,6 +418,13 @@ async function getPreviewVideo(file) {
         file.aspect = video.videoWidth / video.videoHeight;
         scheduleLayout();
       }
+      // Drive never described some originals (no duration in the listing);
+      // the moment the browser knows, the tile badge does too.
+      if (!file.dur && Number.isFinite(video.duration) && video.duration > 0) {
+        file.dur = Math.round(video.duration * 1000);
+        const badge = file._el?.querySelector(".g-dur");
+        if (badge) badge.textContent = fmtDur(file.dur);
+      }
     });
     previewVideos.set(file.id, video);
   }
