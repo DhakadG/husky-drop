@@ -173,15 +173,18 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
     cur.updatedAt = Date.now();
     cur.progress.files = state.files.length;
     const complete = cur.phase === "done" || cur.chunks >= MAX_CHUNKS;
+    // Stats are whole once the walk is over; warming thumbnails afterwards
+    // does not change a single number, so readers need not wait for it.
+    const walked = cur.phase !== "walk" || !!pointer?.complete;
     const generatedAt = Date.now();
     await Promise.all([
-      writeJson(env, foldersKey(job.slug), { slug: job.slug, generatedAt, complete: complete || !!pointer?.complete, folders: state.folders }),
+      writeJson(env, foldersKey(job.slug), { slug: job.slug, generatedAt, complete: walked, folders: state.folders }),
       writeJson(env, filesKey(job.slug), { slug: job.slug, generatedAt, files: state.files }),
       writeJson(env, jobKey(job.slug), cur),
     ]);
     // KV pointer: once when the blob first exists, once when the walk ends.
-    if (!pointer?.r2Key || complete) {
-      await env.KV.put(statsPointerKey(job.slug), JSON.stringify({ ...(pointer || {}), r2Key: foldersKey(job.slug), generatedAt, complete: complete || !!pointer?.complete, ...(complete && job.full ? { lastFullAt: generatedAt } : {}), ...(complete ? { needsReindex: false, changed: [] } : {}) }));
+    if (!pointer?.r2Key || complete || (walked && !pointer?.complete)) {
+      await env.KV.put(statsPointerKey(job.slug), JSON.stringify({ ...(pointer || {}), r2Key: foldersKey(job.slug), generatedAt, complete: walked, ...(walked && job.full && !pointer?.lastFullAt ? { lastFullAt: generatedAt } : {}), ...(complete && job.full ? { lastFullAt: generatedAt } : {}), ...(complete ? { needsReindex: false, changed: [] } : {}) }));
     }
     if (!complete) {
       scheduleNextChunk(env, ctx, job, request);
@@ -299,20 +302,30 @@ async function applyChanges(env, cur, state, budget) {
 }
 
 // ---- phase: warm (spec §4 step 2) - thumbnails into R2, lo always, hi when large ----
+// A few files at a time: each one is a Drive round trip, and doing them one
+// after another made a 23k-file library take hours instead of minutes.
+const WARM_PARALLEL = 6;
 async function warmChunk(env, cur, state, budget) {
   const files = state.files;
-  while (cur.warmAt < files.length && budget.ok(4)) {
-    const f = files[cur.warmAt];
-    cur.warmAt += 1;
-    if (isVideo(f.m) && budget.ok(2)) await backfillDuration(env, state, f, budget);
-    if (f.w || !f.th || !(isPhoto(f.m) || isVideo(f.m))) continue;
-    const variants = f.s >= HI_RES_BYTES && isPhoto(f.m) ? ["thumb-lo", "thumb-hi"] : ["thumb-lo"];
-    for (const variant of variants) {
-      const used = await warmMedia(env, f.id, variant, f.r);
-      budget.left -= used;
-      if (used > 1) cur.progress.warmed += 1;
+  while (cur.warmAt < files.length && budget.ok(4 * WARM_PARALLEL)) {
+    const batch = [];
+    while (cur.warmAt < files.length && batch.length < WARM_PARALLEL) {
+      const f = files[cur.warmAt];
+      cur.warmAt += 1;
+      if (isVideo(f.m) && !f.d) batch.push(f);
+      else if (!f.w && f.th && (isPhoto(f.m) || isVideo(f.m))) batch.push(f);
     }
-    f.w = 1;
+    await Promise.all(batch.map(async (f) => {
+      if (isVideo(f.m)) await backfillDuration(env, state, f, budget);
+      if (f.w || !f.th || !(isPhoto(f.m) || isVideo(f.m))) return;
+      const variants = f.s >= HI_RES_BYTES && isPhoto(f.m) ? ["thumb-lo", "thumb-hi"] : ["thumb-lo"];
+      for (const variant of variants) {
+        const used = await warmMedia(env, f.id, variant, f.r);
+        budget.left -= used;
+        if (used > 1) cur.progress.warmed += 1;
+      }
+      f.w = 1;
+    }));
   }
   if (cur.warmAt >= files.length) cur.phase = "done";
 }
