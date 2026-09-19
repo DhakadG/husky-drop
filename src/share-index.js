@@ -36,6 +36,15 @@ const isVideo = (mime) => /^video\//.test(mime || "");
 const HI_RES_BYTES = 3 * 1024 * 1024;
 
 export const chunkBudget = (env) => Math.max(8, Math.min(9000, Number(env.INDEX_CHUNK) || 40));
+// Wall-clock cap per chunk. Background work (ctx.waitUntil) is cut off at
+// 30 s, so a chunk must hand over well before that whatever the plan's
+// subrequest limit allows.
+export const chunkMs = (env) => Math.max(3000, Math.min(25_000, Number(env.INDEX_CHUNK_MS) || 20_000));
+const makeBudget = (env, reserve) => {
+  const b = { left: chunkBudget(env) - reserve, deadline: Date.now() + chunkMs(env) };
+  b.ok = (need = 1) => b.left >= need && Date.now() < b.deadline;
+  return b;
+};
 export const statsPointerKey = (slug) => `share-stats:${slug}`;
 const foldersKey = (slug) => `stats/${slug}.json`;
 const filesKey = (slug) => `stats/${slug}.files.json`;
@@ -149,7 +158,7 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
   if (!share || !env.MEDIA_BUCKET) return finish("failed", !share ? "share gone" : "MEDIA_BUCKET not bound");
   const cur = await readJson(env, jobKey(job.slug));
   if (!cur || cur.id !== job.id) return finish("failed", "job cursor missing");
-  const budget = { left: chunkBudget(env) - 8 }; // blob reads + writes, job record
+  const budget = makeBudget(env, 8); // blob reads + writes, job record
   try {
     const { pointer, folders } = await loadStats(env, job.slug);
     const state = { folders: folders || {}, files: await loadFiles(env, job.slug) };
@@ -202,7 +211,7 @@ function scheduleNextChunk(env, ctx, job, request) {
 
 // ---- phase: walk (queued folders, page by page; each page = 1 subrequest) ----
 async function walkChunk(env, cur, state, budget) {
-  while (cur.queue.length && budget.left > 0) {
+  while (cur.queue.length && budget.ok(1)) {
     const node = cur.queue[0];
     if (!cur.pageToken) {
       // Fresh walk of this folder: its old direct files are replaced as the
@@ -254,7 +263,7 @@ function pruneUnreachable(state) {
 
 // ---- phase: targeted (spec §3.1) - only the ids the change feed named ----
 async function applyChanges(env, cur, state, budget) {
-  while (cur.changed.length && budget.left > 1) {
+  while (cur.changed.length && budget.ok(2)) {
     const id = cur.changed.shift();
     const meta = await driveFileMeta(env, id);
     budget.left -= 1;
@@ -289,10 +298,10 @@ async function applyChanges(env, cur, state, budget) {
 // ---- phase: warm (spec §4 step 2) - thumbnails into R2, lo always, hi when large ----
 async function warmChunk(env, cur, state, budget) {
   const files = state.files;
-  while (cur.warmAt < files.length && budget.left > 3) {
+  while (cur.warmAt < files.length && budget.ok(4)) {
     const f = files[cur.warmAt];
     cur.warmAt += 1;
-    if (isVideo(f.m) && budget.left > 1) await backfillDuration(env, state, f, budget);
+    if (isVideo(f.m) && budget.ok(2)) await backfillDuration(env, state, f, budget);
     if (f.w || !f.th || !(isPhoto(f.m) || isVideo(f.m))) continue;
     const variants = f.s >= HI_RES_BYTES && isPhoto(f.m) ? ["thumb-lo", "thumb-hi"] : ["thumb-lo"];
     for (const variant of variants) {

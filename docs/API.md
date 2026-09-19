@@ -386,7 +386,7 @@ account so older anonymous events are attributed once it signs in.
 Folder stats + thumbnail pre-warm per gallery share (design spec §2/§4/§8.3).
 
 - `GET /api/admin/share-index/jobs` - last 20 jobs with progress; `chunk` is
-  the subrequest budget per invocation (`INDEX_CHUNK`).
+  the subrequest budget per invocation (`INDEX_CHUNK`); each chunk also stops after `INDEX_CHUNK_MS` (20 s) because background continuation is cut off at 30 s.
 - `POST /api/admin/share-index/run` `{slug, full?}` - "Process now". `202`
   when a job started, `200 {started:false, reason:"already indexing"}` when
   that share is mid-walk (the lock is per share).
