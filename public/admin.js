@@ -507,6 +507,8 @@ export function handleAdminAction(e) {
     }
     return;
   }
+  const op = e.target.closest("[data-open-person]");
+  if (op && op.dataset.openPerson) return document.dispatchEvent(new CustomEvent("admin:open-person", { detail: op.dataset.openPerson }));
   const pause = e.target.closest("[data-pause-link]");
   if (pause) return toggleLinkPause(pause.dataset.pauseLink, pause.dataset.paused === "1");
   const del = e.target.closest("[data-del-link]");

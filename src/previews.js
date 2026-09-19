@@ -146,7 +146,9 @@ async function scanShares(env, fresh = false) {
   await Promise.all(shareTasks);
 
   scanMemo = { at: Date.now(), tree: folders };
-  env.KV.put(TREE_CACHE_KEY, JSON.stringify(folders), { expirationTtl: 86400 }).catch(() => {});
+  // No TTL: the overview must answer from this instantly; scans and the
+  // nightly run refresh it.
+  env.KV.put(TREE_CACHE_KEY, JSON.stringify(folders)).catch(() => {});
   return folders;
 }
 
@@ -464,8 +466,11 @@ export async function reportPreviewRun(request, env, ctx) {
     run.finishedAt = Number(b.finishedAt) || now;
     run.pendingLeft = Number(b.pendingLeft) || 0;
     index.queue = null; // an explicit request has been served
-    appLog(env, ctx, { area: "previews", message: `run ${runId} (${run.trigger}) finished: ${run.done} done, ${run.skipped} skipped, ${run.pendingLeft} left` });
-    if (run.done || run.skipped) ctx?.waitUntil?.(sendNotify(env, { subject: `Video previews: ${run.done} made${run.skipped ? `, ${run.skipped} failed` : ""}${run.pendingLeft ? `, ${run.pendingLeft} left` : ""}`, html: `<p>${run.trigger} run ${runId}: <b>${run.done}</b> previews made, ${run.skipped} failed, ${run.pendingLeft} still pending.</p><p>${(run.bytes / 1e9).toFixed(2)} GB of originals → ${(run.previewBytes / 1e6).toFixed(0)} MB of previews.</p><p><a href="https://dropbox.losthusky.qzz.io/admin/previews">Video previews</a></p>`, category: "video-previews", idempotencyKey: `prev-digest-${runId}` }));
+    // Every parallel runner posts its own finishedAt; log and mail once.
+    const firstFinish = !run.finishLogged;
+    run.finishLogged = true;
+    if (firstFinish) appLog(env, ctx, { area: "previews", message: `run ${runId} (${run.trigger}) finished: ${run.done} done, ${run.skipped} skipped, ${run.pendingLeft} left` });
+    if (firstFinish && (run.done || run.skipped)) ctx?.waitUntil?.(sendNotify(env, { subject: `Video previews: ${run.done} made${run.skipped ? `, ${run.skipped} failed` : ""}${run.pendingLeft ? `, ${run.pendingLeft} left` : ""}`, html: `<p>${run.trigger} run ${runId}: <b>${run.done}</b> previews made, ${run.skipped} failed, ${run.pendingLeft} still pending.</p><p>${(run.bytes / 1e9).toFixed(2)} GB of originals → ${(run.previewBytes / 1e6).toFixed(0)} MB of previews.</p><p><a href="https://dropbox.losthusky.qzz.io/admin/previews">Video previews</a></p>`, category: "video-previews", idempotencyKey: `prev-digest-${runId}` }));
   }
   if (!existing) index.runs.unshift(run);
   index.runs = index.runs.slice(0, RUNS_KEPT);

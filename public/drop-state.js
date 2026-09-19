@@ -4,8 +4,22 @@
 
 export const $ = (id) => document.getElementById(id);
 export const slug = location.pathname.split("/").filter(Boolean).pop();
-export const sessionId =
-  crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+// Kept in sessionStorage so the Google sign-in round trip (a full reload)
+// continues the same visit instead of starting a second one.
+export const sessionId = (() => {
+  const k = `hd_sid:${slug}`;
+  let v = "";
+  try {
+    v = sessionStorage.getItem(k) || "";
+  } catch {}
+  if (!v) {
+    v = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    try {
+      sessionStorage.setItem(k, v);
+    } catch {}
+  }
+  return v;
+})();
 
 
 export const queue = [];

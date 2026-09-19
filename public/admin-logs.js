@@ -34,7 +34,7 @@ const prettyDetail = (d) => {
 };
 const ago = (ts) => {
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : new Date(ts).toLocaleString();
+  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : new Date(ts).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 const lineOf = (r) => `${new Date(r.at).toISOString()}  ${r.level.toUpperCase().padEnd(5)}  ${r.area.padEnd(8)}  ${r.message}${r.detail ? `\n    ${prettyDetail(r.detail).replace(/\n/g, "\n    ")}` : ""}`;
 

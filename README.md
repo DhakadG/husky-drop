@@ -95,8 +95,10 @@ The Worker is the control plane:
   account. Profiles list drop links used, shares viewed, devices with client
   details, a timeline, manual merge/unlink, and block buttons (account,
   cookie or fingerprint).
-- **Activity** — each session is tagged `drop` or `share`, grouped by Google
-  account → device → typed name, with a link to the person's profile.
+- **Activity** — one card per person per day (Google account → device →
+  fingerprint → typed name, so a mid-visit sign-in stays one card), or a
+  flat table, or per-person totals; filters by kind, person, link, range;
+  CSV export.
 - **Alerts & log** — client-side crashes on drop/share pages are posted with
   stack, breadcrumbs, and a state snapshot; they land in the system log and
   e-mail the admin (one mail per page per 15 min). Runner, image job, cron,
