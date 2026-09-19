@@ -412,6 +412,10 @@ Folder stats + thumbnail pre-warm per gallery share (design spec §2/§4/§8.3).
 - `GET /api/share/media/.../preview-webp/...?dl=<name>` serves the WebP as
   an attachment; `POST /api/share/zip-ticket` accepts `format: "webp"` and
   pulls previews from R2 for files that have one (originals otherwise).
+- `POST /api/admin/links` accepts `createShare: true`: the folder is created
+  synchronously and a gallery share (same slug, sign-in, PIN, expiry) is
+  created on it and indexed; the response adds `share: {slug, url}` or
+  `shareError`.
 - Shares carry `indexSchedule` (`daily|weekly|monthly|null` = global
   `INDEX_SCHEDULE`) via `PATCH /api/admin/shares/:slug`; creating a gallery
   share starts its first index immediately.

@@ -29,7 +29,7 @@ import {
   logEvent,
   recentEvents,
 } from "./store.js";
-import { adminShare, getAllShares, revokeSharePermissions, shareIndexStates } from "./share-admin.js";
+import { adminShare, createShareRecord, getAllShares, revokeSharePermissions, shareIndexStates } from "./share-admin.js";
 import { ensureLinkFolder } from "./drop-api.js";
 
 export async function browseAdminDriveFolders(env, url) {
@@ -126,10 +126,25 @@ export async function createLink(request, env, ctx) {
   await addLinkToIndex(env, slug);
   await logEvent(env, { type: "linknew", slug, label: link.label }, request);
 
+  // Spec §7: the drop's folder becomes a gallery share right away, indexed
+  // before the first visitor, gated the same way the drop is (sign-in, PIN).
+  let share = null;
+  let shareError = "";
+  if (b.createShare && env.GOOGLE_CLIENT_ID) {
+    try {
+      link.folderId = await ensureLinkFolder(env, link);
+      link.folderPending = false;
+      const made = await createShareRecord(env, ctx, request, { label: link.label, slug, folderIds: [link.folderId], mode: "gallery", pin: pin || "", requireAuth: link.requireAuth, expiresDays: days });
+      if (made.error) shareError = made.error;
+      else share = { slug: made.share.slug, url: `/s/${made.share.slug}` };
+    } catch (error) {
+      shareError = error.message;
+    }
+  }
   if (link.folderPending && ctx && typeof ctx.waitUntil === "function") {
     ctx.waitUntil(ensureLinkFolder(env, link).catch((err) => console.error("bg folder create failed", err.message)));
   }
-  return json({ ok: true, slug, folderId: link.folderId, folderPending: link.folderPending, url: `/d/${slug}` });
+  return json({ ok: true, slug, folderId: link.folderId, folderPending: link.folderPending, url: `/d/${slug}`, share, shareError });
 }
 
 export async function patchLink(request, env, slug) {

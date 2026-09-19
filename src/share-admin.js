@@ -99,23 +99,30 @@ export async function listShares(env) {
 
 export async function createShare(request, env, ctx) {
   const b = await request.json().catch(() => ({}));
-  const label = cleanText(b.label || "", 80);
-  if (!label) return json({ error: "label is required" }, 400);
-  const slug = slugify(b.slug) || randomSlug();
-  if (await env.KV.get(`share:${slug}`)) return json({ error: `slug "${slug}" already exists` }, 409);
-
   const rawFolders = Array.isArray(b.folders) ? b.folders : String(b.folders || "").split(/[,\n]/);
   const folderIds = [...new Set(rawFolders.map(parseDriveFolderInput).filter(Boolean))].slice(0, 10);
-  if (!folderIds.length) return json({ error: "at least one Drive folder ID or URL is required" }, 400);
+  const result = await createShareRecord(env, ctx, request, { ...b, folderIds });
+  if (result.error) return json({ error: result.error }, result.status || 400);
+  return json({ ok: true, slug: result.share.slug, url: `/s/${result.share.slug}` });
+}
+
+// The share itself, shared by the admin form and by drop creation (spec §7:
+// "also create a share for this drop's folder"). Never throws for user
+// input; returns {error, status} instead.
+export async function createShareRecord(env, ctx, request, b) {
+  const label = cleanText(b.label || "", 80);
+  if (!label) return { error: "label is required" };
+  const slug = slugify(b.slug) || randomSlug();
+  if (await env.KV.get(`share:${slug}`)) return { error: `slug "${slug}" already exists`, status: 409 };
+  const folderIds = (b.folderIds || []).slice(0, 10);
+  if (!folderIds.length) return { error: "at least one Drive folder ID or URL is required" };
 
   const folderNames = [];
   if (env.GOOGLE_CLIENT_ID) {
     for (const id of folderIds) {
       const meta = await driveFileMeta(env, id);
-      if (!meta) return json({ error: `folder ${id} was not found in Drive` }, 400);
-      if (meta.mimeType !== "application/vnd.google-apps.folder") {
-        return json({ error: `${meta.name || id} is not a folder` }, 400);
-      }
+      if (!meta) return { error: `folder ${id} was not found in Drive` };
+      if (meta.mimeType !== "application/vnd.google-apps.folder") return { error: `${meta.name || id} is not a folder` };
       folderNames.push(meta.name || id);
     }
   } else {
@@ -159,7 +166,7 @@ export async function createShare(request, env, ctx) {
     const { job, started } = await planShareIndex(env, ctx, share, { trigger: "create" });
     if (started && job) ctx?.waitUntil?.(runShareIndexChunk(env, ctx, job.id, request));
   }
-  return json({ ok: true, slug, url: `/s/${slug}` });
+  return { share };
 }
 
 export async function patchShare(request, env, slug) {
