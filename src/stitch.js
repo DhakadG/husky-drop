@@ -62,7 +62,13 @@ export async function runIdentityStitch(env, ctx, { force = false } = {}) {
   if (!known.length || !unknown.length) return { suggestions: 0 };
   if (!force && unknown.length > 300) unknown.length = 300;
   const prompt = `You match anonymous website visits to known Google accounts for a private photo-drop site. Be conservative: only suggest a match when device details (OS, browser, screen, timezone, language), places and behaviour (same links/shares, overlapping times, typed names similar to the account's names) make it likely. Output JSON only: {"suggestions":[{"key":"<unknown key>","email":"<known email>","confidence":0.0-1.0,"reason":"<one short sentence>"}]}. Omit anything under 0.5 confidence.\n\nKNOWN ACCOUNTS:\n${JSON.stringify(known)}\n\nUNKNOWN VISITS:\n${JSON.stringify(unknown)}`;
-  const r = await askModel(env, prompt);
+  let r = await askModel(env, prompt);
+  // Gemini free tier throws 503 "high demand" in bursts; one retry after 20 s
+  // clears most of them without an error in the log.
+  if (r.status === 503 || r.status === 429) {
+    await new Promise((res) => setTimeout(res, 20_000));
+    r = await askModel(env, prompt);
+  }
   if (!r.ok) {
     appLog(env, ctx, { level: "error", area: "people", message: `identity stitch failed: ${r.status}`, detail: r.d });
     return { error: r.status };
