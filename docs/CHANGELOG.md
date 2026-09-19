@@ -48,6 +48,12 @@ Opening a folder no longer walks Drive to count it.
   leaves oversized tiles centred.
 - Creating a gallery share queues its first index; the share card shows
   "Indexed 2 h ago / Indexing… / Not indexed yet" and a **Process now** button.
+- Follow-ups from the first prod run (PRs #88–#90): chunks are time-boxed to
+  `INDEX_CHUNK_MS` (20 s) because background work is cut off at 30 s; the
+  continuation goes through a `SELF` service binding because a Worker cannot
+  fetch its own hostname (error 1042); stats count as complete once the walk
+  ends rather than after every thumbnail is warm; warming runs six files at
+  a time. The 23,669-file share walked in five chunks.
 
 ## 2026-09-20 — Media cache ladder: thumbnails and previews served from R2 behind the edge (PR #86)
 
