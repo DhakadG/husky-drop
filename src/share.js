@@ -32,6 +32,7 @@ import { getViewer } from "./auth.js";
 import { previewFields, previewIndex } from "./previews.js";
 import { revokeSharePermissions } from "./share-admin.js";
 import { signShareToken, signShareTokenWithExpiry, verifyShareToken, publicDownloadSafety } from "./share-token.js";
+import { mediaThumbs } from "./media-cache.js";
 
 // Expired shares are revoked lazily the first time anyone touches them after
 // expiry (no cron needed on the free tier).
@@ -339,9 +340,9 @@ export async function resolveShareTargets(env, share, body) {
 }
 
 export async function publicShareFile(env, share, f, previews = {}) {
-  const [{ token, expiresAt }, { token: thumbToken, expiresAt: thumbsExpireAt }] = await Promise.all([
+  const [{ token, expiresAt }, media] = await Promise.all([
     signShareTokenWithExpiry(env, "dl", share.slug, f.id),
-    signShareTokenWithExpiry(env, "th", share.slug, f.id),
+    f.thumbnailLink ? mediaThumbs(env, share.slug, f) : null,
   ]);
   const img = f.imageMediaMetadata || {};
   const vid = f.videoMediaMetadata || {};
@@ -350,9 +351,8 @@ export async function publicShareFile(env, share, f, previews = {}) {
   let h = Number(img.height || vid.height) || 0;
   // EXIF rotation of 90/270 means the rendered thumb is portrait.
   if (Number(img.rotation) % 2 === 1) [w, h] = [h, w];
-  const thumbs = f.thumbnailLink
-    ? Object.fromEntries(["base", "mid", "max"].map((tier) => [tier, `/api/share/thumb/${thumbToken}/${tier}`]))
-    : {};
+  const thumbs = media?.thumbs || {};
+  const thumbsExpireAt = media?.thumbsExpireAt || 0;
   return {
     id: f.id,
     name: cleanText(f.name || "file", 200),

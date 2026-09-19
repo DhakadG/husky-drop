@@ -4,6 +4,38 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-20 — Media cache ladder: thumbnails and previews served from R2 behind the edge (PR #86)
+
+Spec §1 + §8.3 groundwork of the
+[media-cache plan](superpowers/specs/2026-09-20-media-cache-ladder-design.md).
+Nothing here touches what is fast already; it removes the Drive round trip
+from everything that has been seen once.
+
+- **New `src/media-cache.js`** - `serveMedia()`: edge `caches.default` →
+  R2 `MEDIA_BUCKET` → Drive, keyed `media/<fileId>/<variant>-<rev>` where
+  `rev` is the Drive md5 (or modified time). A changed file gets a new key;
+  old objects age out through the bucket's 30-day lifecycle rules. Ranged
+  reads (video scrubbing) skip the edge and read R2 with `{ range }`; a
+  `bytes=0-` open is treated as the whole file so it fills the caches.
+- **Stable thumbnail URLs.** `/api/share/thumb/<token>/<tier>` rotated its
+  signed token on every listing, which is why a reload re-downloaded every
+  thumbnail: the browser never saw the same URL twice. Listings now hand out
+  `/api/share/media/<slug>/<file>/<variant>/<rev>/<sig>` - same bytes, same
+  URL, for every viewer - served `immutable` for 30 days, so the browser's
+  own HTTP cache is the L0 tier with no JavaScript in the way. The signature
+  has no expiry; the share's state and the viewer's sign-in are checked on
+  every request, hit or miss, before any cache is consulted (§1.2).
+- **720p video previews** ride the same ladder (`video-720`), keyed by the
+  preview file's id so a regenerated preview gets a fresh URL. No parallel
+  video path.
+- `md5Checksum` is now part of the Drive listing and metadata fields.
+- Bucket `husky-drop-media` created with 30-day expiry rules on `media/`
+  and `stats/`; `MEDIA_BUCKET` binding in `wrangler.jsonc`. The code runs
+  without the binding (edge + Drive only), so a downgrade fails soft.
+- R2 Data Catalog and D1 were considered and skipped: the catalog is for
+  Iceberg analytics engines, and D1 would replace the one-JSON-per-share
+  stats blob with rows without removing any work from the read path.
+
 ## 2026-09-20 — Share gallery: hover zoom stays on screen, deep links survive a reload (PR #85)
 
 First slice of the media-cache plan

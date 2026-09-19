@@ -36,7 +36,7 @@ import {
   verifySharePin,
 } from "./share.js";
 import { createShare, deleteShare, listShares, patchShare } from "./share-admin.js";
-import { refreshShareDownload, shareDownload, shareFileInfo, shareThumbnail } from "./share-media.js";
+import { refreshShareDownload, shareDownload, shareFileInfo, shareMedia, shareThumbnail } from "./share-media.js";
 import { createShareZipTicket, shareZipDownload } from "./share-zip.js";
 import {
   adminAuthCallback,
@@ -199,7 +199,7 @@ async function api(request, env, url, ctx) {
 
   if (m === "POST" && p === "/api/hello") return clientHello(request, env, ctx);
   // Banned accounts/devices get no session, listing or download.
-  if (/^\/api\/(session|verify|link\/|share\/(meta|verify|list|summary|dl|zip|redirect|file-info|refresh-dl))/.test(p) && (await bannedRequest(env, request))) return blockedResponse(false);
+  if (/^\/api\/(session|verify|link\/|share\/(meta|verify|list|summary|dl|zip|media|redirect|file-info|refresh-dl))/.test(p) && (await bannedRequest(env, request))) return blockedResponse(false);
   if (m === "GET" && p.startsWith("/api/link/")) {
     return getPublicLink(request, env, p.slice("/api/link/".length));
   }
@@ -224,6 +224,11 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/share/file-info") return shareFileInfo(request, env);
   if (m === "POST" && p === "/api/share/zip-ticket") return createShareZipTicket(request, env);
   if (m === "POST" && p === "/api/share/redirect") return shareRedirect(request, env);
+  if (m === "GET" && p.startsWith("/api/share/media/")) {
+    const parts = p.slice("/api/share/media/".length).split("/");
+    if (parts.length !== 5) return json({ error: "invalid media path" }, 400);
+    return shareMedia(request, env, ctx, parts);
+  }
   if (m === "GET" && p.startsWith("/api/share/thumb/")) {
     const parts = p.slice("/api/share/thumb/".length).split("/");
     if (parts.length !== 2) return json({ error: "invalid thumbnail path" }, 400);

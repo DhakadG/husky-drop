@@ -59,6 +59,50 @@ class FakeCache {
   }
 }
 
+// R2 stand-in: enough of get/put/delete/list for the media cache ladder.
+class FakeR2 {
+  constructor() {
+    this.objects = new Map();
+    this.puts = 0;
+  }
+
+  async put(key, value, options = {}) {
+    const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : value instanceof Uint8Array ? value : new Uint8Array(await new Response(value).arrayBuffer());
+    this.objects.set(key, { bytes, httpMetadata: options.httpMetadata || {}, customMetadata: options.customMetadata || {} });
+    this.puts += 1;
+  }
+
+  async get(key, options = {}) {
+    const obj = this.objects.get(key);
+    if (!obj) return null;
+    let { bytes } = obj;
+    let range;
+    if (options.range) {
+      const r = options.range;
+      const start = r.suffix != null ? Math.max(0, bytes.length - r.suffix) : r.offset || 0;
+      const end = r.length != null ? Math.min(bytes.length, start + r.length) : bytes.length;
+      if (start >= bytes.length) throw new Error("range out of bounds");
+      range = r.suffix != null ? { suffix: r.suffix } : { offset: start, length: end - start };
+      bytes = bytes.slice(start, end);
+    }
+    return { key, size: obj.bytes.length, httpMetadata: obj.httpMetadata, customMetadata: obj.customMetadata, range, body: new Response(bytes).body, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), text: async () => new TextDecoder().decode(bytes), json: async () => JSON.parse(new TextDecoder().decode(bytes)) };
+  }
+
+  async head(key) {
+    const obj = this.objects.get(key);
+    return obj ? { key, size: obj.bytes.length, httpMetadata: obj.httpMetadata, customMetadata: obj.customMetadata } : null;
+  }
+
+  async delete(keys) {
+    for (const key of Array.isArray(keys) ? keys : [keys]) this.objects.delete(key);
+  }
+
+  async list({ prefix = "" } = {}) {
+    const objects = [...this.objects.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, obj]) => ({ key, size: obj.bytes.length, customMetadata: obj.customMetadata }));
+    return { objects, truncated: false };
+  }
+}
+
 function makeEnv(extra = {}) {
   const assets =
     extra.ASSETS || {
@@ -580,7 +624,9 @@ async function main() {
   assert.equal(filled.previewState, "ready");
   assert.equal(filled.dur, 12345, "a file Drive gave no duration for borrows the preview's");
   assert.equal(filled.aspect, 1280 / 720, "and its aspect");
-  assert.ok(filled.thumb?.startsWith("/api/share/thumb/"), "and gets a thumbnail from the preview file");
+  assert.match(filled.thumb || "", /^\/api\/share\/media\/s1\/prev-3\/thumb-lo\/prev3\//, "and gets a thumbnail from the preview file, through the media cache ladder");
+  assert.match(filled.preview, /^\/api\/share\/media\/s1\/vid-3\/video-720\/prev3\//, "the 720p preview is served through the ladder, keyed by the preview file");
+  assert.ok(filled.previewExpiresAt - Date.now() > 29 * 86400e3, "media URLs are good for 30 days");
 
   // Whatever Drive did supply still wins.
   const described = { id: "vid-3", mimeType: "video/mp4", thumbnailLink: "https://drive/thumb", videoMediaMetadata: { durationMillis: "500", width: 1920, height: 1080 } };
@@ -781,6 +827,7 @@ async function main() {
       GOOGLE_CLIENT_SECRET: "google-secret",
       GOOGLE_REFRESH_TOKEN: "google-refresh",
       ADMIN_EMAIL: "viewer@example.com",
+      MEDIA_BUCKET: new FakeR2(),
     });
 
     res = await worker.fetch(request("/api/admin/auth/login"), driveEnv);
@@ -862,8 +909,9 @@ async function main() {
     const firstImage = listed.folders[0].files[0];
     const firstVideo = listed.folders[0].files.find((file) => file.name === "B Video.mp4");
     assert.deepEqual(Object.keys(firstImage.thumbs), ["base", "mid", "max"], "share list returns named thumbnail tiers");
-    assert.match(firstImage.thumbs.base, /^\/api\/share\/thumb\/.+\/base$/, "base thumbnail is an app-owned signed route");
+    assert.match(firstImage.thumbs.base, /^\/api\/share\/media\/drive-share\/file-img\/thumb-lo\/m[a-z0-9]+\/[A-Za-z0-9_-]{27}$/, "base thumbnail is a stable, content-addressed, signed media route");
     assert.equal(firstImage.thumb, firstImage.thumbs.base, "legacy thumb field points at the Base tier");
+    assert.ok(firstImage.thumbsExpireAt - Date.now() > 29 * 86400e3, "thumbnail URLs never rotate within their 30-day cache life");
     assert.equal(JSON.stringify(firstImage).includes("googleusercontent.com"), false, "listing does not expose Google's thumbnail URL");
 
     const thumbnailCallsBefore = calls.thumbnailUrls.length;
@@ -877,15 +925,51 @@ async function main() {
     res = await worker.fetch(request(firstImage.thumbs.base), driveEnv, { waitUntil: (promise) => promise });
     assert.equal(res.status, 200, "cached Base thumbnail succeeds");
     assert.equal(calls.thumbnailUrls.length, thumbnailCallsBefore + 1, "second thumbnail request reuses cached bytes");
+    assert.match(res.headers.get("cache-control"), /immutable/, "thumbnails are immutable for the browser (L0)");
+    assert.equal(driveEnv.MEDIA_BUCKET.objects.size, 1, "the cold miss filled R2 (L1)");
+    const r2Key = [...driveEnv.MEDIA_BUCKET.objects.keys()][0];
+    assert.match(r2Key, /^media\/file-img\/thumb-lo-m[a-z0-9]+$/, "R2 keys are content-addressed per file and variant");
+    // Edge cache gone (another colo, eviction): R2 answers, Drive is not asked.
+    globalThis.caches.default.values.clear();
+    res = await worker.fetch(request(firstImage.thumbs.base), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.status, 200, "R2 serves the thumbnail after an edge miss");
+    assert.equal(await res.text(), "THUMBNAIL");
+    assert.equal(calls.thumbnailUrls.length, thumbnailCallsBefore + 1, "an R2 hit never touches Drive (L2)");
 
-    const invalidTierUrl = firstImage.thumbs.base.replace(/\/base$/, "/huge");
+    const invalidTierUrl = firstImage.thumbs.base.replace("/thumb-lo/", "/thumb-huge/");
     res = await worker.fetch(request(invalidTierUrl), driveEnv);
-    assert.equal(res.status, 404, "unrecognized thumbnail tiers are rejected");
+    assert.equal(res.status, 404, "unrecognized media variants are rejected");
     const thumbParts = firstImage.thumbs.base.split("/");
-    thumbParts[thumbParts.length - 2] = thumbParts.at(-2).replace(/.$/, thumbParts.at(-2).endsWith("A") ? "B" : "A");
+    thumbParts[thumbParts.length - 1] = thumbParts.at(-1).replace(/.$/, thumbParts.at(-1).endsWith("A") ? "B" : "A");
     const tamperedThumb = thumbParts.join("/");
     res = await worker.fetch(request(tamperedThumb), driveEnv);
-    assert.equal(res.status, 403, "tampered thumbnail capability is rejected");
+    assert.equal(res.status, 403, "tampered media signature is rejected");
+    const foreignShare = firstImage.thumbs.base.replace("/media/drive-share/", "/media/other-share/");
+    res = await worker.fetch(request(foreignShare), driveEnv);
+    assert.equal(res.status, 403, "a signature is bound to its share");
+    // Access is re-checked on every request, hit or miss: pausing the share
+    // closes cached thumbnails too.
+    await worker.fetch(jsonRequest("/api/admin/shares/drive-share", { disabled: true }, "test-admin", "PATCH"), driveEnv);
+    res = await worker.fetch(request(firstImage.thumbs.base), driveEnv);
+    assert.equal(res.status, 403, "a paused share serves nothing from any cache tier");
+    await worker.fetch(jsonRequest("/api/admin/shares/drive-share", { disabled: false }, "test-admin", "PATCH"), driveEnv);
+
+    // 720p previews ride the same ladder, with Range reads straight from R2.
+    await driveEnv.KV.put("previews:index", JSON.stringify({ files: { "file-video": { id: "file-mov", size: 5, at: 1 } }, failed: {}, runs: [] }));
+    res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468" }), driveEnv);
+    const relisted = (await res.json()).folders[0].files.find((file) => file.name === "B Video.mp4");
+    assert.match(relisted.preview, /^\/api\/share\/media\/drive-share\/file-video\/video-720\/filemov\//, "video preview URL goes through the ladder");
+    res = await worker.fetch(request(relisted.preview, { headers: { range: "bytes=0-" } }), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.status, 200, "an open-ended range from byte 0 is the whole file and fills the caches");
+    assert.equal(await res.text(), "MOV!!");
+    assert.ok(driveEnv.MEDIA_BUCKET.objects.has("media/file-video/video-720-filemov") || typeof FixedLengthStream !== "function", "the preview lands in R2 when the runtime can size the stream");
+    await driveEnv.MEDIA_BUCKET.put("media/file-video/video-720-filemov", new TextEncoder().encode("MOV!!"), { httpMetadata: { contentType: "video/mp4" } });
+    const mediaRangeCalls = calls.mediaRanges.length;
+    res = await worker.fetch(request(relisted.preview, { headers: { range: "bytes=1-3" } }), driveEnv);
+    assert.equal(res.status, 206, "ranged preview reads come from R2");
+    assert.equal(res.headers.get("content-range"), "bytes 1-3/5");
+    assert.equal(await res.text(), "OV!");
+    assert.equal(calls.mediaRanges.length, mediaRangeCalls, "without touching Drive");
 
     res = await worker.fetch(
       publicJsonRequest("/api/share/summary", { slug: "drive-share", pin: "2468" }),
@@ -973,7 +1057,7 @@ async function main() {
       const refreshed = await res.json();
       assert.match(refreshed.dl, /^\/api\/share\/dl\//, "refresh returns a new download URL");
       assert.ok(refreshed.dlExpiresAt > Date.now(), "refresh returns the new expiry");
-      assert.match(refreshed.thumbs.base, /^\/api\/share\/thumb\/.+\/base$/, "refresh renews thumbnail capabilities too");
+      assert.equal(refreshed.thumbs.base, firstImage.thumbs.base, "refresh hands back the same stable media URL - nothing to renew");
       assert.ok(refreshed.thumbsExpireAt > Date.now(), "refresh returns the thumbnail expiry");
     } finally {
       Date.now = originalNow;

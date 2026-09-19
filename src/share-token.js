@@ -118,6 +118,21 @@ export async function verifyShareToken(env, token, expectScope, options = {}) {
   return { slug, fileId, expiresAt, expired: expiresAt < Date.now() };
 }
 
+// Media URLs are content-addressed and cached for 30 days, so they carry a
+// signature without an expiry: it proves the file was listed through this
+// share, and the route still checks the share is active and the viewer is
+// signed in on every request (spec §1.2). The sig alone opens nothing.
+export async function mediaSig(env, slug, fileId) {
+  const key = await shareSigningKey(env);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`media.${slug}.${fileId}`));
+  return b64url(new Uint8Array(mac)).slice(0, 27);
+}
+
+export async function verifyMediaSig(env, slug, fileId, sig) {
+  if (!/^[A-Za-z0-9_-]{27}$/.test(String(sig || ""))) return false;
+  return timingSafeEqual(String(sig), await mediaSig(env, slug, fileId));
+}
+
 export function downloadTokenFrom(value) {
   const raw = cleanText(value || "", 1200);
   if (!raw) return "";
