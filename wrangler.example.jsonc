@@ -14,6 +14,13 @@
       "remote": true
     }
   ],
+  // Media cache ladder (docs/superpowers/specs/2026-09-20-media-cache-ladder-design.md):
+  // thumbnails, 720p previews and folder-stats blobs. Content-addressed keys;
+  // the bucket carries 30-day lifecycle rules on media/ and stats/.
+  //   npx wrangler r2 bucket create husky-drop-media
+  //   npx wrangler r2 bucket lifecycle add husky-drop-media --name media-30d --prefix media/ --expire-days 30
+  //   npx wrangler r2 bucket lifecycle add husky-drop-media --name stats-30d --prefix stats/ --expire-days 30
+  "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "husky-drop-media" }],
   "durable_objects": {
     "bindings": [
       {

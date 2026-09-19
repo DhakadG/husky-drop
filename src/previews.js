@@ -12,14 +12,14 @@
 
 import { accessToken, driveCreateFolder, driveFindFolder, driveListFolder, driveTrashFile } from "./drive.js";
 import { json, shareState, cleanText } from "./util.js";
-import { signShareTokenWithExpiry } from "./share-token.js";
+import { mediaSig } from "./share-token.js";
+import { MEDIA_TTL, TIER_VARIANT, mediaUrl } from "./media-cache.js";
 import { appLog } from "./applog.js";
 import { liveStub, sendNotify } from "./store.js";
 
 const INDEX_KEY = "previews:index";
 const FOLDER_KEY = "previews:folder";
 const FOLDER_NAME = "_previews";
-const PREVIEW_TTL = 4 * 3600;
 const MAX_PREVIEW_BYTES = 90 * 1024 * 1024; // Workers request-body ceiling with margin
 const MAX_TRIES = 3;
 const RUNS_KEPT = 20;
@@ -57,8 +57,13 @@ export async function previewFields(env, slug, file, index) {
   if (!isVideo(file)) return {};
   const entry = index.files[file.id];
   if (entry) {
-    const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", slug, entry.id, PREVIEW_TTL);
-    const fields = { preview: `/api/share/dl/${token}`, previewExpiresAt: expiresAt, previewState: "ready" };
+    // Served through the media cache ladder (media-cache.js): the URL is
+    // keyed by the original's id and the preview file's id, so a regenerated
+    // preview gets a fresh URL and the old one simply ages out.
+    const sig = await mediaSig(env, slug, file.id);
+    const rev = entry.id.replace(/[^a-z0-9]/gi, "").slice(0, 16);
+    const url = (fileId, variant, r, s) => mediaUrl(slug, fileId, variant, r, s);
+    const fields = { preview: url(file.id, "video-720", rev, sig), previewExpiresAt: Date.now() + MEDIA_TTL * 1000, previewState: "ready" };
     // Drive generates thumbnails and videoMediaMetadata itself, and for a fair
     // number of these originals it simply never did - which is why those tiles
     // had no still and no duration while their size showed fine. The 720p
@@ -71,10 +76,10 @@ export async function previewFields(env, slug, file, index) {
       fields.aspect = entry.w / entry.h;
     }
     if (!file.thumbnailLink) {
-      const th = await signShareTokenWithExpiry(env, "th", slug, entry.id);
-      fields.thumbs = Object.fromEntries(["base", "mid", "max"].map((tier) => [tier, `/api/share/thumb/${th.token}/${tier}`]));
+      const previewSig = await mediaSig(env, slug, entry.id);
+      fields.thumbs = Object.fromEntries(Object.entries(TIER_VARIANT).map(([tier, variant]) => [tier, url(entry.id, variant, rev, previewSig)]));
       fields.thumb = fields.thumbs.base;
-      fields.thumbsExpireAt = th.expiresAt;
+      fields.thumbsExpireAt = Date.now() + MEDIA_TTL * 1000;
     }
     return fields;
   }

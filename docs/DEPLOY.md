@@ -75,6 +75,7 @@ case you need to roll back.
 | Binding | Type | Purpose |
 | --- | --- | --- |
 | `KV` | KV namespace | links, stats, recent uploads, events, lockouts |
+| `MEDIA_BUCKET` | R2 bucket `husky-drop-media` | media cache ladder: thumbnails, 720p previews, folder-stats blobs. Private (no public/custom domain - the Worker gates every read). Create once: `npx wrangler r2 bucket create husky-drop-media`, then the 30-day lifecycle rules from the comment in `wrangler.jsonc` (`media/`, `stats/`). |
 | `LIVE_TRACKER` | Durable Object (`LiveTracker`) | live progress + batched completion flush |
 | `ASSETS` | Static assets | serves `public/` |
 | `DRIVE_PARENT_ID` | var | Drive folder new link folders are created under |

@@ -27,7 +27,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: "module",
-      globals: { ...globals.serviceworker, WebSocketPair: "readonly", crypto: "readonly", caches: "readonly", URLPattern: "readonly" },
+      globals: { ...globals.serviceworker, WebSocketPair: "readonly", crypto: "readonly", caches: "readonly", URLPattern: "readonly", FixedLengthStream: "readonly" },
     },
     rules: { ...RULES, "no-unused-vars": ["error", { args: "none", caughtErrors: "none" }] },
   },

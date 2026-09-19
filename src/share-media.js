@@ -14,7 +14,24 @@ import { mergeExifMetadata, parseRawExif, shouldParseRawExif } from "./exif.js";
 import { bumpShareStats, gatePin, liveStub, mergeEventsKV } from "./store.js";
 import { getViewer } from "./auth.js";
 import { loadActiveShare, requireViewer } from "./share.js";
-import { signShareTokenWithExpiry, verifyShareToken, downloadTokenFrom, publicDownloadSafety } from "./share-token.js";
+import { signShareTokenWithExpiry, verifyShareToken, verifyMediaSig, downloadTokenFrom, publicDownloadSafety } from "./share-token.js";
+import { mediaThumbs, mediaVariantTier, parseMediaRange as parseLadderRange, serveMedia } from "./media-cache.js";
+
+// GET /api/share/media/:slug/:fileId/:variant/:rev/:sig - the cache ladder
+// behind every thumbnail and 720p preview. Access is checked first, on every
+// request, before any cache tier is consulted (§1.2).
+export async function shareMedia(request, env, ctx, parts) {
+  const [slug, fileId, variant, rev, sig] = parts.map((p) => cleanText(decodeURIComponent(p || ""), 120));
+  if (!mediaVariantTier(variant) || !/^[a-z0-9]{1,16}$/i.test(rev)) return json({ error: "media variant not found" }, 404);
+  if (!(await verifyMediaSig(env, slug, fileId, sig))) return json({ error: "invalid media signature" }, 403);
+  const { share, error } = await loadActiveShare(env, slug);
+  if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
+  const range = variant === "video-720" ? parseLadderRange(request.headers.get("range")) : null;
+  return serveMedia(request, ctx, env, { fileId, variant, rev, range });
+}
 
 export async function refreshShareDownload(request, env) {
   const b = await request.json().catch(() => ({}));
@@ -29,16 +46,10 @@ export async function refreshShareDownload(request, env) {
   if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
-  const [{ token, expiresAt }, { token: thumbToken, expiresAt: thumbsExpireAt }] = await Promise.all([
-    signShareTokenWithExpiry(env, "dl", share.slug, parsed.fileId),
-    signShareTokenWithExpiry(env, "th", share.slug, parsed.fileId),
-  ]);
-  return json({
-    dl: `/api/share/dl/${token}`,
-    dlExpiresAt: expiresAt,
-    thumbs: Object.fromEntries(["base", "mid", "max"].map((tier) => [tier, `/api/share/thumb/${thumbToken}/${tier}`])),
-    thumbsExpireAt,
-  });
+  const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, parsed.fileId);
+  const meta = env.GOOGLE_CLIENT_ID ? await driveFileMetaCached(env, parsed.fileId) : null;
+  const media = meta?.thumbnailLink ? await mediaThumbs(env, share.slug, meta) : { thumbs: {}, thumbsExpireAt: 0 };
+  return json({ dl: `/api/share/dl/${token}`, dlExpiresAt: expiresAt, ...media });
 }
 
 

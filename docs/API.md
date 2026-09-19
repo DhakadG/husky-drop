@@ -19,6 +19,16 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 >   (re-grants the anyone-reader permission if needed).
 > - `GET /api/share/dl/:token` - streams one file from Drive through the
 >   Worker; token is HMAC-signed, scope+slug+file+expiry bound.
+> - `GET /api/share/media/:slug/:fileId/:variant/:rev/:sig` - thumbnails
+>   (`thumb-lo` 512px, `thumb-md` 1024px, `thumb-hi` 1600px) and the 720p
+>   video preview (`video-720`, Range-aware) through the media cache ladder:
+>   edge cache → R2 `MEDIA_BUCKET` → Drive. `rev` is the file's Drive md5
+>   (or modified time), so the URL is stable for the life of the bytes and is
+>   served `immutable` for 30 days; `sig` is an HMAC over slug+file with no
+>   expiry. The share's state and the viewer's sign-in are re-checked on every
+>   request before any cache tier is consulted. Listings hand these out in
+>   `thumbs` / `preview`; `/api/share/thumb/:token/:tier` remains for
+>   listings cached before the switch.
 >
 > Admin (cookie session `hd_admin` OR `Authorization: Bearer ADMIN_TOKEN`):
 > - `POST /api/admin/login` `{token}` - sets HttpOnly cookie (7d); login is
