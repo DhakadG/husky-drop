@@ -187,6 +187,23 @@ Cloudflare eventually cut off with a 524.
 - Event handlers are delegated on the tab body and attached once, so swapping
   panels can neither lose them nor stack duplicates.
 
+## 2026-09-19 — Activity v2, session continuity, previews cache (PR #71)
+
+- **Activity tab** rebuilt: stats strip for the filtered set, filters for
+  kind (drop/share/admin), person, link, range (today…14 d, pulls earlier
+  days as needed), sort, search; three views - session cards, flat table
+  (500 rows), per-person totals; CSV export; refresh; "clear filters".
+  Person identity uses the device→account map, so the visit before the
+  Google redirect and the one after are one card.
+- Drop and share pages keep their session id in `sessionStorage`, so the
+  sign-in reload continues the same session instead of starting a new one.
+- Previews: the share tree cache has no TTL any more (overview answers
+  instantly; scans refresh it); "finished" is logged and mailed once per
+  run instead of once per parallel runner; stat shows "…" not "null".
+- Log rows: compact dates, wider column; sidebar live-updates dot no longer
+  squashed; icons drop their trailing margin when last in a control.
+- `admin-activity-tools.js` holds the toolbar and table/people views.
+
 ## 2026-09-16 — Archive links, rules verdicts, overview skeleton fix (PR #69)
 
 - Drop and share links can be **archived** (PATCH `{archived}`): closed to

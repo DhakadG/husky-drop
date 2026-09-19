@@ -50,7 +50,7 @@ const post = (path, body) => fetch(path, { method: "POST", headers: { "content-t
 // Totals that need the Drive crawl are null until coverage lands. Show a
 // placeholder rather than a confident wrong number.
 const num = (v) => (v == null ? "…" : String(v));
-const readyLabel = (ready, videos) => (videos == null ? String(ready) : `${ready} · ${pct(ready, videos)}%`);
+const readyLabel = (ready, videos) => (ready == null ? "…" : videos == null ? String(ready) : `${ready} · ${pct(ready, videos)}%`);
 
 const folderState = (f) => (!f.videos ? "empty" : f.ready === f.videos ? "done" : f.failed && f.ready + f.failed === f.videos ? "failed" : "partial");
 const selectable = (f) => f.videos > 0 && f.ready < f.videos;

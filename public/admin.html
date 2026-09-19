@@ -305,9 +305,11 @@
           <div>
             <p class="eyebrow">audit trail</p>
             <h1 class="pane-title">Activity</h1>
-            <span class="muted">Every upload, open, view, download and error—grouped into human-readable sessions.</span>
+            <span class="muted">Every upload, open, view, download and error - one card per person per day, or a flat table, or totals per person.</span>
           </div>
+          <div class="section-tools"><button class="mini" id="activity-export" type="button"><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#download"></use></svg> CSV</button><button class="mini" id="activity-refresh" type="button"><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#refresh-cw"></use></svg> refresh</button></div>
         </div>
+        <div class="act-stats" id="activity-stats"></div>
         <section class="panel activity-panel">
           <div class="activity-toolbar" aria-label="Activity filters">
             <div class="activity-filters" id="activity-filters">
@@ -320,10 +322,21 @@
             </div>
             <label class="activity-search" for="activity-query">
               <svg class="ico" aria-hidden="true"><use href="/icons.svg#search"></use></svg>
-              <input id="activity-query" type="search" placeholder="Search person or link" autocomplete="off" />
+              <input id="activity-query" type="search" placeholder="Search person, link, file" autocomplete="off" />
             </label>
           </div>
+          <div class="activity-toolbar act-row2">
+            <select id="activity-kind" class="sort-select" aria-label="kind"><option value="any">drop + share</option><option value="drop">drop only</option><option value="share">share only</option><option value="admin">admin actions</option></select>
+            <select id="activity-person" class="sort-select" aria-label="person"><option value="">everyone</option></select>
+            <select id="activity-link" class="sort-select" aria-label="link"><option value="">all links</option></select>
+            <select id="activity-days" class="sort-select" aria-label="range"><option value="1">today</option><option value="3" selected>last 3 days</option><option value="7">last 7 days</option><option value="14">last 14 days</option></select>
+            <select id="activity-sort" class="sort-select" aria-label="sort"><option value="newest">newest first</option><option value="oldest">oldest first</option><option value="events">most events</option></select>
+            <button class="link-like" id="activity-clear" type="button">clear filters</button>
+            <div class="seg-control act-views" id="activity-views"><button type="button" class="active" data-activity-view="sessions"><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#users-round"></use></svg> sessions</button><button type="button" data-activity-view="table"><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#list"></use></svg> table</button><button type="button" data-activity-view="people"><svg class="ico ico-sm" aria-hidden="true"><use href="/icons.svg#user-round"></use></svg> per person</button></div>
+          </div>
           <div id="events" class="activity-days" aria-live="polite"></div>
+          <div id="activity-table" class="hidden"></div>
+          <div id="activity-people" class="hidden"></div>
           <button class="btn ghost activity-more" id="activity-more" type="button">Load earlier days</button>
           <div class="msg-err" id="activity-err"></div>
         </section>

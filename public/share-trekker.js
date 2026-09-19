@@ -3,7 +3,18 @@
 (function () {
   "use strict";
   const slug = location.pathname.split("/").filter(Boolean).pop() || "";
-  const sessionId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  // Same id across the sign-in reload, so one visit stays one session.
+  const sidKey = `hd_sid:${slug}`;
+  let sessionId = "";
+  try {
+    sessionId = sessionStorage.getItem(sidKey) || "";
+  } catch {}
+  if (!sessionId) {
+    sessionId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    try {
+      sessionStorage.setItem(sidKey, sessionId);
+    } catch {}
+  }
   const startedAt = Date.now();
   const startedMono = performance.now();
   const queue = [];

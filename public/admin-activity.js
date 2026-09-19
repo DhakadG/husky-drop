@@ -13,15 +13,43 @@ import {
 } from "./admin-state.js";
 import { setEmpty } from "./admin.js";
 import { initialsOf } from "./admin-live.js";
+import { allEvents, eventPasses, renderActivityPeople, renderActivitySummary, renderActivityTable, stashForExport, tools, wireActivityTools } from "./admin-activity-tools.js";
 
 // Activity feed: grouping by day/session, filters, earlier-day paging.
+// Identity: a device that signed in at any point owns all its events, so the
+// visit before the Google redirect and the one after are the same person.
+export const eventKind = (t) => activityKind(t);
+export function identityMapOf(events) {
+  const ids = new Map();
+  for (const e of events) if (e.d && e.e) ids.set(e.d, e.e.toLowerCase());
+  return ids;
+}
+export function personKeyOf(e, ids) {
+  const email = String(e.e || (e.d && ids.get(e.d)) || "").trim().toLowerCase();
+  if (email) return `email:${email}`;
+  if (e.d) return `device:${e.d}`;
+  if (e.p) return `fp:${e.p}`;
+  const name = String(e.u || "").trim().toLowerCase();
+  if (name && !/^(anonymous|anon|guest|unknown|user|test|temp)$/.test(name)) return `name:${name}`;
+  return e.si ? `session:${e.si}` : "";
+}
+const labelOfKey = (k) => (!k ? "" : k.startsWith("email:") ? k.slice(6) : k.startsWith("name:") ? k.slice(5) : k.startsWith("device:") || k.startsWith("fp:") ? `Device ${k.split(":")[1].slice(0, 6)}` : `Visit ${k.slice(8, 14)}`);
+
 export function renderEvents() {
+  wireActivityTools();
   const fresh = overview?.events || [];
-  const all = [...fresh, ...activityOlder].sort((a, b) => (b.at || 0) - (a.at || 0));
-  const filtered = all.filter(activityMatches);
-  const days = groupActivityDays(filtered);
+  const all = allEvents();
+  const ids = identityMapOf(all);
+  const filtered = all.filter((e) => eventPasses(e, ids, activityFilter, activityQuery));
+  renderActivitySummary(filtered, all, ids, labelOfKey);
+  stashForExport(filtered, ids, labelOfKey);
+  for (const [id, view] of [["events", "sessions"], ["activity-table", "table"], ["activity-people", "people"]]) $(id)?.classList.toggle("hidden", tools.view !== view);
+  $("activity-more")?.classList.toggle("hidden", tools.view !== "sessions");
+  if (tools.view === "table") renderActivityTable(filtered, ids, labelOfKey);
+  else if (tools.view === "people") renderActivityPeople(filtered, ids, labelOfKey);
+  const days = tools.sort === "oldest" ? groupActivityDays(filtered, ids).reverse() : groupActivityDays(filtered, ids);
   const box = $("events");
-  if (box) {
+  if (box && tools.view === "sessions") {
     reconcile(box, days, (day) => day.key, makeActivityDay, updateActivityDay);
     setEmpty(box, days.length === 0, activityQuery || activityFilter !== "all" ? "No activity matches these filters." : "No activity yet.");
   }
@@ -34,43 +62,22 @@ export function renderEvents() {
   }
 }
 
-function activityMatches(event) {
-  const type = event.t || "";
-  const groups = {
-    uploads: ["open", "start", "file", "sessionclose", "autopause"],
-    opens: ["open", "share-open"],
-    views: ["share-view", "share-browse"],
-    downloads: ["share-dl"],
-    errors: ["clienterror", "autopause", "lock", "global-lock"],
-  };
-  if (activityFilter !== "all" && !(groups[activityFilter] || []).includes(type)) return false;
-  const query = activityQuery.trim().toLowerCase();
-  if (!query) return true;
-  return [event.u, event.l, event.s, event.f, event.m, event.c?.o, event.c?.l].some((value) => String(value || "").toLowerCase().includes(query));
-}
-
-function groupActivityDays(events) {
+function groupActivityDays(events, ids = new Map()) {
   const days = new Map();
   for (const event of events) {
     const dayKey = new Date(event.at || Date.now()).toISOString().slice(0, 10);
     if (!days.has(dayKey)) days.set(dayKey, []);
     days.get(dayKey).push(event);
   }
-  return [...days.entries()].map(([key, dayEvents]) => ({ key, sessions: groupActivitySessions(dayEvents, key) }));
+  return [...days.entries()].map(([key, dayEvents]) => ({ key, sessions: groupActivitySessions(dayEvents, key, ids) }));
 }
 
-function groupActivitySessions(events, day = "") {
+function groupActivitySessions(events, day = "", ids = new Map()) {
   const sessions = new Map();
   for (const event of events) {
-    // One card per person per day: a named or signed-in visitor keeps one
-    // timeline across drop uploads and share browsing instead of a card per
-    // ten-minute burst. Anonymous traffic still falls back to bursts.
-    // Google e-mail (also inherited by the device that signed in later)
-    // beats the device cookie, which beats the typed uploader name.
-    const person = String(event.e || "").trim().toLowerCase();
-    const device = String(event.d || "");
-    const name = String(event.u || "").trim().toLowerCase();
-    const key = person ? `email:${person}` : device ? `device:${device}` : name ? `name:${name}` : event.si || `anon:${event.s || event.l || "system"}:${Math.floor((event.at || 0) / 600000)}`;
+    // One card per person per day. The key comes from personKeyOf, so the
+    // device that signs in mid-visit keeps a single card.
+    const key = personKeyOf(event, ids) || `anon:${event.s || event.l || "system"}:${Math.floor((event.at || 0) / 600000)}`;
 
     if (!sessions.has(key)) sessions.set(key, { key: `${day}:${key}`, events: [] });
     sessions.get(key).events.push(event);
@@ -110,10 +117,10 @@ function updateActivitySession(article, session) {
   const events = session.events;
   const first = events[0] || {};
   const last = events.at(-1) || first;
-  const email = events.map((e) => e.e).find(Boolean) || "";
+  const personKey = session.key.replace(/^[^:]*:/, "");
+  const email = personKey.startsWith("email:") ? personKey.slice(6) : "";
   const typed = [...new Set(events.map((e) => e.u).filter((u) => u && !u.includes("@")))];
-  const actor = email || typed[0] || (first.d ? `Device ${first.d.slice(0, 6)}` : "anonymous");
-  const personKey = email ? `email:${email}` : first.d ? `device:${first.d}` : typed[0] ? `name:${typed[0].toLowerCase()}` : "";
+  const actor = email || typed[0] || labelOfKey(personKey) || "anonymous";
   const kinds = [...new Set(events.map((e) => activityKind(e.t)).filter((k) => k !== "admin"))];
   const place = last.l || last.s || first.l || first.s || "system";
   const context = last.c || first.c || {};
