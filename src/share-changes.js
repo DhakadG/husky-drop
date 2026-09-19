@@ -35,6 +35,10 @@ export async function maybeCheckChanges(env, ctx, request, { force = false } = {
   if (!env.GOOGLE_CLIENT_ID || !env.MEDIA_BUCKET) return { skipped: "not configured" };
   const cursor = (await env.KV.get(CURSOR_KEY, "json")) || {};
   if (!force && cursor.checkedAt && Date.now() - cursor.checkedAt < changeWindowMs(env)) return { skipped: "checked recently" };
+  // Same cadence, same free ride: a deploy kills whatever continuation chain
+  // was mid-flight, so a running job that has not moved in a while is picked
+  // up here instead of waiting for the nightly cron.
+  await resumeStalledJobs(env, ctx, request);
   let token = cursor.pageToken;
   if (!token) {
     // First run: nothing to diff against yet, just anchor the cursor.
@@ -83,16 +87,24 @@ export async function maybeCheckChanges(env, ctx, request, { force = false } = {
   return { changes: changed.size, shares: hits };
 }
 
+// A running job whose cursor has not advanced for a while lost its
+// continuation (deploy, isolate eviction); give it one more chunk.
+const STALL_MS = 2 * 60_000;
+export async function resumeStalledJobs(env, ctx, request) {
+  const jobs = await loadJobs(env);
+  for (const job of jobs.filter((j) => j.status === "running")) {
+    const cur = await env.MEDIA_BUCKET.get(`stats/${job.slug}.job.json`).then((o) => (o ? o.json() : null)).catch(() => null);
+    const movedAt = cur?.updatedAt || job.startedAt || 0;
+    if (Date.now() - movedAt > STALL_MS) ctx?.waitUntil?.(runShareIndexChunk(env, ctx, job.id, request));
+  }
+}
+
 // ---- scheduling (spec §4, §3.4): one global cron; per-share override ----
 // share.indexSchedule: "daily" | "weekly" | "monthly" | null (= global daily).
 // A full walk is also forced monthly regardless (page-token-gap insurance).
 export async function runDueShareIndex(env, ctx) {
   if (!env.MEDIA_BUCKET) return;
-  const jobs = await loadJobs(env);
-  // Resume anything the self-continuation dropped (isolate recycled, etc).
-  for (const job of jobs.filter((j) => j.status === "running")) {
-    if (Date.now() - (job.startedAt || 0) > 60_000) ctx?.waitUntil?.(runShareIndexChunk(env, ctx, job.id, null));
-  }
+  await resumeStalledJobs(env, ctx, null);
   const now = Date.now();
   for (const share of await getAllShares(env)) {
     if (shareState(share) !== "active") continue;
