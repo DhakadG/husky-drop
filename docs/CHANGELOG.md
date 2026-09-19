@@ -4,6 +4,27 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-20 — Share gallery: hover zoom stays on screen, deep links survive a reload (PR #85)
+
+First slice of the media-cache plan
+([spec](superpowers/specs/2026-09-20-media-cache-ladder-design.md), §0).
+
+- **Hover zoom clipped at the window edge.** The tile scales from its centre,
+  so a first-column tile grew half off-screen. On `pointerenter` the tile
+  measures itself against the viewport and snaps its `transform-origin` to
+  whichever edge would clip (left/right/top/bottom), growing inward instead.
+  Pure helper `hoverZoomOrigin()` in `share-gallery-layout.js`, unit-tested.
+- **Refreshing inside a folder dropped to the root.** The folder path already
+  lived in the URL hash (`#fid/fid`); nothing read it on boot. The gallery now
+  walks the hash down from the root before the first paint, so a reload, a
+  pasted deep link, and the round trip through Google sign-in all land back in
+  the same folder. Browser back into a folder we had climbed out of via the
+  breadcrumb used to fall to the root too - it rebuilds the path the same way.
+- **Listings are kept in the browser Cache API** (`husky-media-v1`) for the
+  same 5 minutes the in-page cache already honoured, so that reload paints
+  from local data instead of re-listing Drive. New `share-cache.js`; the
+  thumbnail bytes themselves move to the same store in the next slice.
+
 ## 2026-09-17 — Where the missing thumbnails and durations actually went (PR #80)
 
 The tiles with no still are exactly the tiles whose badge reads "video", and

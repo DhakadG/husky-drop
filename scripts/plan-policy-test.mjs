@@ -41,6 +41,7 @@ for (const durable of [
   "docs/superpowers/specs/2026-07-12-viewer-intent-resolution-design.md",
   "docs/superpowers/specs/2026-07-14-mobile-responsive-design.md",
   "docs/superpowers/specs/2026-07-14-safe-development-foundation-design.md",
+  "docs/superpowers/specs/2026-09-20-media-cache-ladder-design.md",
 ]) {
   const tracked = git(["ls-files", "--error-unmatch", "--", durable], { allowFailure: true });
   assert.equal(tracked.status, 0, `${durable} must remain tracked`);
