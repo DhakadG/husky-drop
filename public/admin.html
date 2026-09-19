@@ -389,6 +389,7 @@
                 <div class="grid-3">
                   <label class="check"><input id="f-auth" type="checkbox" checked /> Require Google sign-in before upload</label>
                   <label class="check"><input id="f-folders" type="checkbox" /> Create subfolders per uploader</label>
+                  <label class="check"><input id="f-share" type="checkbox" /> Also create a share link for this drop's folder</label>
                   <div class="field"><label for="f-budget-files">Max files</label><input id="f-budget-files" type="number" min="0" value="0" /></div>
                   <div class="field"><label for="f-budget-sessions">Max sessions</label><input id="f-budget-sessions" type="number" min="0" value="0" /></div>
                 </div>
@@ -420,6 +421,7 @@
               <span class="success-check"><svg class="ico" aria-hidden="true"><use href="/icons.svg#check"></use></svg></span>
               <p class="eyebrow">ready to share</p><h2>Your drop link is live</h2>
               <code id="create-success-url"></code>
+              <code id="create-success-share" class="hidden"></code>
               <div><button class="btn" id="create-copy" type="button">Copy URL</button><button class="btn ghost" id="create-qr" type="button">Show QR</button><button class="btn ghost" id="create-share-of-drop" type="button">Share this drop's folder</button><button class="mini" id="create-another" type="button">Create another</button></div>
             </div>
           </section>

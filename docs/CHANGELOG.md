@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-20 — Drop creation can create the share too (PR #92)
+
+Spec §7 of the [media-cache plan](superpowers/specs/2026-09-20-media-cache-ladder-design.md).
+"Also create a share link for this drop's folder" in the drop form: the
+Drive folder is created up front instead of lazily, a gallery share with the
+drop's slug, sign-in setting and PIN is created on it, and its first
+share-index run starts immediately - so the share is warm before the drop
+link is even handed out. `createShareRecord()` is the one share-creation
+path both the share form and the drop form use.
+
 ## 2026-09-20 — RAW / oversized previews and "smaller (WebP)" downloads (PR #91)
 
 Spec §5, §5.1 and §6 of the

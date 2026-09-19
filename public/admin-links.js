@@ -353,6 +353,7 @@ export async function createLink() {
     requireAuth: $("f-auth")?.checked === true,
     expiresDays: Number(value("f-days")) || 0,
     folderId: value("f-folder"),
+    createShare: $("f-share")?.checked === true,
     settings: {
       concurrency: Number(value("f-conc")) || 4,
       chunkMB: Number(value("f-chunk")) || 32,
@@ -373,6 +374,11 @@ export async function createLink() {
     if (!response.ok) throw new Error(data.error || "Could not create link.");
     const url = `${location.origin}/d/${data.slug}`;
     $("create-success-url").textContent = url;
+    const shareSlot = $("create-success-share");
+    if (shareSlot) {
+      shareSlot.classList.toggle("hidden", !data.share && !data.shareError);
+      shareSlot.textContent = data.share ? `Share link: ${location.origin}${data.share.url}` : data.shareError ? `Share link not created: ${data.shareError}` : "";
+    }
     setCreatedDropSlug(data.slug);
     $("drop-create-form").classList.add("hidden");
     $("create-success").classList.remove("hidden");

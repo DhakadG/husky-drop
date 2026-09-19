@@ -1116,6 +1116,18 @@ async function main() {
     res = await worker.fetch(request("/api/admin/share-index/previews/pending?limit=10", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
     assert.equal((await res.json()).pending.length, 0, "a made preview leaves the pending list");
 
+    // ---- drop -> share toggle (spec §7) ----
+    res = await worker.fetch(jsonRequest("/api/admin/links", { label: "Trip drop", slug: "trip-drop", folderId: "drive-folder", pin: "1357", requireAuth: false, createShare: true }), driveEnv);
+    assert.equal(res.status, 200, "drop with createShare is created");
+    const dropWithShare = await res.json();
+    assert.equal(dropWithShare.share?.url, "/s/trip-drop", "the share takes the drop's slug and folder");
+    assert.equal(dropWithShare.shareError, "", dropWithShare.shareError);
+    const madeShare = await driveEnv.KV.get("share:trip-drop", "json");
+    assert.deepEqual(madeShare.folderIds, ["drive-folder"], "share root is the drop folder");
+    assert.equal(madeShare.requireAuth, false, "share inherits the drop's sign-in setting");
+    assert.ok(madeShare.pinHash, "and its PIN");
+    assert.ok((await driveEnv.KV.get("share-index:jobs", "json")).jobs.some((j) => j.slug === "trip-drop" && j.trigger === "create"), "and is queued for indexing at once");
+
     res = await worker.fetch(
       publicJsonRequest("/api/share/list", {
         slug: "drive-share",
