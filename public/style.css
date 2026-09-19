@@ -8987,3 +8987,16 @@ body.share-page .g-card:not(:hover):not(.previewing) {
 .act-table .link-like { font-size: 12.5px; }
 .act-table tr.clienterror td, .act-table tr.autopause td { background: rgba(240, 85, 107, 0.05); }
 @media (prefers-reduced-motion: reduce) { .act-stat { animation: none; } }
+
+/* ---------- Segmented control + icon/text alignment ---------- */
+.seg-control { display: inline-flex; padding: 3px; border-radius: 999px; background: rgba(12, 26, 43, 0.06); border: 1px solid var(--line); }
+.seg-control > button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--ink-soft); font: 600 12.5px var(--font-body); padding: 6px 12px; border-radius: 999px; cursor: pointer; transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease; }
+.seg-control > button:hover { color: var(--ink); }
+.seg-control > button.active { background: #fff; color: var(--accent); box-shadow: 0 1px 4px rgba(12, 26, 43, 0.12); }
+.seg-control > button > .ico { margin: 0; }
+/* Every control that mixes an icon with text lays out as a flex row with a
+   gap, so the glyph never sits on the text baseline by accident. */
+.mini, .btn, .tab, .chip, .chip-filter, .link-like, .id-chip, .kind-tag, .status-pill, .alert-head .mini, .people-merge, .person-sub, .dev-actions .mini { display: inline-flex; align-items: center; gap: 6px; }
+.chip-filter > .ico, .link-like > .ico, .id-chip > .ico, .person-sub > .ico { margin: 0; }
+.link-like { gap: 4px; }
+.kind-tag { gap: 3px; }
