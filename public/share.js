@@ -312,7 +312,8 @@ async function showGallery() {
   // walk it down from the root before the first paint instead of always
   // landing on the root and forgetting where the viewer was.
   const fids = location.hash.slice(1).split("/").filter(Boolean);
-  await navigate(crumbs[0], { push: false, quiet: fids.length > 0 });
+  loadFolderStats();
+  await navigate(crumbs[0], { push: false, fromHistory: fids.length > 0, quiet: fids.length > 0 });
   await restorePath(fids);
   installSmartGalleryHeader();
 }
@@ -329,6 +330,9 @@ async function restorePath(fids) {
     }
     await navigate({ fid: sub.fid, name: sub.name, token: sub.ls }, { push: true, fromHistory: true, quiet: i < fids.length - 1 });
   }
+  // Belt and braces: the URL always reflects the crumbs we ended up on.
+  const path = crumbs.slice(1).map((c) => c.fid).join("/");
+  if (fids.length && location.hash.slice(1) !== path) history.replaceState({ fid: crumbs.at(-1)?.fid || "" }, "", path ? `#${path}` : location.pathname);
 }
 
 // ---- Navigation core (stable fid, dedupe, browser history) ----
@@ -723,7 +727,17 @@ export function applyHoverZoom() {
 
 function clampHoverZoom(fig) {
   const zoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hover-zoom")) || 1;
-  const origin = hoverZoomOrigin(fig.getBoundingClientRect(), zoom, window.innerWidth, window.innerHeight);
+  // Obstacles: the sticky toolbar (when stuck it covers the top of the
+  // grid) and the phone selection bar at the bottom.
+  const bounds = {};
+  const toolbar = document.querySelector(".gallery-toolbar");
+  if (toolbar) {
+    const t = toolbar.getBoundingClientRect();
+    if (t.bottom > 0 && t.top <= (parseFloat(getComputedStyle(toolbar).top) || 0) + 1) bounds.top = t.bottom + 8;
+  }
+  const bar = document.querySelector(".mobile-select-bar");
+  if (bar && getComputedStyle(bar).display !== "none") bounds.bottom = bar.getBoundingClientRect().top - 8;
+  const origin = hoverZoomOrigin(fig.getBoundingClientRect(), zoom, window.innerWidth, window.innerHeight, 8, bounds);
   if (origin) fig.style.transformOrigin = origin;
   else fig.style.removeProperty("transform-origin");
 }
@@ -875,14 +889,87 @@ export function stripSizeDescription(step) {
   return `${STRIP_WIDTHS[step - 1]} px`;
 }
 
+// Folder tiles (spec §2.1). With stats from the share-index blob a tile
+// shows the newest photo, counts, size and last change; without them (never
+// indexed, or a folder the walk has not reached yet) it stays icon + name.
+// Names are set with textContent only - they come from Drive and are not
+// trusted.
+let folderStats = null; // fid -> { files, photos, videos, bytes, newest, cover }
+let folderStatsSeq = 0;
+
+async function loadFolderStats() {
+  const seq = ++folderStatsSeq;
+  try {
+    const cached = await cachedJson("stats", slug, 60_000);
+    let d = cached?.data;
+    if (!d) {
+      const r = await fetch("/api/share/stats", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug, pin }) });
+      if (!r.ok) return;
+      d = await r.json();
+      rememberJson("stats", slug, d);
+    }
+    if (seq !== folderStatsSeq || !d?.indexed) return;
+    folderStats = d.folders || {};
+    document.querySelectorAll(".folder-card[data-fid]").forEach((el) => decorateFolderCard(el, folderStats[el.dataset.fid]));
+  } catch {
+    // Stats are a progressive enhancement; the icon tile is the baseline.
+  }
+}
+
+function fmtAgo(ms) {
+  const diff = Date.now() - ms;
+  const d = Math.floor(diff / 86400e3);
+  if (d >= 365) return `${Math.floor(d / 365)} y ago`;
+  if (d >= 30) return `${Math.floor(d / 30)} mo ago`;
+  if (d >= 1) return `${d} d ago`;
+  const h = Math.floor(diff / 3600e3);
+  return h >= 1 ? `${h} h ago` : "just now";
+}
+
+function decorateFolderCard(el, stats) {
+  if (!stats || el.classList.contains("rich") || !(stats.files || stats.folders)) return;
+  el.classList.add("rich");
+  const cover = document.createElement("span");
+  cover.className = "folder-cover";
+  if (stats.cover) {
+    const img = document.createElement("img");
+    img.src = stats.cover;
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+    img.onerror = () => img.remove();
+    cover.appendChild(img);
+  } else cover.innerHTML = uiIcon("folder");
+  const body = document.createElement("span");
+  body.className = "folder-body";
+  const name = document.createElement("b");
+  name.textContent = el.dataset.name;
+  const row = document.createElement("small");
+  const parts = [];
+  if (stats.photos) parts.push(`${uiIcon("image")}${stats.photos}`);
+  if (stats.videos) parts.push(`${uiIcon("video")}${stats.videos}`);
+  if (!stats.photos && !stats.videos && stats.files) parts.push(`${uiIcon("file")}${stats.files}`);
+  if (stats.folders) parts.push(`${uiIcon("folder")}${stats.folders}`);
+  parts.push(`<i>${esc(fmtBytes(stats.bytes || 0))}</i>`);
+  row.innerHTML = parts.map((p) => `<span>${p}</span>`).join("");
+  const when = document.createElement("em");
+  when.textContent = stats.newest ? `Modified ${fmtAgo(stats.newest)}` : "";
+  body.append(name, row, when);
+  el.replaceChildren(cover, body);
+}
+
 function folderCard(sub) {
   const el = document.createElement("button");
   el.type = "button";
   el.className = "folder-card";
   el.dataset.cursor = "folder";
+  el.dataset.fid = sub.fid;
+  el.dataset.name = sub.name;
   el.innerHTML = `${uiIcon("folder")}<span></span>`;
   el.querySelector("span").textContent = sub.name;
   el.addEventListener("click", () => navigate({ fid: sub.fid, name: sub.name, token: sub.ls }, { push: true }));
+  if (folderStats) decorateFolderCard(el, folderStats[sub.fid]);
   return el;
 }
 

@@ -43,7 +43,11 @@
     // Optional: Cloudflare Web Analytics beacon token (Worker injects it).
     "CF_BEACON_TOKEN": "",
     // Optional: Microsoft Clarity project id (Worker injects it).
-    "CLARITY_PROJECT_ID": ""
+    "CLARITY_PROJECT_ID": "",
+    "SELF_ORIGIN": "https://your-worker-domain",
+    "INDEX_CHUNK": "40",
+    "CHANGE_WINDOW_SEC": "300",
+    "INDEX_SCHEDULE": "daily"
   },
   "routes": [{ "pattern": "dropbox.example.com", "custom_domain": true }]
 }

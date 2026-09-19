@@ -2210,6 +2210,86 @@ body.has-fx-cursor .mobile-select-bar * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Indexed folder: cover + name + counts + last change (spec §2.1). */
+.folder-card.rich {
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  width: 236px;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: left;
+}
+.folder-card.rich .folder-cover {
+  flex: 0 0 74px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--accent) 10%, rgba(255, 255, 255, 0.5));
+  overflow: hidden;
+}
+.folder-card.rich .folder-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.folder-card.rich .folder-cover svg {
+  width: 26px;
+  height: 26px;
+}
+.folder-card.rich .folder-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px 8px 10px;
+  white-space: normal;
+}
+.folder-card.rich b {
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.folder-card.rich small {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font: 500 11.5px var(--font-mono, monospace);
+  color: var(--ink-2, #4a5b70);
+}
+.folder-card.rich small span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.folder-card.rich small svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2;
+  fill: none;
+}
+.folder-card.rich small i {
+  font-style: normal;
+}
+.folder-card.rich em {
+  font: 500 11px var(--font-body);
+  font-style: normal;
+  color: var(--muted, #8a97a8);
+}
+@media (max-width: 640px) {
+  .folder-card.rich {
+    width: calc(50% - 4px);
+  }
+  .folder-card.rich .folder-cover {
+    flex-basis: 62px;
+  }
+}
 
 /* Justified grid: JS sets width/height per tile; gap stays tiny like photos */
 .gallery-folder {
@@ -6842,6 +6922,19 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
   gap: 7px;
   margin-top: 7px;
 }
+.index-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font: 500 11.5px var(--font-mono, monospace);
+  color: var(--muted, #8a97a8);
+}
+.index-state svg { width: 13px; height: 13px; }
+.index-state.busy { color: var(--accent); }
+.index-state.busy svg { animation: spin 1.1s linear infinite; }
+.index-state.stale { color: #b7791f; }
+.pane-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .share-mode-pill {
   display: inline-flex;
   align-items: center;

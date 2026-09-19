@@ -48,7 +48,15 @@
     "CF_BEACON_TOKEN": "5e7e086782714160804ea9afc63dedc8",
     // Microsoft Clarity project id; the Worker injects the snippet into
     // every HTML page when set. Public by design, not a secret.
-    "CLARITY_PROJECT_ID": "xjtpz5cm04"
+    "CLARITY_PROJECT_ID": "xjtpz5cm04",
+    // share-index (media-cache spec §4/§8.3): chunked walks re-invoke the
+    // Worker at this origin; INDEX_CHUNK = subrequests per chunk (40 fits the
+    // Free plan; 200 on the current Paid plan); CHANGE_WINDOW_SEC = how often changes.list
+    // may be polled; INDEX_SCHEDULE = global full-walk cadence.
+    "SELF_ORIGIN": "https://dropbox.losthusky.qzz.io",
+    "INDEX_CHUNK": "200",
+    "CHANGE_WINDOW_SEC": "300",
+    "INDEX_SCHEDULE": "daily"
   },
   "routes": [{ "pattern": "dropbox.losthusky.qzz.io", "custom_domain": true }],
   // Nightly at 22:45 UTC (04:15 IST): recurring image-archive rules.

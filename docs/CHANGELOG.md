@@ -4,6 +4,51 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-20 — share-index: folder stats from R2, change detection, rich folder tiles (PR #87)
+
+Spec §2, §2.1, §3, §3.1, §4 and §8.3 of the
+[media-cache plan](superpowers/specs/2026-09-20-media-cache-ladder-design.md).
+Opening a folder no longer walks Drive to count it.
+
+- **`src/share-index.js`** - a `share-index` job walks a share's tree in
+  chunks of `INDEX_CHUNK` subrequests (40 default; fits the Free plan), writes
+  per-folder stats and the file list to R2 after every chunk (partially
+  walked folders show real numbers at once), then pre-warms thumbnails into
+  the cache ladder (512px always, 1600px for photos over 3 MB). Cursor and
+  progress live in R2; KV is written only when a job starts and ends, so a
+  23k-file walk costs four KV writes, not thousands. Each chunk re-invokes
+  the Worker on its own `/continue` route; the nightly cron resumes anything
+  dropped. The lock is per share, on its own `share-index:jobs` key.
+- **`src/share-changes.js`** - one Drive `changes.list` cursor for the whole
+  app, polled at most every `CHANGE_WINDOW_SEC` (5 min) from the background
+  of a share listing. Changed ids are intersected with each share's known
+  files *and folders* (a new file inside a known folder counts) and start a
+  targeted job for just those ids. Expired tokens re-anchor; the scheduled
+  full walk (`INDEX_SCHEDULE`, per-share override in the editor, forced
+  monthly) is the safety net. `sweepOrphans` backs the admin "Clear orphaned
+  media" button.
+- **`/api/share/summary`** answers from the blob (zero Drive calls, zero KV
+  writes) once a share is indexed; `/api/share/stats` hands the gallery every
+  folder's subtree totals and cover, keyed by the listing's fid.
+- **Folder tiles** show the newest photo, photo/video/folder counts, size and
+  "Modified N ago" when stats exist, and stay icon + name otherwise. Names go
+  through `textContent`; nothing from Drive is rendered as HTML.
+- **Video tiles that said "video" instead of a length**: those originals have
+  no `videoMediaMetadata` in Drive and their preview was made before the
+  runner reported durations. The warm phase now reads the duration off the
+  720p preview file (which Drive does describe) and backfills
+  `previews:index`; as a fallback the tile badge fills in the moment the
+  browser learns the duration on hover.
+- **Deep link lost on reload** (follow-up to #85): the boot-time root hop
+  called `pushState(pathname)` and wiped the hash before the restore ran.
+  It no longer touches history, and the URL is re-synced to the crumbs after
+  a restore.
+- **Hover zoom** now respects the stuck toolbar at the top and the phone
+  selection bar at the bottom, picks the roomier side when neither fits, and
+  leaves oversized tiles centred.
+- Creating a gallery share queues its first index; the share card shows
+  "Indexed 2 h ago / Indexing… / Not indexed yet" and a **Process now** button.
+
 ## 2026-09-20 — Media cache ladder: thumbnails and previews served from R2 behind the edge (PR #86)
 
 Spec §1 + §8.3 groundwork of the

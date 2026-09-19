@@ -43,6 +43,7 @@ export async function mediaThumbs(env, slug, file) {
 
 // Content address of a Drive file for cache keys.
 export function mediaRev(file) {
+  if (file?.rev) return String(file.rev);
   const md5 = String(file?.md5Checksum || "").replace(/[^a-f0-9]/gi, "");
   if (md5) return md5.slice(0, 16);
   return `m${(Date.parse(file?.modifiedTime || "") || 0).toString(36)}`;
@@ -137,6 +138,22 @@ const r2Put = (bucket, key, body, type, length) =>
     httpMetadata: { contentType: type, cacheControl: `public, max-age=${MEDIA_TTL}, immutable` },
     ...(length ? { customMetadata: { length: String(length) } } : {}),
   });
+
+// Pre-warm (spec §4 step 2): put one thumbnail variant into R2 unless it is
+// there already. Returns the subrequests spent so chunked jobs can budget.
+export async function warmMedia(env, fileId, variant, rev) {
+  const bucket = env.MEDIA_BUCKET;
+  if (!bucket) return 0;
+  const r2Key = `media/${fileId}/${variant}-${rev}`;
+  if (await bucket.head(r2Key).catch(() => null)) return 1;
+  const meta = await driveFileMetaCached(env, fileId);
+  if (!meta?.thumbnailLink) return 2;
+  const asset = await driveThumbnail(env, meta, mediaVariantTier(variant));
+  if (!asset?.response?.body) return 3;
+  const bytes = await asset.response.arrayBuffer();
+  await r2Put(bucket, r2Key, bytes, asset.response.headers.get("content-type") || "image/jpeg", bytes.byteLength);
+  return 4;
+}
 
 // L2 for thumbnails: Drive's bounded derivative, buffered (a 1600px JPEG is
 // well under a megabyte) so one fetch feeds the client, the edge and R2.

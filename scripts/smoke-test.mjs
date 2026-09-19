@@ -154,6 +154,7 @@ async function withMockedGoogleDrive(fn) {
     },
     "file-img": {
       id: "file-img",
+      parents: ["drive-folder"],
       name: "A Photo.jpg",
       size: "4",
       mimeType: "image/jpeg",
@@ -240,6 +241,14 @@ async function withMockedGoogleDrive(fn) {
       return new Response(JSON.stringify({ access_token: "google-token", expires_in: 3600 }), {
         headers: { "content-type": "application/json" },
       });
+    }
+    if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/drive/v3/changes")) {
+      if (url.pathname.endsWith("/startPageToken")) return new Response(JSON.stringify({ startPageToken: "tok-1" }), { headers: { "content-type": "application/json" } });
+      const tokenIn = url.searchParams.get("pageToken");
+      const body = tokenIn === "tok-1"
+        ? { newStartPageToken: "tok-2", changes: [{ fileId: "file-img", file: { id: "file-img", parents: ["drive-folder"], mimeType: "image/jpeg" } }, { fileId: "unrelated", file: { id: "unrelated", parents: ["elsewhere"] } }] }
+        : { newStartPageToken: tokenIn, changes: [] };
+      return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
     }
     if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/drive/v3/files")) {
       if ((init.method || "GET").toUpperCase() === "POST") {
@@ -926,8 +935,9 @@ async function main() {
     assert.equal(res.status, 200, "cached Base thumbnail succeeds");
     assert.equal(calls.thumbnailUrls.length, thumbnailCallsBefore + 1, "second thumbnail request reuses cached bytes");
     assert.match(res.headers.get("cache-control"), /immutable/, "thumbnails are immutable for the browser (L0)");
-    assert.equal(driveEnv.MEDIA_BUCKET.objects.size, 1, "the cold miss filled R2 (L1)");
-    const r2Key = [...driveEnv.MEDIA_BUCKET.objects.keys()][0];
+    const mediaKeys = () => [...driveEnv.MEDIA_BUCKET.objects.keys()].filter((key) => key.startsWith("media/"));
+    assert.equal(mediaKeys().length, 1, "the cold miss filled R2 (L1)");
+    const r2Key = mediaKeys()[0];
     assert.match(r2Key, /^media\/file-img\/thumb-lo-m[a-z0-9]+$/, "R2 keys are content-addressed per file and variant");
     // Edge cache gone (another colo, eviction): R2 answers, Drive is not asked.
     globalThis.caches.default.values.clear();
@@ -986,6 +996,74 @@ async function main() {
     assert.equal(summary.videos, 2, "summary counts videos");
     assert.equal(summary.folders, 1, "summary counts the subfolder it walked into");
     assert.ok(calls.listPageSizes.includes("1000"), "summary uses larger Drive page size");
+
+    // ---- share-index (spec §2/§4/§8.3): created share was indexed on creation ----
+    const indexJobs = (await driveEnv.KV.get("share-index:jobs", "json")).jobs;
+    assert.equal(indexJobs[0].slug, "drive-share", "creating a gallery share enqueues a share-index job");
+    assert.equal(indexJobs[0].trigger, "create");
+    let status = await (await worker.fetch(request("/api/admin/share-index/status/drive-share", { headers: { authorization: "Bearer test-admin" } }), driveEnv)).json();
+    // Chunks continue via the Worker calling its own /continue route, which
+    // the test harness cannot receive; drive the loop by hand.
+    for (let i = 0; i < 20 && status.active; i++) {
+      await worker.fetch(jsonRequest(`/api/admin/share-index/jobs/${status.active.id}/continue`, {}), driveEnv);
+      status = await (await worker.fetch(request("/api/admin/share-index/status/drive-share", { headers: { authorization: "Bearer test-admin" } }), driveEnv)).json();
+    }
+    assert.equal(status.active, null, "the walk finishes");
+    assert.equal(status.last.status, "done", status.last.error || "job done");
+    assert.equal(status.pointer.complete, true, "the KV pointer marks the blob complete");
+    const foldersBlob = await (await driveEnv.MEDIA_BUCKET.get("stats/drive-share.json")).json();
+    assert.equal(Object.keys(foldersBlob.folders).length, 2, "root + nested folder walked");
+    assert.equal(foldersBlob.folders["drive-folder"].files, 4, "root direct files");
+    assert.equal(foldersBlob.folders["nested-folder"].files, 1, "nested direct files");
+    assert.equal(foldersBlob.folders["drive-folder"].cover?.id, "file-img", "cover is the newest photo with a thumbnail");
+    const kvWritesBefore = driveEnv.KV.values.size;
+    res = await worker.fetch(publicJsonRequest("/api/share/summary", { slug: "drive-share", pin: "2468" }), driveEnv);
+    const listCallsBefore = calls.listPageSizes.length;
+    const indexedSummary = await res.json();
+    assert.equal(indexedSummary.files, 5, "summary now comes from the stats blob");
+    assert.equal(indexedSummary.bytes, 34);
+    assert.equal(indexedSummary.videos, 2);
+    assert.equal(indexedSummary.folders, 1);
+    assert.ok(indexedSummary.indexedAt, "and says when it was indexed");
+    assert.equal(calls.listPageSizes.length, listCallsBefore, "without a single Drive listing");
+    assert.equal(driveEnv.KV.values.size, kvWritesBefore, "and no KV writes");
+    res = await worker.fetch(publicJsonRequest("/api/share/stats", { slug: "drive-share", pin: "2468" }), driveEnv);
+    assert.equal(res.status, 200, "share stats endpoint");
+    const statsBody = await res.json();
+    assert.equal(statsBody.indexed, true);
+    const nestedFid = (await legacySha256("fid:nested-folder:test-admin")).slice(0, 16);
+    assert.ok(statsBody.folders[nestedFid], "folder stats are keyed by the listing's fid");
+    assert.equal(statsBody.folders[nestedFid].files, 1);
+    assert.equal(statsBody.folders[nestedFid].photos, 1);
+    assert.ok(Object.values(statsBody.folders).every((f) => !("path" in f) && !("name" in f)), "no Drive names or ids leak through stats");
+    assert.ok(mediaKeys().some((key) => key.startsWith("media/file-video/thumb-lo-")), "the warm phase pre-filled thumbnails into R2");
+    assert.equal(JSON.stringify(statsBody).includes("googleusercontent"), false);
+
+    // Targeted reindex (spec §3.1): a change feed naming a known file starts a
+    // small job for just that id, not a re-walk.
+    await driveEnv.KV.put("changes:cursor", JSON.stringify({ pageToken: "tok-1", checkedAt: 0 }));
+    res = await worker.fetch(jsonRequest("/api/admin/share-index/check-changes", {}), driveEnv);
+    const checked = await res.json();
+    assert.equal(checked.shares, 1, "a change to a known file flips the share");
+    status = await (await worker.fetch(request("/api/admin/share-index/status/drive-share", { headers: { authorization: "Bearer test-admin" } }), driveEnv)).json();
+    for (let i = 0; i < 20 && status.active; i++) {
+      await worker.fetch(jsonRequest(`/api/admin/share-index/jobs/${status.active.id}/continue`, {}), driveEnv);
+      status = await (await worker.fetch(request("/api/admin/share-index/status/drive-share", { headers: { authorization: "Bearer test-admin" } }), driveEnv)).json();
+    }
+    assert.equal(status.last.full, false, "the change-driven job is targeted");
+    assert.equal(status.last.status, "done", status.last.error || "targeted job done");
+    const cursor = await driveEnv.KV.get("changes:cursor", "json");
+    assert.equal(cursor.pageToken, "tok-2", "the change cursor advances to Drive's new start token");
+    res = await worker.fetch(jsonRequest("/api/admin/share-index/check-changes", {}), driveEnv);
+    assert.equal((await res.json()).changes, 0, "an empty feed touches nothing");
+
+    // Orphan sweep (spec §1.1): unreferenced media keys go, referenced stay.
+    await driveEnv.MEDIA_BUCKET.put("media/file-img/thumb-lo-deadbeef", new Uint8Array([1]), {});
+    res = await worker.fetch(jsonRequest("/api/admin/media/orphans", {}), driveEnv);
+    const swept = await res.json();
+    assert.equal(swept.removed, 1, "a superseded revision is swept");
+    assert.equal(driveEnv.MEDIA_BUCKET.objects.has("media/file-img/thumb-lo-deadbeef"), false);
+    assert.ok(mediaKeys().length >= 1, "live thumbnails stay");
 
     res = await worker.fetch(
       publicJsonRequest("/api/share/list", {

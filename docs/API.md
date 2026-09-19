@@ -29,6 +29,15 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 >   request before any cache tier is consulted. Listings hand these out in
 >   `thumbs` / `preview`; `/api/share/thumb/:token/:tier` remains for
 >   listings cached before the switch.
+> - `POST /api/share/stats` `{slug, pin}` - every folder's subtree totals
+>   (`files, photos, videos, bytes, folders, oldest, newest`) plus a `cover`
+>   thumbnail URL, keyed by the listing's stable `fid`. Answered from the
+>   share-index blob in R2; `{indexed:false}` until the first index lands.
+> - `POST /api/share/summary` answers from the same blob when the share is
+>   indexed (`indexedAt` present) and only walks Drive otherwise.
+> - Listing a share also runs the cheap change check in the background: one
+>   Drive `changes.list` per `CHANGE_WINDOW_SEC` across the whole app; a hit
+>   starts a targeted share-index job for exactly the ids that changed.
 >
 > Admin (cookie session `hd_admin` OR `Authorization: Bearer ADMIN_TOKEN`):
 > - `POST /api/admin/login` `{token}` - sets HttpOnly cookie (7d); login is
@@ -371,6 +380,32 @@ HttpOnly, 400 days). Events carry it as `d` and the signed-in Google e-mail
 as `e`, the FingerprintJS id (client-set `hd_fp` cookie) as `p`; the Durable
 Object's `identities`/`aliases` tables link device and fingerprint to the
 account so older anonymous events are attributed once it signs in.
+
+### share-index (`/api/admin/share-index/*`, `/api/admin/media/orphans`)
+
+Folder stats + thumbnail pre-warm per gallery share (design spec §2/§4/§8.3).
+
+- `GET /api/admin/share-index/jobs` - last 20 jobs with progress; `chunk` is
+  the subrequest budget per invocation (`INDEX_CHUNK`).
+- `POST /api/admin/share-index/run` `{slug, full?}` - "Process now". `202`
+  when a job started, `200 {started:false, reason:"already indexing"}` when
+  that share is mid-walk (the lock is per share).
+- `POST /api/admin/share-index/jobs/:id/continue` - runs one more chunk. The
+  Worker calls this on itself after every chunk; the nightly cron resumes any
+  running job that stalled.
+- `GET /api/admin/share-index/status/:slug` - `{pointer, active, last}`.
+- `POST /api/admin/share-index/check-changes` - force the change check.
+- `POST /api/admin/media/orphans` `{cursor?, dryRun?}` - deletes R2 media
+  objects no indexed share references (one bucket page per call; loop while
+  `cursor` is returned).
+- Shares carry `indexSchedule` (`daily|weekly|monthly|null` = global
+  `INDEX_SCHEDULE`) via `PATCH /api/admin/shares/:slug`; creating a gallery
+  share starts its first index immediately.
+
+Storage: KV `share-index:jobs` (written at job start/end only), KV
+`share-stats:<slug>` pointer, R2 `stats/<slug>.json` (folders),
+`stats/<slug>.files.json` (file rows), `stats/<slug>.job.json` (cursor), KV
+`changes:cursor` (one Drive change token for the app).
 
 ### `GET /api/admin/thumb/:fileId`
 
