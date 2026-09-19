@@ -39,3 +39,17 @@ export function computeJustifiedRows(items, options) {
     return { height: Math.round(height), items: sized };
   });
 }
+
+// The hover scale grows from the tile's centre, which pushes tiles on the
+// edge of the grid past the viewport (the left half of a first-column tile
+// vanished off-screen). Measured before the transition starts: whichever
+// edge would clip becomes the transform origin, so the tile grows inward.
+export function hoverZoomOrigin(rect, zoom, vw, vh, margin = 8) {
+  if (!(zoom > 1)) return "";
+  const gx = (rect.width * (zoom - 1)) / 2;
+  const gy = (rect.height * (zoom - 1)) / 2;
+  const x = rect.left - gx < margin ? "left" : rect.right + gx > vw - margin ? "right" : "center";
+  const y = rect.top - gy < margin ? "top" : rect.bottom + gy > vh - margin ? "bottom" : "center";
+  return `${x} ${y}`;
+}
+

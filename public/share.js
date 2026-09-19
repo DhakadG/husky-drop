@@ -1,4 +1,4 @@
-import { computeJustifiedRows } from "./share-gallery-layout.js";
+import { computeJustifiedRows, hoverZoomOrigin } from "./share-gallery-layout.js";
 import { createSmartHeaderState } from "./share-smart-header.js";
 import { switchGoogleAccount } from "./share-access.js";
 import {
@@ -30,6 +30,7 @@ import { toast, fmtDur } from "./share-utils.js";
 import { identify } from "./identity.js";
 import { trackEvent, installTracking } from "./share-beacon.js";
 import { downloadFile } from "./share-download.js";
+import { cachedJson, rememberJson } from "./share-cache.js";
 import { ensureVideoPoster, heatVideoTile, installHoverPreview, probeVideoMetadata, warmVideoTile } from "./share-preview.js";
 import { openViewer } from "./share-viewer.js";
 import {
@@ -124,6 +125,11 @@ async function init() {
   if (r.status === 410) return showShareGone("expired", "This share has closed.", "Ask whoever sent it for a fresh link.");
   if (!r.ok) return showShareGone("hiccup", "Something went wrong on our side.", "Reload in a moment.");
   setMeta(await r.json());
+  const returnHash = sessionStorage.getItem(`lhdb_sreturn_${slug}`);
+  if (returnHash) {
+    sessionStorage.removeItem(`lhdb_sreturn_${slug}`);
+    if (location.hash.length <= 1) history.replaceState(null, "", returnHash);
+  }
   if (meta.state === "expired") return showShareGone("expired", "This share has closed.", "Ask whoever sent it for a fresh link.");
   if (meta.state !== "active") return showShareGone("paused", "This share is paused right now.", "Ask whoever sent it to reopen it.");
   $("ws-state").dataset.state = "secure";
@@ -188,6 +194,9 @@ export function showGate(needsAuth, needsPin) {
   $("pin").inputMode = meta?.pinDigits === false ? "text" : "numeric";
   $("pin-go").classList.toggle("hidden", !needsPin || needsAuth);
   const startGoogleSignIn = () => {
+    // The OAuth round trip lands on /s/:slug; keep the folder path so the
+    // viewer comes back to the folder they were sent to.
+    if (location.hash.length > 1) sessionStorage.setItem(`lhdb_sreturn_${slug}`, location.hash);
     location.href = `/api/auth/login?slug=${encodeURIComponent(slug)}`;
   };
   $("google-signin").onclick = startGoogleSignIn;
@@ -299,8 +308,27 @@ async function showGallery() {
   window.addEventListener("popstate", onPopState);
   installTracking();
   crumbs.push({ fid: "", name: meta.label, token: "" });
-  await navigate(crumbs[0], { push: false });
+  // A reload or a shared deep link carries the folder path in the hash;
+  // walk it down from the root before the first paint instead of always
+  // landing on the root and forgetting where the viewer was.
+  const fids = location.hash.slice(1).split("/").filter(Boolean);
+  await navigate(crumbs[0], { push: false, quiet: fids.length > 0 });
+  await restorePath(fids);
   installSmartGalleryHeader();
+}
+
+async function restorePath(fids) {
+  for (const [i, fid] of fids.entries()) {
+    const sub = (current?.folders || []).flatMap((f) => f.subfolders || []).find((s) => s.fid === fid);
+    if (!sub) {
+      // Stale or foreign path: stay where we got to and fix the URL.
+      history.replaceState(null, "", crumbs.length > 1 ? `#${crumbs.slice(1).map((c) => c.fid).join("/")}` : location.pathname);
+      render();
+      loadSummary();
+      return;
+    }
+    await navigate({ fid: sub.fid, name: sub.name, token: sub.ls }, { push: true, fromHistory: true, quiet: i < fids.length - 1 });
+  }
 }
 
 // ---- Navigation core (stable fid, dedupe, browser history) ----
@@ -350,12 +378,27 @@ let navigating = false;
 // Fetches a listing for the given fid, using (and repairing) the cache.
 // When a cached signed token has expired, the parent listing is re-fetched
 // to mint a fresh one for the same fid before retrying once.
+const LISTING_TTL_MS = 5 * 60000;
+
+function keepListing(fid, d, token) {
+  listingCache.set(fid, { d, token, at: Date.now() });
+  rememberJson("listing", `${slug}/${fid}`, { d, token });
+}
+
 async function resolveListing(entry) {
   const cached = listingCache.get(entry.fid);
-  if (cached && Date.now() - cached.at < 5 * 60000) return cached.d;
+  if (cached && Date.now() - cached.at < LISTING_TTL_MS) return cached.d;
+  // L0: a listing this browser fetched a moment ago (its signed tokens are
+  // minted for 15 min, so a 5 min old copy is still fully usable).
+  const stored = await cachedJson("listing", `${slug}/${entry.fid}`, LISTING_TTL_MS);
+  if (stored?.data?.d) {
+    listingCache.set(entry.fid, { d: stored.data.d, token: stored.data.token, at: stored.at });
+    if (stored.data.token) entry.token = stored.data.token;
+    return stored.data.d;
+  }
   try {
     const d = await fetchListing(entry.token);
-    listingCache.set(entry.fid, { d, token: entry.token, at: Date.now() });
+    keepListing(entry.fid, d, entry.token);
     return d;
   } catch (err) {
     if (err.status !== 403 || !entry.fid) throw err;
@@ -363,17 +406,19 @@ async function resolveListing(entry) {
     // do have a live token for) to mint a fresh one for the same fid.
     const parent = crumbs[crumbs.length - 2] || crumbs[0];
     const parentListing = await fetchListing(parent.token);
-    listingCache.set(parent.fid, { d: parentListing, token: parent.token, at: Date.now() });
+    keepListing(parent.fid, parentListing, parent.token);
     const fresh = (parentListing.folders || []).flatMap((f) => f.subfolders || []).find((s) => s.fid === entry.fid);
     if (!fresh) throw err;
     entry.token = fresh.ls;
     const d = await fetchListing(fresh.ls);
-    listingCache.set(entry.fid, { d, token: fresh.ls, at: Date.now() });
+    keepListing(entry.fid, d, fresh.ls);
     return d;
   }
 }
 
-export async function navigate(entry, { push = true, fromHistory = false } = {}) {
+// quiet: an intermediate hop while restoring a deep link - keep the crumb,
+// skip the paint, the summary call and the analytics event.
+export async function navigate(entry, { push = true, fromHistory = false, quiet = false } = {}) {
   cancelTouchSelection();
   setGalleryToolsOpen(false);
   if (navigating) return;
@@ -400,6 +445,7 @@ export async function navigate(entry, { push = true, fromHistory = false } = {})
     setCurrent(d);
     current.summary = null;
     setAllowZip(d.allowZip !== false);
+    if (quiet) return;
     render();
     loadSummary();
     trackEvent("nav", entry.name || meta.label);
@@ -417,11 +463,17 @@ export async function navigate(entry, { push = true, fromHistory = false } = {})
   }
 }
 
-function onPopState() {
+async function onPopState() {
   const fids = (location.hash.slice(1) || "").split("/").filter(Boolean);
   const targetFid = fids.at(-1) || "";
-  let idx = crumbs.findIndex((c) => c.fid === targetFid);
-  if (idx < 0) idx = 0; // unknown state (e.g. reload mid-path) - fall back to root
+  const idx = crumbs.findIndex((c) => c.fid === targetFid);
+  if (idx < 0) {
+    // Forward/back into a folder the crumbs no longer hold (we went up via a
+    // breadcrumb, then back): rebuild the path from the root listing.
+    crumbs.splice(1);
+    await navigate(crumbs[0], { push: false, fromHistory: true, quiet: fids.length > 0 });
+    return restorePath(fids);
+  }
   const target = crumbs[idx];
   crumbs.splice(idx + 1);
   navigate(target, { push: false, fromHistory: true });
@@ -669,6 +721,13 @@ export function applyHoverZoom() {
   document.documentElement.style.setProperty("--hover-zoom", zoom.toFixed(3));
 }
 
+function clampHoverZoom(fig) {
+  const zoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hover-zoom")) || 1;
+  const origin = hoverZoomOrigin(fig.getBoundingClientRect(), zoom, window.innerWidth, window.innerHeight);
+  if (origin) fig.style.transformOrigin = origin;
+  else fig.style.removeProperty("transform-origin");
+}
+
 function installHoverZoomControl() {
   const select = $("hover-zoom");
   if (!select) return;
@@ -911,6 +970,7 @@ export function card(file) {
   });
   installTouchSelection(fig, file);
   installHoverPreview(fig, file);
+  fig.addEventListener("pointerenter", () => clampHoverZoom(fig));
   fx.tileDepth(fig);
   if (cardObserver) cardObserver.observe(fig);
   if (hotObserver && /^video\//.test(file.mime)) hotObserver.observe(fig);

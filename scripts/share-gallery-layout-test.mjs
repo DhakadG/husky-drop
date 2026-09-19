@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeJustifiedRows } from "../public/share-gallery-layout.js";
+import { computeJustifiedRows, hoverZoomOrigin } from "../public/share-gallery-layout.js";
 
 const items = [
   { id: "a", aspect: 1.5 },
@@ -35,5 +35,13 @@ assert.deepEqual(
   ["a", "b", "c", "d"],
 );
 assert.ok(desktop.at(-1).height <= 250, "the final row never stretches above its target");
+
+// Hover zoom: an edge tile grows inward instead of past the viewport.
+const tile = { left: 8, right: 258, top: 300, bottom: 550, width: 250, height: 250 };
+assert.equal(hoverZoomOrigin(tile, 1.5, 1600, 900), "left center");
+assert.equal(hoverZoomOrigin({ ...tile, left: 1350, right: 1600 }, 1.5, 1600, 900), "right center");
+assert.equal(hoverZoomOrigin({ ...tile, left: 600, right: 850, top: 10, bottom: 260 }, 1.5, 1600, 900), "center top");
+assert.equal(hoverZoomOrigin({ ...tile, left: 600, right: 850 }, 1.5, 1600, 900), "center center");
+assert.equal(hoverZoomOrigin(tile, 1, 1600, 900), "", "no zoom, no override");
 
 console.log("share gallery layout checks passed");
