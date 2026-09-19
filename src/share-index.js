@@ -23,6 +23,7 @@ import { previewIndex } from "./previews.js";
 import { cleanText, json, sha256 } from "./util.js";
 import { mediaRev, mediaThumbs, warmMedia } from "./media-cache.js";
 import { appLog } from "./applog.js";
+import { dispatchSharePreviews } from "./share-previews.js";
 
 export const JOBS_KEY = "share-index:jobs";
 const JOBS_KEPT = 20;
@@ -194,6 +195,9 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
     job.chunks = cur.chunks;
     await finish("done");
     appLog(env, ctx, { area: "share-index", message: `share ${job.slug}: indexed ${Object.keys(state.folders).length} folders, ${state.files.length} files, ${cur.progress.warmed} thumbnails warmed in ${cur.chunks} chunk(s)` });
+    // Step 3 (spec §4): RAW / oversized previews are pixel work, so they go
+    // to the GitHub runner; it exits at once when nothing is pending.
+    if (job.full && env.GITHUB_TOKEN) ctx?.waitUntil?.(dispatchSharePreviews(env).catch(() => {}));
   } catch (error) {
     await finish("failed", error.message);
     appLog(env, ctx, { level: "error", area: "share-index", message: `share ${job.slug}: chunk failed`, detail: error.message });

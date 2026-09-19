@@ -12,6 +12,7 @@ import {
 } from "./share-state.js";
 import { toast } from "./share-utils.js";
 import { trackEvent } from "./share-beacon.js";
+import { downloadFormat } from "./share-download.js";
 
 // Selection (click, drag, touch) + zip download.
 // ---- Selection + zip ----
@@ -215,6 +216,7 @@ async function createServerZipTicket(files) {
       slug,
       pin,
       files: files.map((f) => ({ dl: f.dl, name: f.name, size: f.size, mime: f.mime })),
+      format: downloadFormat(),
     }),
   });
   if (!r.ok) {

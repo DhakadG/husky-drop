@@ -1,0 +1,61 @@
+name: transcode-share-previews
+
+# Makes WebP preview-equivalents for RAW / HEIC / TIFF and oversized originals
+# in indexed share links (media-cache spec §5). Output goes to R2 through the
+# worker; originals in Drive are never touched. Same single secret as the
+# other runners: HUSKY_ADMIN_TOKEN.
+
+on:
+  schedule:
+    - cron: "15 22 * * *" # 03:45 IST, after the video previews
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max files this run (all runners combined)"
+        default: "400"
+      shards:
+        description: "Runners to spread the work over (1-20)"
+        default: "2"
+
+concurrency:
+  group: transcode-share-previews
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - id: plan
+        env:
+          SHARDS: ${{ inputs.shards || '2' }}
+        run: |
+          n=$(( SHARDS < 1 ? 1 : (SHARDS > 20 ? 20 : SHARDS) ))
+          echo "shards=$(seq 0 $((n - 1)) | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  previews:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libraw-bin libheif-examples libimage-exiftool-perl darktable
+      - run: npm install --no-save --no-audit --no-fund sharp
+      - run: node scripts/transcode-share-previews.mjs
+        env:
+          HUSKY_ORIGIN: https://dropbox.losthusky.qzz.io
+          HUSKY_ADMIN_TOKEN: ${{ secrets.HUSKY_ADMIN_TOKEN }}
+          LIMIT: ${{ inputs.limit || '400' }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+          TIME_BUDGET_MIN: "270"

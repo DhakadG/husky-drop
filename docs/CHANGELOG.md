@@ -4,6 +4,34 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-20 — RAW / oversized previews and "smaller (WebP)" downloads (PR #91)
+
+Spec §5, §5.1 and §6 of the
+[media-cache plan](superpowers/specs/2026-09-20-media-cache-ladder-design.md).
+
+- **`scripts/lib/image-decode.mjs`** is the one RAW/HEIC decode path, shared
+  by the image-archive runner and the new share-preview runner. It carries
+  the fidelity rules: `dcraw_emu -o 1` (explicit sRGB, never the tool's
+  default), `copyMetadataUpright()` (the only way tags go back onto rotated
+  pixels - orientation always cleared), and `hasGainMap()` (Apple Adaptive
+  HDR / Ultra HDR markers; a bare MPF segment does not count).
+- **`scripts/transcode-share-previews.mjs`** + `transcode-share-previews.yml`
+  (nightly, sharded) make a WebP preview-equivalent (long edge 4096, q84,
+  ICC kept, upright) for RAW / HEIC / TIFF and decodable photos ≥ 50 MB in
+  indexed shares, PUT it to R2 as the `preview-webp` variant and report in
+  batches (one KV write each). Gain-map HDR JPEGs are skipped on purpose and
+  the original is served - honest fallback over silent SDR flattening.
+- **Serving.** The WebP becomes the gallery's high-resolution tier for those
+  files; ≥ 50 MB decodable originals no longer auto-load in the viewer - a
+  **Load original (98 MB)** button in the asset ladder fetches the real bytes
+  through the existing verified Range path.
+- **Downloads.** A "Download: original / smaller (WebP)" control on the share
+  page. Single downloads swap to the WebP via `?dl=<name>`; ZIPs (`format:
+  "webp"`) stream previews straight from R2 and fall back to the original for
+  anything not processed yet.
+- Admin Shares pane: **Make RAW previews** dispatches the runner; a finished
+  full share-index also dispatches it.
+
 ## 2026-09-20 — share-index: folder stats from R2, change detection, rich folder tiles (PR #87)
 
 Spec §2, §2.1, §3, §3.1, §4 and §8.3 of the

@@ -9,6 +9,8 @@ import {
   sanitizeFilename,
 } from "./util.js";
 import { driveFileMeta, accessToken } from "./drive.js";
+import { mediaRev } from "./media-cache.js";
+import { sharePreviewIndex } from "./share-previews.js";
 import { gatePin } from "./store.js";
 import { loadActiveShare, requireViewer } from "./share.js";
 import { verifyShareToken, downloadTokenFrom, publicDownloadSafety } from "./share-token.js";
@@ -26,6 +28,10 @@ export async function createShareZipTicket(request, env) {
 
   const requested = Array.isArray(b.files) ? b.files.slice(0, 1000) : [];
   if (!requested.length) return json({ error: "choose at least one file" }, 400);
+  // format "webp" (spec §6): files with a preview-equivalent in R2 come out
+  // as WebP; anything not processed yet is the original.
+  const smaller = b.format === "webp";
+  const previews = smaller ? await sharePreviewIndex(env) : { files: {} };
   const files = [];
   const blocked = [];
   for (const item of requested) {
@@ -39,11 +45,14 @@ export async function createShareZipTicket(request, env) {
       blocked.push(cleanText(meta.name || item?.name || parsed.fileId, 120));
       continue;
     }
+    const preview = previews.files[parsed.fileId];
+    const usePreview = smaller && preview && !preview.skip && preview.r === mediaRev(meta) && env.MEDIA_BUCKET;
     files.push({
       fileId: parsed.fileId,
-      name: sanitizeFilename(meta.name || item?.name || `${parsed.fileId}.bin`),
-      size: Math.max(0, Number(meta.size || item?.size) || 0),
-      mime: cleanText(meta.mimeType || item?.mime || "application/octet-stream", 100),
+      name: sanitizeFilename(usePreview ? (meta.name || `${parsed.fileId}`).replace(/\.[^.]+$/, "") + ".webp" : meta.name || item?.name || `${parsed.fileId}.bin`),
+      size: Math.max(0, Number(usePreview ? preview.s : meta.size || item?.size) || 0),
+      mime: usePreview ? "image/webp" : cleanText(meta.mimeType || item?.mime || "application/octet-stream", 100),
+      ...(usePreview ? { r2Key: `media/${parsed.fileId}/preview-webp-${preview.r}` } : {}),
     });
   }
   if (!files.length && blocked.length) {
@@ -76,7 +85,7 @@ export async function shareZipDownload(request, env, ticket) {
       ...file,
       name: sanitizeFilename(file.name || `${file.fileId}.bin`),
       size: Math.max(0, Number(file.size) || 0),
-      stream: async () => driveMediaStream(env, file.fileId),
+      stream: async () => (file.r2Key ? r2MediaStream(env, file.r2Key, file.fileId) : driveMediaStream(env, file.fileId)),
     }));
   if (!files.length) {
     return json({ error: "This ZIP contains no files allowed by the public-download safety policy." }, 451, { "x-robots-tag": "noindex, nofollow, noarchive" });
@@ -95,6 +104,12 @@ export async function shareZipDownload(request, env, ticket) {
     .then(() => writer.close())
     .catch((err) => writer.abort(err));
   return new Response(readable, { headers });
+}
+
+// Preview-equivalent from R2; the original if the object is gone.
+async function r2MediaStream(env, key, fileId) {
+  const obj = await env.MEDIA_BUCKET?.get(key).catch(() => null);
+  return obj?.body || driveMediaStream(env, fileId);
 }
 
 async function driveMediaStream(env, fileId) {

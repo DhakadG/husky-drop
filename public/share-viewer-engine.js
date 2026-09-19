@@ -222,7 +222,7 @@ export function assetLampState(state) {
   if (state?.loading === "max") return { key: "max-fetching", label: "High-resolution preview is loading" };
   if (state?.tier === "max" && state.presentedTier !== "max") return { key: "max-presenting", label: "Displaying high-resolution preview" };
   if (state?.presentedTier === "max") {
-    return { key: "max-ready", label: state.fullSupported === false ? "High-resolution RAW preview displayed" : "High-resolution preview displayed" };
+    return { key: "max-ready", label: state.fullSupported === false ? "High-resolution preview displayed" : "High-resolution preview displayed" };
   }
   return { key: "base-ready", label: state?.rapid ? "Tile thumbnail · rapid browsing" : "Tile thumbnail displayed" };
 }
@@ -367,9 +367,10 @@ export function createViewerAssetEngine(options = {}) {
       stopIntent();
       options.abort?.(fileId, "inactive");
     },
-    ensureFull(file) {
+    ensureFull(file, { force = false } = {}) {
       stopIntent();
-      if (options.canLoadFull?.(file) === false) return Promise.resolve(false);
+      if (!force && options.canLoadFull?.(file) === false) return Promise.resolve(false);
+      if (force) recordFor(file).fullSupported = true;
       return ensure(file, "full");
     },
     warm(file) {

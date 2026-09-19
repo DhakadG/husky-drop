@@ -216,6 +216,7 @@ export function renderActiveAsset(state) {
 
 export function updateAssetLadder(state = vs.activeAssetState) {
   if (!vs.assetLadderElement || !state) return;
+  syncLoadOriginal(state);
   const mapped = assetLampState(state);
   const stateChanged = vs.assetLadderElement.dataset.state !== mapped.key;
   vs.assetLadderElement.dataset.state = mapped.key;
@@ -229,6 +230,30 @@ export function updateAssetLadder(state = vs.activeAssetState) {
   bar?.setAttribute("aria-valuetext", mapped.label);
   bar?.classList.toggle("indeterminate", Boolean(state.loading && !state.progress));
   if (stateChanged) fx.animateViewerLed(vs.assetLadderElement.querySelector(".pswp-asset-lamp"), mapped.key);
+}
+
+// "Load original" (spec §5): shown for heavy decodable originals while the
+// preview-equivalent is on screen; one click fetches the real file.
+function syncLoadOriginal(state) {
+  const file = vs.pswp?.currSlide?.data?.file;
+  let button = vs.assetLadderElement.querySelector(".pswp-load-original");
+  const show = !!file && file.id === state.fileId && !!file.heavy && canDecodeOriginal(file) && state.presentedTier !== "full" && state.loading !== "full";
+  if (!show) {
+    button?.remove();
+    return;
+  }
+  if (!button) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "pswp-load-original";
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      trackEvent("viewer_load_original", file.name, { bytes: file.size });
+      void vs.viewerAssets?.ensureFull(file, { force: true });
+    });
+    vs.assetLadderElement.appendChild(button);
+  }
+  button.textContent = `Load original (${fmtBytes(file.size)})`;
 }
 
 export function syncAssetLadderVisibility(file = vs.pswp?.currSlide?.data?.file) {

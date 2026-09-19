@@ -82,6 +82,18 @@ export async function indexShareNow(slug) {
   refreshAll();
 }
 
+// "Make RAW previews" (spec §5): dispatch the GitHub runner now.
+export async function runSharePreviewsNow(button) {
+  button.disabled = true;
+  const r = await fetch("/api/admin/share-index/previews/run", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  const d = await r.json().catch(() => ({}));
+  button.querySelector("span").textContent = d.dispatched ? "Runner started" : d.reason || d.error || "Could not start";
+  setTimeout(() => {
+    button.disabled = false;
+    button.querySelector("span").textContent = "Make RAW previews";
+  }, 6000);
+}
+
 // "Clear orphans now" (spec §1.1): sweeps R2 media nobody references,
 // page by page, until the bucket listing is exhausted.
 export async function sweepMediaOrphans(button) {

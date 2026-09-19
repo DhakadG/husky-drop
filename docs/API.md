@@ -398,6 +398,20 @@ Folder stats + thumbnail pre-warm per gallery share (design spec §2/§4/§8.3).
 - `POST /api/admin/media/orphans` `{cursor?, dryRun?}` - deletes R2 media
   objects no indexed share references (one bucket page per call; loop while
   `cursor` is returned).
+- `GET /api/admin/share-index/previews/pending?limit=&shards=&shard=` -
+  files in indexed shares that want a WebP preview-equivalent (RAW / HEIC /
+  TIFF, or decodable images ≥ 50 MB) and have none for their current
+  revision. `PUT /api/admin/share-index/preview/:fileId?rev=` stores the WebP
+  in R2 (`media/<id>/preview-webp-<rev>`); `POST
+  /api/admin/share-index/preview-report` merges a runner batch into KV
+  `share-previews:index` (gain-map HDR files are recorded as "keep the
+  original"); `POST /api/admin/share-index/previews/run` dispatches
+  `transcode-share-previews.yml`. Listings then carry `previewImage`,
+  `previewImageUrl`, `previewImageBytes`, `heavy` and point `thumbs.max` at
+  the WebP.
+- `GET /api/share/media/.../preview-webp/...?dl=<name>` serves the WebP as
+  an attachment; `POST /api/share/zip-ticket` accepts `format: "webp"` and
+  pulls previews from R2 for files that have one (originals otherwise).
 - Shares carry `indexSchedule` (`daily|weekly|monthly|null` = global
   `INDEX_SCHEDULE`) via `PATCH /api/admin/shares/:slug`; creating a gallery
   share starts its first index immediately.

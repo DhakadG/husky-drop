@@ -22,7 +22,7 @@ import { mediaSig } from "./share-token.js";
 export const MEDIA_TTL = 30 * 86400; // seconds
 const EDGE_KEY = "https://media.internal.share/v1";
 // variant -> Drive thumbnail tier (or the 720p preview from previews.js)
-const VARIANTS = { "thumb-lo": "base", "thumb-md": "mid", "thumb-hi": "max", "video-720": "preview" };
+const VARIANTS = { "thumb-lo": "base", "thumb-md": "mid", "thumb-hi": "max", "video-720": "preview", "preview-webp": "preview-webp" };
 export const TIER_VARIANT = { base: "thumb-lo", mid: "thumb-md", max: "thumb-hi" };
 export const mediaVariantTier = (variant) => VARIANTS[variant] || "";
 
@@ -70,9 +70,18 @@ export function parseMediaRange(value) {
   return { start: m[1] ? Number(m[1]) : NaN, end: m[2] ? Number(m[2]) : NaN };
 }
 
-export async function serveMedia(request, ctx, env, { fileId, variant, rev, range = null }) {
+export async function serveMedia(request, ctx, env, { fileId, variant, rev, range = null, download = "" }) {
   const tier = mediaVariantTier(variant);
   if (!tier) return json({ error: "unknown media variant" }, 404);
+  // "smaller (WebP)" downloads (spec §6): same bytes, saved as a file.
+  const res = await serveMediaInner(request, ctx, env, { fileId, variant, rev, range, tier });
+  if (!download || res.status >= 300) return res;
+  const headers = new Headers(res.headers);
+  headers.set("content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(download)}`);
+  return new Response(res.body, { status: res.status, headers });
+}
+
+async function serveMediaInner(request, ctx, env, { fileId, variant, rev, range, tier }) {
   const r2Key = `media/${fileId}/${variant}-${rev}`;
   const edgeKey = new Request(`${EDGE_KEY}/${fileId}/${variant}/${rev}`);
   const cache = caches.default;
@@ -100,6 +109,8 @@ export async function serveMedia(request, ctx, env, { fileId, variant, rev, rang
     // full request fills R2.
   }
 
+  // preview-webp is made by the GitHub runner and only ever lives in R2.
+  if (tier === "preview-webp") return json({ error: "preview not made yet" }, 404);
   return tier === "preview" ? fromPreview(request, ctx, env, { fileId, r2Key, edgeKey, range, bucket, cache }) : fromThumbnail(ctx, env, { fileId, tier, r2Key, edgeKey, bucket, cache });
 }
 
@@ -138,6 +149,8 @@ const r2Put = (bucket, key, body, type, length) =>
     httpMetadata: { contentType: type, cacheControl: `public, max-age=${MEDIA_TTL}, immutable` },
     ...(length ? { customMetadata: { length: String(length) } } : {}),
   });
+// Runner-produced objects (share previews) land here directly.
+export const r2PutBytes = (bucket, key, bytes, type) => r2Put(bucket, key, bytes, type, bytes.byteLength);
 
 // Pre-warm (spec §4 step 2): put one thumbnail variant into R2 unless it is
 // there already. Returns the subrequests spent so chunked jobs can budget.

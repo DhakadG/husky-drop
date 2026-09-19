@@ -2,7 +2,7 @@
 // inline/attachment downloads with Range support, on-demand EXIF info and
 // download-token refresh.
 
-import { cleanText, json, normalizeEvent, sha256 } from "./util.js";
+import { cleanText, json, normalizeEvent, sanitizeFilename, sha256 } from "./util.js";
 import {
   driveFileChunk,
   driveFileMetaCached,
@@ -30,7 +30,8 @@ export async function shareMedia(request, env, ctx, parts) {
   if (gate.error) return gate.error;
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
   const range = variant === "video-720" ? parseLadderRange(request.headers.get("range")) : null;
-  return serveMedia(request, ctx, env, { fileId, variant, rev, range });
+  const download = sanitizeFilename(cleanText(new URL(request.url).searchParams.get("dl") || "", 240));
+  return serveMedia(request, ctx, env, { fileId, variant, rev, range, download });
 }
 
 export async function refreshShareDownload(request, env) {

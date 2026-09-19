@@ -63,6 +63,7 @@ import {
   toggleSharePause,
   indexShareNow,
   sweepMediaOrphans,
+  runSharePreviewsNow,
 } from "./admin-shares.js";
 import { previewFile, refreshDetail, renderDetailLive } from "./admin-detail.js";
 import { shareCreatedDrop } from "./admin-folders.js";
@@ -525,6 +526,8 @@ export function handleAdminAction(e) {
   if (sauth) return toggleShareAuth(sauth.dataset.toggleShareAuth, sauth.dataset.auth === "1");
   const sindex = e.target.closest("[data-index-share]");
   if (sindex) return indexShareNow(sindex.dataset.indexShare);
+  const runPrev = e.target.closest("[data-run-share-previews]");
+  if (runPrev) return runSharePreviewsNow(runPrev);
   const sweep = e.target.closest("[data-sweep-orphans]");
   if (sweep) return sweepMediaOrphans(sweep);
   const sedit = e.target.closest("[data-edit-share]");

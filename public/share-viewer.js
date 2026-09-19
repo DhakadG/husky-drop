@@ -101,7 +101,9 @@ export async function openViewer(index, sourceEl) {
   vs.viewerAssets = createViewerAssetEngine({
     loadTier: loadTierAsset,
     abort: abortAssetLoad,
-    canLoadFull: canDecodeOriginal,
+    // Heavy originals (spec §5) stay opt-in: the WebP preview is the default,
+    // "Load original" in the asset ladder fetches the real bytes.
+    canLoadFull: (file) => canDecodeOriginal(file) && !file.heavy,
     onChange: handleAssetState,
   });
   for (const item of lightboxItems) {
