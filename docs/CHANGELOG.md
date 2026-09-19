@@ -187,7 +187,7 @@ Cloudflare eventually cut off with a 524.
 - Event handlers are delegated on the tab body and attached once, so swapping
   panels can neither lose them nor stack duplicates.
 
-## 2026-09-19 — Activity v2, session continuity, previews cache (PR #71)
+## 2026-09-19 — Activity v2, session continuity, previews cache (PR #81)
 
 - **Activity tab** rebuilt: stats strip for the filtered set, filters for
   kind (drop/share/admin), person, link, range (today…14 d, pulls earlier
@@ -203,6 +203,7 @@ Cloudflare eventually cut off with a 524.
 - Log rows: compact dates, wider column; sidebar live-updates dot no longer
   squashed; icons drop their trailing margin when last in a control.
 - `admin-activity-tools.js` holds the toolbar and table/people views.
+- Stitch retries once after 20 s on Gemini 503/429 (PR #82).
 
 ## 2026-09-16 — Archive links, rules verdicts, overview skeleton fix (PR #69)
 
