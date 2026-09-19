@@ -8,16 +8,14 @@
 // heif-convert (libheif-examples) for HEIC, exiftool for metadata.
 //   HUSKY_ORIGIN=... HUSKY_ADMIN_TOKEN=... JOB_ID=img-xxx node scripts/transcode-images.mjs
 
-import { execFile } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { promisify } from "node:util";
+import { copyMetadataUpright, decodable, ext, run } from "./lib/image-decode.mjs";
 
-const run = promisify(execFile);
 const origin = (process.env.HUSKY_ORIGIN || "").replace(/\/$/, "");
 const token = process.env.HUSKY_ADMIN_TOKEN || "";
 const jobId = process.env.JOB_ID || "";
@@ -28,49 +26,6 @@ if (!origin || !token || !jobId) {
 }
 const sharp = (await import("sharp")).default;
 const api = (path, init = {}) => fetch(`${origin}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers || {}) } });
-const RAW_EXT = /\.(arw|srf|sr2|cr2|cr3|nef|nrw|dng|raf|orf|rw2|pef|3fr|iiq)$/i;
-const ext = (name) => (name.match(/\.([^.]+)$/)?.[1] || "").toLowerCase();
-
-// Get something sharp can read. RAW: libraw develop -> TIFF, falling back to
-// the camera's embedded JPEG (Sony ARW carries a full-size one) when libraw
-// does not know the body yet. HEIC: libheif -> JPEG.
-async function decodable(input, file) {
-  if (RAW_EXT.test(file.name)) {
-    const tiff = `${input}.tiff`;
-    try {
-      await run("dcraw_emu", ["-w", "-q", "3", "-T", "-Z", tiff, input]);
-      return { path: tiff, via: "libraw" };
-    } catch {
-      const jpg = `${input}.preview.jpg`;
-      for (const tag of ["JpgFromRaw", "PreviewImage", "OtherImage"]) {
-        try {
-          const { stdout } = await run("exiftool", ["-b", `-${tag}`, input], { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 });
-          if (stdout.length > 50_000) {
-            await pipeline(Readable.from(stdout), createWriteStream(jpg));
-            return { path: jpg, via: "preview" };
-          }
-        } catch {}
-      }
-      // Lightroom HDR / linear float DNGs: libraw refuses and they carry no
-      // preview. darktable's pipeline handles them.
-      const dt = `${input}.dt.jpg`;
-      try {
-        // darktable locks library.db per config dir, so parallel workers need their own.
-        await run("darktable-cli", [input, dt, "--apply-custom-presets", "false", "--core", "--configdir", `${input}.dtcfg`, "--cachedir", `${input}.dtcache`, "--conf", "write_sidecar_files=never", "--conf", "plugins/imageio/format/jpeg/quality=95"], { timeout: 180_000 });
-        return { path: dt, via: "darktable" };
-      } catch (error) {
-        const tail = `exit ${error.code ?? "?"}: ${String(error.stderr || error.stdout || "").trim().split("\n").slice(-3).join(" | ")}`.slice(0, 300);
-        throw new Error(`unsupported RAW (libraw, embedded preview and darktable all failed): ${tail}`);
-      }
-    }
-  }
-  if (/^hei[cf]$/.test(ext(file.name)) || /hei[cf]/.test(file.mime)) {
-    const jpg = `${input}.heic.jpg`;
-    await run("heif-convert", ["-q", "95", input, jpg]);
-    return { path: jpg, via: "libheif" };
-  }
-  return { path: input, via: "direct" };
-}
 
 async function encode(source, output, file, options, original) {
   const meta = await sharp(source, { failOn: "none", limitInputPixels: false }).metadata();
@@ -106,7 +61,7 @@ async function encode(source, output, file, options, original) {
   }
   // RAW went through an intermediate (developed TIFF or embedded preview),
   // so copy the tags from the real original; pixels are already upright.
-  if (options.metadata !== "strip" && source !== original) await run("exiftool", ["-overwrite_original", "-q", "-tagsfromfile", original, "-all:all", "-orientation=", output]).catch(() => {});
+  if (options.metadata !== "strip" && source !== original) await copyMetadataUpright(original, output);
   if (options.metadata === "strip-gps") await run("exiftool", ["-overwrite_original", "-q", "-gps:all=", output]).catch(() => {});
   return { ...info, q };
 }

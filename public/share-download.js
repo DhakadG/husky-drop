@@ -43,17 +43,23 @@ export async function ensureFreshDownload(file, force = false, signal) {
 // the transfer, but that pops a native OS "Save As" file-explorer dialog on
 // every single download (Chrome/Edge only; unsupported elsewhere), which
 // reads as broken compared to how downloads work on every other site.
+// Download format (spec §6): "original" (default) or "webp" - the
+// preview-equivalent when one exists, the original otherwise.
+export const downloadFormat = () => localStorage.getItem("lhdb_dl_format") === "webp" ? "webp" : "original";
+export const smallerAvailable = (file) => downloadFormat() === "webp" && !!file?.previewImage && !!file.previewImageUrl;
+
 export async function downloadFile(file) {
-  trackEvent("download", file.name, { size: file.size, mime: file.mime, blocked: !!file.downloadBlocked });
+  trackEvent("download", file.name, { size: file.size, mime: file.mime, blocked: !!file.downloadBlocked, format: downloadFormat() });
   if (file.downloadBlocked) {
     toast("Download blocked", file.downloadBlockReason || "This public share blocks risky file types.", "warn");
     return;
   }
   try {
-    const url = await ensureFreshDownload(file);
+    const webpName = (file.name || "file").replace(/\.[^.]+$/, "") + ".webp";
+    const url = smallerAvailable(file) ? `${file.previewImageUrl}?dl=${encodeURIComponent(webpName)}` : await ensureFreshDownload(file);
     const a = document.createElement("a");
     a.href = url;
-    a.download = file.name || "";
+    a.download = smallerAvailable(file) ? webpName : file.name || "";
     document.body.appendChild(a);
     a.click();
     a.remove();

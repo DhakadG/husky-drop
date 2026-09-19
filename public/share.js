@@ -301,6 +301,7 @@ async function showGallery() {
     render();
   });
   installTileSizeControl();
+  installDownloadFormatControl();
   installGalleryTools();
   window.addEventListener("resize", scheduleLayout);
   window.addEventListener("blur", cancelTouchSelection);
@@ -753,6 +754,16 @@ function installHoverZoomControl() {
     trackEvent("layout", `hover zoom ${hoverZoomPref}`, { control: "hover-zoom" });
   });
   applyHoverZoom();
+}
+
+function installDownloadFormatControl() {
+  const select = $("dl-format");
+  if (!select) return;
+  select.value = localStorage.getItem("lhdb_dl_format") === "webp" ? "webp" : "original";
+  select.addEventListener("change", () => {
+    localStorage.setItem("lhdb_dl_format", select.value);
+    trackEvent("layout", `download ${select.value}`, { control: "dl-format" });
+  });
 }
 
 function installTileSizeControl() {

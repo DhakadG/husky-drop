@@ -34,6 +34,7 @@ import { revokeSharePermissions } from "./share-admin.js";
 import { signShareToken, signShareTokenWithExpiry, verifyShareToken, publicDownloadSafety } from "./share-token.js";
 import { mediaThumbs } from "./media-cache.js";
 import { summaryFromStats } from "./share-index.js";
+import { sharePreviewFields, sharePreviewIndex } from "./share-previews.js";
 import { maybeCheckChanges } from "./share-changes.js";
 
 // Expired shares are revoked lazily the first time anyone touches them after
@@ -289,7 +290,7 @@ export async function listShareFiles(request, env, ctx) {
   // call per window across the whole app, off the request path.
   ctx?.waitUntil?.(maybeCheckChanges(env, ctx, request).catch((error) => console.warn("change check failed", String(error?.message || error))));
 
-  const previews = await previewIndex(env);
+  const [previews, imagePreviews] = await Promise.all([previewIndex(env), sharePreviewIndex(env)]);
   const folders = [];
   for (const [i, folderId] of targets) {
     const page = await driveListFolder(env, folderId, single ? cleanText(b.pageToken || "", 500) : "");
@@ -304,7 +305,7 @@ export async function listShareFiles(request, env, ctx) {
         });
         continue;
       }
-      files.push(await publicShareFile(env, share, f, previews));
+      files.push(await publicShareFile(env, share, f, previews, imagePreviews));
     }
     folders.push({
       index: i,
@@ -344,7 +345,7 @@ export async function resolveShareTargets(env, share, body) {
   };
 }
 
-export async function publicShareFile(env, share, f, previews = {}) {
+export async function publicShareFile(env, share, f, previews = {}, imagePreviews = { files: {} }) {
   const [{ token, expiresAt }, media] = await Promise.all([
     signShareTokenWithExpiry(env, "dl", share.slug, f.id),
     f.thumbnailLink ? mediaThumbs(env, share.slug, f) : null,
@@ -358,6 +359,10 @@ export async function publicShareFile(env, share, f, previews = {}) {
   if (Number(img.rotation) % 2 === 1) [w, h] = [h, w];
   const thumbs = media?.thumbs || {};
   const thumbsExpireAt = media?.thumbsExpireAt || 0;
+  // RAW / oversized originals (spec §5): the WebP preview-equivalent stands
+  // in as the high-resolution tier; the original stays one click away.
+  const imagePreview = await sharePreviewFields(env, share.slug, f, imagePreviews);
+  if (imagePreview.previewImage) thumbs.max = imagePreview.previewImageUrl;
   return {
     id: f.id,
     name: cleanText(f.name || "file", 200),
@@ -375,6 +380,7 @@ export async function publicShareFile(env, share, f, previews = {}) {
     dlExpiresAt: expiresAt,
     downloadBlocked: safety.blocked,
     downloadBlockReason: safety.reason,
+    ...imagePreview,
     ...(await previewFields(env, share.slug, f, previews)),
   };
 }

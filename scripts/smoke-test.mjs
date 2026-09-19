@@ -198,6 +198,16 @@ async function withMockedGoogleDrive(fn) {
       mimeType: "image/jpeg",
       modifiedTime: "2026-07-05T00:00:00.000Z",
     },
+    "file-raw": {
+      id: "file-raw",
+      parents: ["nested-folder"],
+      name: "E Raw.ARW",
+      size: "20",
+      mimeType: "image/x-sony-arw",
+      md5Checksum: "abcdef0123456789abcdef0123456789",
+      thumbnailLink: "https://lh3.googleusercontent.com/raw=s220",
+      modifiedTime: "2026-07-06T00:00:00.000Z",
+    },
   };
   const mediaBytes = {
     "file-img": new TextEncoder().encode("IMG!"),
@@ -205,6 +215,7 @@ async function withMockedGoogleDrive(fn) {
     "file-mov": new TextEncoder().encode("MOV!!"),
     "file-exe": new TextEncoder().encode("EXE!!!!!"),
     "file-nested": new TextEncoder().encode("NESTED!!!!!"),
+    "file-raw": new TextEncoder().encode("RAWRAWRAWRAWRAWRAWRA"),
   };
 
   globalThis.fetch = async (input, init = {}) => {
@@ -306,7 +317,7 @@ async function withMockedGoogleDrive(fn) {
       // A folder one level down from the share root, so the recursive
       // summary walk has something real to descend into.
       if (qParam.includes("'nested-folder' in parents")) {
-        return new Response(JSON.stringify({ files: [files["file-nested"]] }), {
+        return new Response(JSON.stringify({ files: [files["file-nested"], files["file-raw"]] }), {
           headers: { "content-type": "application/json" },
         });
       }
@@ -990,9 +1001,9 @@ async function main() {
     // 4 files across both pages of the share root (img, video, mov, exe)
     // plus 1 more inside "nested-folder", which the summary must recurse
     // into rather than only counting the root level.
-    assert.equal(summary.files, 5, "summary recurses into subfolders instead of stopping at the current level");
-    assert.equal(summary.bytes, 34, "summary totals bytes across the whole tree, including subfolders");
-    assert.equal(summary.images, 2, "summary counts images found inside subfolders too");
+    assert.equal(summary.files, 6, "summary recurses into subfolders instead of stopping at the current level");
+    assert.equal(summary.bytes, 54, "summary totals bytes across the whole tree, including subfolders");
+    assert.equal(summary.images, 3, "summary counts images found inside subfolders too");
     assert.equal(summary.videos, 2, "summary counts videos");
     assert.equal(summary.folders, 1, "summary counts the subfolder it walked into");
     assert.ok(calls.listPageSizes.includes("1000"), "summary uses larger Drive page size");
@@ -1014,14 +1025,14 @@ async function main() {
     const foldersBlob = await (await driveEnv.MEDIA_BUCKET.get("stats/drive-share.json")).json();
     assert.equal(Object.keys(foldersBlob.folders).length, 2, "root + nested folder walked");
     assert.equal(foldersBlob.folders["drive-folder"].files, 4, "root direct files");
-    assert.equal(foldersBlob.folders["nested-folder"].files, 1, "nested direct files");
+    assert.equal(foldersBlob.folders["nested-folder"].files, 2, "nested direct files");
     assert.equal(foldersBlob.folders["drive-folder"].cover?.id, "file-img", "cover is the newest photo with a thumbnail");
     const kvWritesBefore = driveEnv.KV.values.size;
     res = await worker.fetch(publicJsonRequest("/api/share/summary", { slug: "drive-share", pin: "2468" }), driveEnv);
     const listCallsBefore = calls.listPageSizes.length;
     const indexedSummary = await res.json();
-    assert.equal(indexedSummary.files, 5, "summary now comes from the stats blob");
-    assert.equal(indexedSummary.bytes, 34);
+    assert.equal(indexedSummary.files, 6, "summary now comes from the stats blob");
+    assert.equal(indexedSummary.bytes, 54);
     assert.equal(indexedSummary.videos, 2);
     assert.equal(indexedSummary.folders, 1);
     assert.ok(indexedSummary.indexedAt, "and says when it was indexed");
@@ -1033,8 +1044,8 @@ async function main() {
     assert.equal(statsBody.indexed, true);
     const nestedFid = (await legacySha256("fid:nested-folder:test-admin")).slice(0, 16);
     assert.ok(statsBody.folders[nestedFid], "folder stats are keyed by the listing's fid");
-    assert.equal(statsBody.folders[nestedFid].files, 1);
-    assert.equal(statsBody.folders[nestedFid].photos, 1);
+    assert.equal(statsBody.folders[nestedFid].files, 2);
+    assert.equal(statsBody.folders[nestedFid].photos, 2);
     assert.ok(Object.values(statsBody.folders).every((f) => !("path" in f) && !("name" in f)), "no Drive names or ids leak through stats");
     assert.ok(mediaKeys().some((key) => key.startsWith("media/file-video/thumb-lo-")), "the warm phase pre-filled thumbnails into R2");
     assert.equal(JSON.stringify(statsBody).includes("googleusercontent"), false);
@@ -1064,6 +1075,46 @@ async function main() {
     assert.equal(swept.removed, 1, "a superseded revision is swept");
     assert.equal(driveEnv.MEDIA_BUCKET.objects.has("media/file-img/thumb-lo-deadbeef"), false);
     assert.ok(mediaKeys().length >= 1, "live thumbnails stay");
+
+    // ---- share previews (spec §5/§6): RAW gets a WebP preview-equivalent in R2 ----
+    res = await worker.fetch(request("/api/admin/share-index/previews/pending?limit=10", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
+    assert.equal(res.status, 200, "pending share previews is admin readable");
+    const pendingPreviews = await res.json();
+    assert.deepEqual(pendingPreviews.pending.map((f) => f.id), ["file-raw"], "only the RAW wants a preview-equivalent (a 4-byte JPEG does not)");
+    assert.equal(pendingPreviews.pending[0].rev, "abcdef0123456789", "the preview is keyed by the Drive md5");
+    res = await worker.fetch(request("/api/admin/share-index/preview/file-raw?rev=abcdef0123456789", { method: "PUT", headers: { authorization: "Bearer test-admin", "content-type": "image/webp" }, body: new TextEncoder().encode("WEBP!") }), driveEnv);
+    assert.equal(res.status, 201, "runner stores the WebP");
+    assert.ok(driveEnv.MEDIA_BUCKET.objects.has("media/file-raw/preview-webp-abcdef0123456789"), "preview lives in R2 under the content-addressed key");
+    res = await worker.fetch(jsonRequest("/api/admin/share-index/preview-report", { runId: "run-1", done: [{ id: "file-raw", rev: "abcdef0123456789", name: "E Raw.ARW", size: 5, ms: 3, via: "libraw", w: 4000, h: 3000 }], skipped: [{ id: "file-img", rev: "x", name: "A Photo.jpg", error: "gain-map", gainmap: true }], finished: true }), driveEnv);
+    assert.equal(res.status, 200, "batch report is accepted");
+    const secondPage = await (await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderIndex: 0, pageToken: listed.folders[0].nextPageToken }), driveEnv)).json();
+    res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderToken: secondPage.folders[0].subfolders[0].ls }), driveEnv);
+    const nestedListing = await res.json();
+    const rawFile = nestedListing.folders[0].files.find((f) => f.name === "E Raw.ARW");
+    assert.equal(rawFile.previewImage, true, "listing knows the RAW has a preview-equivalent");
+    assert.match(rawFile.thumbs.max, /\/preview-webp\/abcdef0123456789\//, "the WebP stands in as the high-resolution tier");
+    assert.equal(rawFile.heavy, false, "a RAW is not 'heavy' - it is simply undecodable in a browser");
+    res = await worker.fetch(request(rawFile.thumbs.max), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.status, 200, "preview-webp is served through the media ladder");
+    assert.equal(res.headers.get("content-type"), "image/webp");
+    assert.equal(await res.text(), "WEBP!");
+    res = await worker.fetch(request(`${rawFile.previewImageUrl}?dl=E%20Raw.webp`), driveEnv, { waitUntil: (promise) => promise });
+    assert.match(res.headers.get("content-disposition") || "", /^attachment; filename\*=UTF-8''E%20Raw\.webp$/, "?dl= turns the preview into a 'smaller (WebP)' download");
+    res = await worker.fetch(publicJsonRequest("/api/share/zip-ticket", { slug: "drive-share", pin: "2468", format: "webp", files: [{ dl: rawFile.dl }, { dl: firstImage.dl }] }), driveEnv);
+    assert.equal(res.status, 200, "zip ticket accepts the WebP format");
+    const webpTicket = await res.json();
+    const ticketPayload = await driveEnv.KV.get(`sharezip:${webpTicket.ticket}`, "json");
+    assert.equal(ticketPayload.files[0].name, "E Raw.webp", "the RAW comes out of the ZIP as WebP");
+    assert.equal(ticketPayload.files[0].r2Key, "media/file-raw/preview-webp-abcdef0123456789");
+    assert.equal(ticketPayload.files[1].name, "A Photo.jpg", "a file without a preview stays original");
+    res = await worker.fetch(request(webpTicket.url), driveEnv);
+    assert.equal(res.status, 200, "WebP ZIP streams");
+    const zipBytes = new Uint8Array(await res.arrayBuffer());
+    const zipText = new TextDecoder("latin1").decode(zipBytes);
+    assert.ok(zipText.includes("E Raw.webp") && zipText.includes("WEBP!"), "ZIP carries the R2 preview bytes under the .webp name");
+    assert.ok(zipText.includes("IMG!"), "and the original bytes for the rest");
+    res = await worker.fetch(request("/api/admin/share-index/previews/pending?limit=10", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
+    assert.equal((await res.json()).pending.length, 0, "a made preview leaves the pending list");
 
     res = await worker.fetch(
       publicJsonRequest("/api/share/list", {
