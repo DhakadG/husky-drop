@@ -431,6 +431,9 @@ export function normalizeUploadMeta(meta = {}) {
     f: cleanText(meta.f || "", 120),
     si: cleanText(meta.si || meta.sessionId || "", 80),
     at: Number(meta.at) || Date.now(),
+    // File.lastModified from the uploader's device: lets a later preflight
+    // tell "same file again" from "different file, same name and size".
+    ...(Number(meta.lm) > 0 ? { lm: Number(meta.lm) } : {}),
   };
 }
 

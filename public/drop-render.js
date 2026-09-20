@@ -114,6 +114,7 @@ export function updateRow(el, item) {
   el._bar.style.width = `${pct}%`;
   el._stat.textContent = rowStat(item);
   el._stat.className = `file-stat ${statClass(item.state)}`;
+  el._stat.title = item.state === "error" && item.errorDetail ? `${item.errorCode || "E_UNKNOWN"} · ${item.errorDetail}` : "";
   el.className = `file-row ${item.state}${leaving.includes(item) ? " leaving" : ""}`;
   const canRetry = ATTENTION_STATES.has(item.state);
   const canCancel = item.state === "queued" || item.state === "uploading";
@@ -124,6 +125,9 @@ export function updateRow(el, item) {
 
 export function rowStat(item) {
   if (item.stat) return item.stat;
+  if (item.state === "checking") return "checking";
+  if (item.state === "skipped") return "already in Drive - skipped";
+  if (item.state === "error" && item.errorCode) return `${item.errorCode} · ${item.stat || "failed"}`;
   if (item.state === "uploading") return `${fmtBytes(item.sent)} / ${fmtBytes(item.file.size)}`;
   if (item.state === "done") return `${fmtBytes(item.file.size)} done`;
   if (item.state === "warning") return "Drive saved - log delayed";
@@ -134,22 +138,25 @@ export function rowStat(item) {
 export function statClass(state) {
   if (state === "done") return "ok";
   if (state === "error" || state === "canceled") return "err";
-  if (state === "warning") return "warn";
+  if (state === "warning" || state === "skipped") return "warn";
   return "";
 }
 
 export function renderSummary() {
-  const pct = totals.bytes ? Math.floor((totals.sent / totals.bytes) * 100) : 0;
+  // Skipped files (already in Drive) never send bytes: count them as landed,
+  // not as missing progress, or the bar can never reach 100 %.
+  const landed = totals.done + totals.warning + totals.skipped;
+  const inFlight = totals.queued + totals.checking + totals.uploading;
+  const settled = totals.count > 0 && !inFlight;
+  const pct = settled && !totals.error && !totals.canceled ? 100 : totals.bytes ? Math.min(100, Math.floor((totals.sent / totals.bytes) * 100)) : 0;
   $("pct").textContent = pct;
   $("totalbar").style.width = `${pct}%`;
   $("progress-ring-value").style.strokeDashoffset = String(163.36 * (1 - pct / 100));
   $("detail").textContent = st.queuePaused ? `Paused · ${detailText()}` : detailText();
   // "warning" files are in Drive too (only the dashboard record lagged), so
   // the queue is finished once nothing is queued or uploading.
-  const landed = totals.done + totals.warning;
-  const inFlight = totals.queued + totals.uploading;
-  $("queue-title").textContent = !inFlight && totals.count ? `Delivered ${landed} of ${totals.count} files` : st.queuePaused ? `Paused — ${landed} of ${totals.count} files delivered` : `Uploading — ${landed} of ${totals.count} files`;
-  const completed = totals.count > 0 && totals.done === totals.count;
+  $("queue-title").textContent = settled ? `Delivered ${landed} of ${totals.count} files` : totals.checking && !totals.uploading ? `Checking ${totals.checking} file${totals.checking === 1 ? "" : "s"}…` : st.queuePaused ? `Paused — ${landed} of ${totals.count} files delivered` : `Uploading — ${landed} of ${totals.count} files`;
+  const completed = settled && landed === totals.count;
   document.body.dataset.phase = !totals.count ? "ready" : completed ? "done" : st.networkPaused ? "offline" : st.queuePaused ? "paused" : totals.error ? "attention" : "uploading";
   $("add-more-bar").classList.toggle("hidden", !totals.count || completed);
   // Nothing left to protect once everything landed: drop the "keep this page
@@ -178,6 +185,24 @@ export function renderSummary() {
 
 // The row shows what the uploader can act on, never a stack-trace fragment;
 // the raw message still goes to the admin via reportError().
+// Short codes for the error taxonomy (upload spec §1.4); the plain line
+// comes from humanError(), the raw message sits in the row's title.
+export function errorCode(err) {
+  const status = Number(err?.status) || 0;
+  const message = String(err?.message || "");
+  if (/stalled/i.test(message)) return "E_STALL";
+  if (/timeout/i.test(message)) return "E_TIMEOUT";
+  if (!navigator.onLine || /network|offline|failed to fetch|probe/i.test(message)) return "E_NET";
+  if (status === 401) return "E_AUTH";
+  if (status === 403) return "E_CLOSED";
+  if (status === 410) return "E_EXPIRED";
+  if (status === 413) return "E_BUDGET";
+  if (status === 507) return "E_QUOTA";
+  if (status === 400 || status === 404 || /dead|unsupported|corrupt/i.test(message)) return "E_REJECTED";
+  if (status >= 500 || /is not defined|TypeError|internal error|KV/i.test(message)) return "E_SERVER";
+  return "E_UNKNOWN";
+}
+
 export function humanError(err) {
   const status = Number(err?.status) || 0;
   const message = String(err?.message || "");
@@ -193,7 +218,8 @@ export function humanError(err) {
 }
 
 export function detailText() {
-  const { done, error, warning, canceled, count, sent, bytes } = totals;
+  const { done, error, warning, canceled, count, sent, bytes, skipped, checking } = totals;
+  if (checking && st.active === 0) return `checking ${checking} file${checking === 1 ? "" : "s"} against what is already in Drive`;
   if (st.active > 0) {
     const remaining = Math.max(0, bytes - sent);
     const eta = st.speedBps > 0 ? ` - ~${fmtTime(remaining / st.speedBps)} left` : "";
@@ -201,13 +227,15 @@ export function detailText() {
     return `${done}/${count} files - ${fmtBytes(sent)} of ${fmtBytes(bytes)}${rate}${eta}`;
   }
   const need = error + warning + canceled;
-  if (need) return `${done} done - ${need} need attention, tap retry`;
-  if (count && done === count) return `all ${done} files are in Drive`;
+  const skippedNote = skipped ? ` - ${skipped} already in Drive, skipped` : "";
+  if (need) return `${done} done - ${need} need attention, tap retry${skippedNote}`;
+  if (count && done + skipped === count) return skipped ? `${done} uploaded${skippedNote}` : `all ${done} files are in Drive`;
   return "waiting";
 }
 
 export function maybeQueueNotice() {
-  const stateKey = `${totals.done}:${totals.error}:${totals.warning}:${totals.canceled}:${totals.count}:${st.active}`;
+  const stateKey = `${totals.done}:${totals.error}:${totals.warning}:${totals.canceled}:${totals.skipped}:${totals.checking}:${totals.count}:${st.active}`;
+  if (totals.checking) return;
   if (!totals.count || st.active !== 0 || stateKey === st.lastQueueNotice) return;
   st.lastQueueNotice = stateKey;
   if (totals.error || totals.canceled) {

@@ -144,11 +144,15 @@ export async function openViewer(index, sourceEl) {
   registerVideoContent(vs.pswp);
   registerUi(vs.pswp);
   vs.pswp.on("change", () => {
+    // PhotoSwipe can emit a late "change" while closing, after vs.pswp was
+    // cleared - seen in the client error log as "currIndex of null".
+    if (!vs.pswp) return;
     noteRapidNavigation("slide-change");
     const current = lightboxItems[vs.pswp.currIndex];
     syncAssetLadderVisibility(current);
     closeViewerPanels({ except: vs.viewerRefreshPanelException || (vs.fileInfoPinned ? "file-info" : "") });
     updateCaption(current);
+    if (!vs.pswp) return;
     syncStrip(vs.pswp.currIndex);
     refreshFileInfo(current);
     if (/^image\//.test(current?.mime || "")) {

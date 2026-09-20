@@ -119,7 +119,7 @@ assert.match(dropJs, /queuePaused: false/, "plan 08 tracks queue pause state");
 assert.match(dropJs, /function toggleQueuePause\(/, "plan 08 implements queue pause and resume");
 assert.match(dropJs, /paused:\s*st\.queuePaused/, "plan 08 reports queue pause state to the live admin feed");
 assert.match(dropJs, /budgetHit/, "plan 08 handles real backend budget limits");
-assert.match(dropJs, /sessionId,\s*\n\s*\}\),?\s*\n\s*\}\)/, "completion logging includes the upload session id");
+assert.match(dropJs, /fileId: item\.fileId \|\| "",\s*sessionId,/, "completion logging includes the upload session id");
 assert.match(dropJs, /setState\(item, "done"\);\s*\n\s*sendLive\(true\)/, "final Drive verification forces a terminal live update");
 assert.match(css, /\.transfer-panel-v3\s*\{/, "plan 08 styles the uploader transfer queue");
 

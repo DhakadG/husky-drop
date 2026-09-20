@@ -23,7 +23,7 @@ import {
 import { setConnection } from "./drop.js";
 import { saveResumeRecord, deleteResumeRecord } from "./drop-resume.js";
 import { crumb, reportError } from "./drop-report.js";
-import { schedulePaint, humanError } from "./drop-render.js";
+import { schedulePaint, humanError, errorCode } from "./drop-render.js";
 import { sendLive, acquireWakeLock, releaseWakeLock } from "./drop-live.js";
 import { toast, sleep } from "./drop-utils.js";
 
@@ -207,9 +207,12 @@ async function uploadFile(item) {
     }
 
     setSent(item, item.file.size);
-    setState(item, "done");
-    finalizeComplete(item);
+    // Bytes are in Drive; the record is not filed yet. Upload spec §1.3: say
+    // "verifying" rather than sitting at 100% or claiming done early.
+    item.stat = "verifying";
+    schedulePaint();
     window.dropTrekker?.track("upload_bytes_complete", item.file.name, { size: item.file.size, retries: item.retries || 0, uploadSessionId: sessionId });
+    await finalizeComplete(item);
   } catch (err) {
     if (item.canceled) return;
     if (err.status === 413) {
@@ -218,6 +221,8 @@ async function uploadFile(item) {
       $("budget-notice").classList.remove("hidden");
     }
     item.stat = humanError(err);
+    item.errorCode = errorCode(err);
+    item.errorDetail = String(err?.message || err).slice(0, 300);
     setState(item, "error");
     crumb(`upload failed: ${item.file.name} - ${err?.message || err}`);
     reportError("upload", err, item.file.name);
@@ -313,6 +318,7 @@ async function finalizeComplete(item, attempt = 0) {
       uploader: $("who").value.trim(),
       fileId: item.fileId || "",
       sessionId,
+      lastModified: item.file.lastModified || 0,
     }),
   }).catch(() => null);
   if (r?.ok) {
@@ -339,6 +345,14 @@ export function retryItem(item) {
   if (!ATTENTION_STATES.has(item.state)) return;
   item.canceled = false;
   item.retries = 0;
+  if (item.state === "skipped") {
+    // "Upload anyway" for a preflight duplicate.
+    item.duplicateOf = "";
+    item.stat = "";
+    setState(item, "queued");
+    pump();
+    return;
+  }
   if (item.fileId) {
     item.stat = "verifying";
     setState(item, "uploading");

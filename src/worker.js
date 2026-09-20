@@ -36,7 +36,7 @@ import {
   verifySharePin,
 } from "./share.js";
 import { createShare, deleteShare, listShares, patchShare } from "./share-admin.js";
-import { listShareIndexJobs, runShareIndexChunk, shareIndexStatus } from "./share-index.js";
+import { listShareIndexJobs, runShareIndexChunk, shareIndexGaps, shareIndexStatus } from "./share-index.js";
 import { maybeCheckChanges, runDueShareIndex, sweepOrphans } from "./share-changes.js";
 import { shareStats, startShareIndex } from "./share-stats.js";
 import { listPendingSharePreviews, listPendingShareThumbs, putSharePreview, putShareThumb, reportSharePreviews, shareThumbSource, startSharePreviews } from "./share-previews.js";
@@ -60,6 +60,7 @@ import {
   logComplete,
   logClientError,
   dropTrack,
+  preflightFiles,
 } from "./drop-api.js";
 import {
   browseAdminDriveFolders,
@@ -69,6 +70,7 @@ import {
   patchLink,
   deleteLink,
   listUploads,
+  uploadSessions,
   trashUpload,
   linkDetail,
   adminOverview,
@@ -204,7 +206,7 @@ async function api(request, env, url, ctx) {
 
   if (m === "POST" && p === "/api/hello") return clientHello(request, env, ctx);
   // Banned accounts/devices get no session, listing or download.
-  if (/^\/api\/(session|verify|link\/|share\/(meta|verify|list|summary|stats|dl|zip|media|redirect|file-info|refresh-dl))/.test(p) && (await bannedRequest(env, request))) return blockedResponse(false);
+  if (/^\/api\/(session|verify|link\/|share\/(meta|verify|list|summary|stats|dl|zip|media|redirect|file-info|refresh-dl))|^\/api\/preflight$/.test(p) && (await bannedRequest(env, request))) return blockedResponse(false);
   if (m === "GET" && p.startsWith("/api/link/")) {
     return getPublicLink(request, env, p.slice("/api/link/".length));
   }
@@ -212,6 +214,7 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/opened") return logOpened(request, env, ctx);
   if (m === "POST" && p === "/api/progress") return logProgress(request, env, ctx);
   if (m === "POST" && p === "/api/session") return createSession(request, env);
+  if (m === "POST" && p === "/api/preflight") return preflightFiles(request, env);
   if (m === "POST" && p === "/api/complete") return logComplete(request, env);
   if (m === "POST" && p === "/api/client-error") return logClientError(request, env);
   if (m === "POST" && p === "/api/drop/track") return dropTrack(request, env, ctx);
@@ -283,6 +286,7 @@ async function api(request, env, url, ctx) {
       if (m === "POST" && seg[0] === "jobs" && seg[1] && seg[2] === "continue") return json({ ok: true, job: await runShareIndexChunk(env, ctx, cleanText(seg[1], 60), request) });
       if (m === "POST" && seg[0] === "run") return startShareIndex(request, env, ctx);
       if (m === "GET" && seg[0] === "status" && seg[1]) return json(await shareIndexStatus(env, cleanText(seg[1], 60)));
+      if (m === "GET" && seg[0] === "gaps" && seg[1]) return json(await shareIndexGaps(env, cleanText(seg[1], 60)));
       if (m === "POST" && seg[0] === "check-changes") return json(await maybeCheckChanges(env, ctx, request, { force: true }));
       if (m === "GET" && seg[0] === "previews" && seg[1] === "pending") return listPendingSharePreviews(request, env);
       if (m === "POST" && seg[0] === "previews" && seg[1] === "run") return startSharePreviews(request, env);
@@ -351,6 +355,7 @@ async function api(request, env, url, ctx) {
       const [uploadSlug, fileId] = p.slice("/api/admin/uploads/".length).split("/");
       return trashUpload(request, env, uploadSlug, fileId || "");
     }
+    if (m === "GET" && p.startsWith("/api/admin/upload-sessions/")) return uploadSessions(env, p.slice("/api/admin/upload-sessions/".length), url);
     if (m === "GET" && p.startsWith("/api/admin/uploads/")) {
       return listUploads(env, p.slice("/api/admin/uploads/".length), url);
     }

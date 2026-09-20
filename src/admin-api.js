@@ -193,6 +193,33 @@ export async function deleteLink(request, env, slug) {
   return json({ ok: true });
 }
 
+// Upload sessions for one drop (upload spec §1.5): every telemetry batch
+// the page flushed, grouped by browser session, so "it failed and nobody
+// knows why" is a query. Filters are applied here so the DO stays simple.
+export async function uploadSessions(env, slug, url) {
+  if (!env.LIVE_TRACKER) return json({ sessions: [] });
+  const params = new URLSearchParams({ slug: cleanText(slug, 60), kind: "drop", limit: url.searchParams.get("limit") || "400", since: url.searchParams.get("since") || "0" });
+  const r = await liveStub(env).fetch(`https://live.internal/telemetry-query?${params}`);
+  const { batches = [] } = await r.json().catch(() => ({}));
+  const type = cleanText(url.searchParams.get("type") || "", 40);
+  const file = cleanText(url.searchParams.get("file") || "", 160).toLowerCase();
+  const sessions = new Map();
+  for (const b of batches) {
+    const s = sessions.get(b.sessionId) || { sessionId: b.sessionId, slug: b.slug, viewer: b.viewer, startedAt: b.startedAt || b.at, lastAt: 0, events: [], errors: 0, files: new Set() };
+    s.lastAt = Math.max(s.lastAt, b.at);
+    for (const e of b.events) {
+      if (type && e.t !== type) continue;
+      if (file && !String(e.name || "").toLowerCase().includes(file)) continue;
+      s.events.push({ t: e.t, name: e.name, at: e.at, data: e.data || {} });
+      if (/error|fail|retry|offline/.test(e.t)) s.errors += 1;
+      if (e.name) s.files.add(e.name);
+    }
+    sessions.set(b.sessionId, s);
+  }
+  const out = [...sessions.values()].filter((s) => s.events.length).map((s) => ({ ...s, files: s.files.size, events: s.events.sort((a, b) => a.at - b.at).slice(-400) })).sort((a, b) => b.lastAt - a.lastAt);
+  return json({ sessions: out, batches: batches.length });
+}
+
 export async function listUploads(env, slug, url) {
   const fresh = url?.searchParams.get("fresh") === "1";
   const uploads = await getUploads(env, slug, fresh);

@@ -53,12 +53,16 @@ async function processOne(file, dir) {
     .toFile(output);
   const { size } = await stat(output);
   if (!size || !info.width) throw new Error("encoder produced nothing");
-  const put = await api(`/api/admin/share-index/preview/${file.id}?rev=${encodeURIComponent(file.rev)}`, {
-    method: "PUT",
-    headers: { "content-type": "image/webp", "content-length": String(size) },
-    body: await readFile(output),
-  });
-  if (!put.ok) throw new Error(`put ${put.status}: ${(await put.text()).slice(0, 120)}`);
+  // R2 occasionally answers 500 (10001, "internal error, try again"); the
+  // bytes are already made, so retry the PUT alone.
+  const bytes = await readFile(output);
+  let put;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    put = await api(`/api/admin/share-index/preview/${file.id}?rev=${encodeURIComponent(file.rev)}`, { method: "PUT", headers: { "content-type": "image/webp", "content-length": String(size) }, body: bytes }).catch(() => null);
+    if (put?.ok || (put && put.status < 500)) break;
+    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+  }
+  if (!put?.ok) throw new Error(`put ${put?.status || "network"}: ${put ? (await put.text()).slice(0, 120) : ""}`);
   return { size, via, w: info.width, h: info.height };
 }
 
@@ -101,7 +105,9 @@ try {
           console.log(`ok   ${file.name} ${(file.size / 1e6).toFixed(1)} MB -> ${(out.size / 1e6).toFixed(2)} MB (${out.via})`);
         }
       } catch (error) {
-        batch.skipped.push({ id: file.id, rev: file.rev, name: file.name, error: error.message });
+        // unsupported = every decoder refused; the worker records it so the
+        // file is not retried night after night. Anything else is transient.
+        batch.skipped.push({ id: file.id, rev: file.rev, name: file.name, error: error.message, unsupported: !!error.unsupported });
         console.log(`skip ${file.name}: ${error.message}`);
       }
       processed += 1;

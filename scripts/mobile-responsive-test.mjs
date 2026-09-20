@@ -198,7 +198,7 @@ assert.match(
   "the smart header toggles only its hidden-state class",
 );
 
-assert.match(shareHtml, /<span class="sort-control">[\s\S]*<select id="sort"[^>]*aria-label="sort files"/);
+assert.match(shareHtml, /<span class="sort-control">[\s\S]*<select id="sort"[^>]*aria-label="sort files/);
 assert.match(shareHtml, /<\/select>\s*<svg[^>]*aria-hidden="true"/);
 
 assert.match(

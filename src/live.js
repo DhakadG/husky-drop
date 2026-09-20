@@ -160,6 +160,7 @@ export class LiveTracker {
     }
 
     if (isPost && path === "/telemetry") return reply({ ok: true, stored: this.analytics.storeTelemetry(body) });
+    if (path === "/telemetry-query") return reply({ batches: this.analytics.queryTelemetry({ slug: url.searchParams.get("slug") || "", kind: url.searchParams.get("kind") || "drop", limit: url.searchParams.get("limit"), since: url.searchParams.get("since") }) });
 
     if (isPost && path === "/event") {
       if (body.record) {

@@ -20,6 +20,7 @@ import {
   retryAll,
   cancelAll,
   syncNameStep,
+  setState,
 } from "./drop-queue.js";
 import { resumeKey, loadResumeRecords, maybeShowResumeBanner, hideResumeBanner } from "./drop-resume.js";
 import { crumb, installErrorReporting, reportProblem } from "./drop-report.js";
@@ -415,6 +416,7 @@ export function addFiles(files) {
   let skippedEmpty = 0;
   let skippedDupe = 0;
   let resumed = 0;
+  const fresh = [];
   const seen = new Set(queue.map((q) => `${q.relativePath}:${q.file.name}:${q.file.size}`));
   for (const { file, rel } of incoming) {
     if (!file.size) {
@@ -431,7 +433,7 @@ export function addFiles(files) {
       file,
       relativePath: rel || "",
       sent: 0,
-      state: "queued",
+      state: "checking",
       retries: 0,
       uri: null,
       resumedUri: false,
@@ -450,8 +452,9 @@ export function addFiles(files) {
     }
     queue.push(item);
     totals.count++;
-    totals.queued++;
+    totals.checking++;
     totals.bytes += file.size || 0;
+    fresh.push(item);
   }
   // Upload in the order a person would expect - folder by folder, files in
   // natural name order - so Drive fills up predictably and IMG_2 never lands
@@ -463,8 +466,13 @@ export function addFiles(files) {
   st.lastQueueNotice = "";
   $("transfer-panel").classList.remove("hidden");
   connectLive();
-  pump();
   schedulePaint();
+  // Upload spec §1.2: one batched preflight before a byte leaves. Files the
+  // drop already holds are marked skipped (and say so); the rest queue.
+  preflight(fresh).finally(() => {
+    for (const item of fresh) if (item.state === "checking") setState(item, "queued");
+    pump();
+  });
   const added = incoming.length - skippedEmpty - skippedDupe;
   const notes = [];
   if (resumed) notes.push(`${resumed} resuming`);
@@ -476,6 +484,37 @@ export function addFiles(files) {
     "ok"
   );
   hideResumeBanner();
+}
+
+async function preflight(items) {
+  if (!items.length) return;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch("/api/preflight", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ linkId: slug, pin: st.pin, files: items.map((i) => ({ name: i.file.name, size: i.file.size, lastModified: i.file.lastModified || 0 })) }),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) return;
+    const { results = [] } = await r.json();
+    let dupes = 0;
+    results.forEach((res, i) => {
+      const item = items[i];
+      if (!item || item.state !== "checking" || res?.status !== "duplicate" || item.resumedUri) return;
+      item.duplicateOf = res.fileId || "";
+      item.stat = `already in Drive${res.at ? ` (${new Date(res.at).toLocaleDateString()})` : ""} - skipped`;
+      setState(item, "skipped");
+      window.dropTrekker?.track("upload_skipped_duplicate", item.file.name, { size: item.file.size, fileId: res.fileId || "", uploadSessionId: sessionId });
+      dupes++;
+    });
+    if (dupes) toast(`${dupes} file${dupes === 1 ? "" : "s"} already in Drive`, "Skipped - tap retry on a row to upload it anyway.", "warn");
+  } catch {
+    // Preflight is advisory; a failure means "treat everything as new".
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 init();

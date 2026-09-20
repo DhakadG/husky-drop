@@ -101,7 +101,10 @@ const fileRow = (f, folderId, prev) => {
     th: f.thumbnailLink ? 1 : 0,
     // Warm marker survives a re-walk as long as the bytes did not change.
     w: prev && prev.r === r ? prev.w || 0 : 0,
-    d: prev?.d || 0,
+    // Duration from Drive when it has finished processing the video; Drive
+    // documents durationMillis as "may not be available immediately upon
+    // upload", so a missing one is pending (dp), not final.
+    d: Number(f.videoMediaMetadata?.durationMillis) || prev?.d || 0,
   };
 };
 
@@ -332,6 +335,14 @@ async function warmChunk(env, cur, state, budget) {
 // The 720p preview is a plain MP4 Drive is happy to describe, so ask once.
 async function backfillDuration(env, state, f, budget) {
   if (f.d) return;
+  // Drive may have finished processing since the walk listed this file.
+  const own = await driveFileMetaCached(env, f.id);
+  budget.left -= 1;
+  const ownMs = Number(own?.videoMediaMetadata?.durationMillis) || 0;
+  if (ownMs) {
+    f.d = ownMs;
+    return;
+  }
   if (!state.previews) state.previews = await previewIndex(env);
   const entry = state.previews.files[f.id];
   if (!entry?.id) return;
@@ -430,6 +441,21 @@ export async function shareIndexStatus(env, slug) {
   const active = activeJobFor(jobs, slug);
   const cur = active ? await readJson(env, jobKey(slug)) : null;
   return { pointer: pointer || null, active: active && { ...active, progress: cur?.progress, chunks: cur?.chunks }, last: jobs.find((j) => j.slug === slug && j.status !== "running") || null };
+}
+
+// Admin "which folders have no stats" (loose-ends spec §4): subfolders a
+// parent lists that never got walked, plus folders that are simply empty -
+// the two reasons a tile is icon-only after a completed index.
+export async function shareIndexGaps(env, slug) {
+  const { folders } = await loadStats(env, slug);
+  if (!folders) return { indexed: false, missing: [], empty: [] };
+  const missing = [];
+  const empty = [];
+  for (const [id, folder] of Object.entries(folders)) {
+    for (const sub of folder.subfolders || []) if (!folders[sub]) missing.push({ id: sub, parent: folder.path });
+    if (!folder.files && !(folder.subfolders || []).length) empty.push({ id, path: folder.path });
+  }
+  return { indexed: true, folders: Object.keys(folders).length, missing, empty };
 }
 
 // Used by the change feed: every file and folder id this share knows.

@@ -480,4 +480,10 @@ for (const tracker of ["public/share-trekker.js", "public/drop-trekker.js"]) {
   assert.match(shareCss, /contain: layout paint style/, "tiles are paint islands so scrolling stops re-costing the page");
 }
 
+// Deep-link regression (loose-ends spec §3.2): the boot-time root hop must
+// not rewrite the URL (fromHistory) and the restore must re-sync the hash.
+const shareBoot = await readFile(new URL("../public/share.js", import.meta.url), "utf8");
+assert.match(shareBoot, /navigate\(crumbs\[0\], \{ push: false, fromHistory: fids\.length > 0, quiet: fids\.length > 0 \}\)/, "root hop on boot never pushes a hash-less URL");
+assert.match(shareBoot, /if \(fids\.length && location\.hash\.slice\(1\) !== path\) history\.replaceState/, "restore re-syncs the URL to the crumbs");
+
 console.log("share viewer regression checks passed");

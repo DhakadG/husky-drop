@@ -34,6 +34,7 @@ import {
 import {
   bumpStats,
   gatePin,
+  getUploads,
   liveProgress,
   liveStub,
   logEvent,
@@ -402,11 +403,44 @@ export async function logComplete(request, env) {
     f: cleanText(fileId || "", 120),
     si: cleanText(sessionId || "", 80),
     at: Date.now(),
+    ...(Number(b.lastModified) > 0 ? { lm: Number(b.lastModified) } : {}),
   };
   await recordCompletion(env, link, meta, request);
   // Per-file "complete" emails were replaced by the per-session digest sent
   // from the Durable Object (flushDigests) to respect Resend's free tier.
   return json({ ok: true });
+}
+
+// Preflight (upload spec §1.2): before a byte leaves the browser, which of
+// these files does this drop already have? Matches completed uploads on
+// name + size (+ lastModified when both sides recorded it). Resumable
+// sessions are the browser's own business (IndexedDB resume records); the
+// Worker never stored a session URI. Fails open: any error means "new".
+export async function preflightFiles(request, env) {
+  const b = await request.json().catch(() => ({}));
+  const link = await env.KV.get(`link:${cleanText(b.linkId || "", 60)}`, "json");
+  if (!link) return json({ error: "link not found" }, 404);
+  const authFailure = await requireDropViewer(request, env, link);
+  if (authFailure) return authFailure;
+  const failure = await gatePin(request, env, link, b.pin);
+  if (failure) return failure;
+  const files = Array.isArray(b.files) ? b.files.slice(0, 500) : [];
+  const known = await getUploads(env, link.slug).catch(() => []);
+  const byKey = new Map();
+  for (const u of known) {
+    const key = `${u.n}|${u.s}`;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(u);
+  }
+  const results = files.map((f) => {
+    const name = sanitizeFilename(String(f?.name || ""));
+    const size = Number(f?.size) || 0;
+    const lm = Number(f?.lastModified) || 0;
+    const candidates = byKey.get(`${name}|${size}`) || [];
+    const match = candidates.find((u) => !u.lm || !lm || u.lm === lm);
+    return match ? { status: "duplicate", fileId: match.f || "", at: match.at, uploader: match.u } : { status: "new" };
+  });
+  return json({ ok: true, results, known: known.length });
 }
 
 export async function logClientError(request, env) {

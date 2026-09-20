@@ -4,6 +4,58 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-21 — Upload preflight and session log, runner decode fixes, folder sort/filter/hover (PR #95)
+
+Second design doc, [upload flow and loose ends](superpowers/specs/2026-09-20-upload-flow-and-loose-ends-design.md),
+verified against the code before anything was changed. Most of §1 already
+existed (instant listing, real XHR progress, stall abort + retry, 308
+resume, Drive size check before "done", per-file telemetry in the DO). A
+deliberate test upload on `/d/temp` reproduced exactly one thing: dropping
+the same file again after a reload uploads a second copy.
+
+- **`POST /api/preflight`** (§1.2): one batched request per drop of files
+  before a byte leaves; matches completed uploads on name + size, and on
+  `lastModified` when both sides recorded it (completions now store `lm`).
+  Duplicates show as *already in Drive – skipped* with "upload anyway" on the
+  row; items sit in a `checking` state (never `queued`) until the answer or
+  a 6 s timeout, so a duplicate cannot start uploading first. Fails open.
+- **Verifying state** on the happy path; stall watchdog 60 s → 20 s; error
+  rows carry a short code (`E_STALL`, `E_NET`, `E_QUOTA`, …) with the raw
+  message in the row's tooltip.
+- **Upload sessions** panel on the link detail page (§1.5):
+  `GET /api/admin/upload-sessions/:slug?type=&file=` reads the telemetry the
+  page already flushes (DO table `telemetry_batches`, 30 days) grouped by
+  browser session, so a "why did it fail" is a lookup.
+- **Progress bar kept animating after delivery**: the stripe animation now
+  runs only in the `uploading` phase; a delivered queue shows a still green
+  bar, a paused/offline one a still striped bar. `checking` and `skipped`
+  count towards the summary correctly (skipped files never send bytes).
+- **Runner** (from the worker logs): iPhone HEICs failed in libheif
+  ("Unsupported codec", "Non-existing depth image") — the HEVC plugin is
+  installed and `pillow-heif` is the fallback decoder; R2 `put 500 (10001)`
+  is retried; files every decoder refuses (Lightroom HDR DNGs) are recorded
+  `skip:"unsupported"` and served as originals instead of failing nightly;
+  one summary log line per report batch instead of one per file.
+- **Thumbnail sizing** (§2): explicit per-tier caps + quality (lo 512/q75,
+  md 1024/q78, hi 1600/q80) — the runner resizes before encoding. The
+  ~1 MB average was the preview tier (left at 4096/q84 on purpose).
+- **Duration** (§3.1): file rows keep Drive's `durationMillis` from the walk;
+  the warm phase re-asks Drive for the original first (processing finishes
+  later), then the preview file. Client badge fallback stays.
+- **URL on refresh** (§3.2): regression contract in `share-viewer-test.mjs`;
+  the #87 fix is the one deployed.
+- **Folder gaps** (§4): `GET /api/admin/share-index/gaps/:slug` lists
+  subfolders never walked and empty folders; icon-only tiles after a full
+  index are empty folders by design.
+- **Folder sort / filter / hover** (§5): sort applies to folders via their
+  stats (newest, oldest, largest, most photos, most videos); a *Show:
+  everything / photos / videos / other* filter hides files and folders
+  without that kind; hovering a folder opens a card with cover, counts,
+  size, date range and last change, positioned with the flip-then-clamp
+  rule (`positionPreview()`, unit-tested).
+- Viewer: guarded a late PhotoSwipe "change" after close (seen in the client
+  error log).
+
 ## 2026-09-20 — WebP thumbnails, even folder grid, 5,000-file preview runs (PR #94)
 
 - **Thumbnails are stored and served as WebP.** Drive only hands out JPEG

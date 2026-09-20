@@ -46,14 +46,27 @@ export async function decodable(input, file) {
         return { path: dt, via: "darktable" };
       } catch (error) {
         const tail = `exit ${error.code ?? "?"}: ${String(error.stderr || error.stdout || "").trim().split("\n").slice(-3).join(" | ")}`.slice(0, 300);
-        throw new Error(`unsupported RAW (libraw, embedded preview and darktable all failed): ${tail}`);
+        throw Object.assign(new Error(`unsupported RAW (libraw, embedded preview and darktable all failed): ${tail}`), { unsupported: true });
       }
     }
   }
   if (isHeic(file)) {
     const jpg = `${input}.heic.jpg`;
-    await run("heif-convert", ["-q", "95", input, jpg]);
-    return { path: jpg, via: "libheif" };
+    try {
+      await run("heif-convert", ["-q", "95", input, jpg]);
+      return { path: jpg, via: "libheif" };
+    } catch (error) {
+      // Ubuntu's libheif lacks the HEVC plugin ("Unsupported codec") and
+      // trips on iPhone depth maps ("Non-existing depth image"). pillow-heif
+      // ships its own, newer libheif with decoders built in.
+      const py = `${input}.pil.jpg`;
+      try {
+        await run("python3", ["-c", "import sys; from PIL import Image; import pillow_heif; pillow_heif.register_heif_opener(); Image.open(sys.argv[1]).convert('RGB').save(sys.argv[2], quality=95)", input, py], { timeout: 120_000 });
+        return { path: py, via: "pillow-heif" };
+      } catch (fallback) {
+        throw Object.assign(new Error(`HEIC decode failed (libheif: ${String(error.stderr || error.message).trim().split("\n").pop()}; pillow-heif: ${String(fallback.stderr || fallback.message).trim().split("\n").pop()})`.slice(0, 300)), { unsupported: true });
+      }
+    }
   }
   return { path: input, via: "direct" };
 }
