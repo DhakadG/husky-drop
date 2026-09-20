@@ -1,9 +1,10 @@
-import { computeJustifiedRows, hoverZoomOrigin } from "./share-gallery-layout.js";
+import { computeJustifiedRows, hoverZoomOrigin, positionPreview } from "./share-gallery-layout.js";
 import { createSmartHeaderState } from "./share-smart-header.js";
 import { switchGoogleAccount } from "./share-access.js";
 import {
   $,
   STRIP_WIDTHS,
+  canHoverPreview,
   crumbs,
   current,
   fx,
@@ -302,6 +303,7 @@ async function showGallery() {
   });
   installTileSizeControl();
   installDownloadFormatControl();
+  installFilterControl();
   installGalleryTools();
   window.addEventListener("resize", scheduleLayout);
   window.addEventListener("blur", cancelTouchSelection);
@@ -525,12 +527,30 @@ function renderCrumbs() {
 // ---- Rendering ----
 
 function sortFiles(files) {
-  const arr = [...files];
+  const arr = [...files].filter((f) => filterMode === "all" || fileKind(f) === filterMode);
   const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
+  const kindRank = { photos: { photos: 0, videos: 1, other: 2 }, videos: { videos: 0, photos: 1, other: 2 } };
   if (sortMode === "new") arr.sort((a, b) => b.at - a.at || byName(a, b));
   else if (sortMode === "old") arr.sort((a, b) => a.at - b.at || byName(a, b));
   else if (sortMode === "size") arr.sort((a, b) => b.size - a.size || byName(a, b));
   else if (sortMode === "type") arr.sort((a, b) => a.mime.localeCompare(b.mime) || byName(a, b));
+  else if (kindRank[sortMode]) arr.sort((a, b) => kindRank[sortMode][fileKind(a)] - kindRank[sortMode][fileKind(b)] || b.at - a.at || byName(a, b));
+  else arr.sort(byName);
+  return arr;
+}
+
+// Folders sort on their stats (loose-ends spec §5) when they have any; a
+// folder without stats sorts as if empty, after the ones with numbers.
+function sortFolders(subs) {
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
+  const st = (sub) => folderStats?.[sub.fid] || null;
+  const num = (sub, key) => st(sub)?.[key] || 0;
+  const arr = [...subs].filter(folderPassesFilter);
+  if (sortMode === "new") arr.sort((a, b) => num(b, "newest") - num(a, "newest") || byName(a, b));
+  else if (sortMode === "old") arr.sort((a, b) => (num(a, "oldest") || Infinity) - (num(b, "oldest") || Infinity) || byName(a, b));
+  else if (sortMode === "size") arr.sort((a, b) => num(b, "bytes") - num(a, "bytes") || byName(a, b));
+  else if (sortMode === "photos") arr.sort((a, b) => num(b, "photos") - num(a, "photos") || byName(a, b));
+  else if (sortMode === "videos") arr.sort((a, b) => num(b, "videos") - num(a, "videos") || byName(a, b));
   else arr.sort(byName);
   return arr;
 }
@@ -561,7 +581,7 @@ export function render(revealOnlyIds = null) {
       section.appendChild(head);
     }
     // Folders always render before files within a listing.
-    const subs = [...(folder.subfolders || [])].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const subs = sortFolders(folder.subfolders || []);
     if (subs.length) {
       const row = document.createElement("div");
       row.className = "folder-row";
@@ -756,6 +776,30 @@ function installHoverZoomControl() {
   applyHoverZoom();
 }
 
+// Filter (loose-ends spec §5): files by kind; folders by whether the stats
+// say they hold that kind (unknown stats keep the folder visible).
+let filterMode = localStorage.getItem("lhdb_filter") || "all";
+const fileKind = (file) => (/^image\//.test(file.mime) ? "photos" : /^video\//.test(file.mime) ? "videos" : "other");
+function folderPassesFilter(sub) {
+  if (filterMode === "all") return true;
+  const s = folderStats?.[sub.fid];
+  if (!s) return true;
+  if (filterMode === "photos") return s.photos > 0;
+  if (filterMode === "videos") return s.videos > 0;
+  return s.files - s.photos - s.videos > 0;
+}
+function installFilterControl() {
+  const select = $("filter");
+  if (!select) return;
+  select.value = ["all", "photos", "videos", "other"].includes(filterMode) ? filterMode : "all";
+  select.addEventListener("change", () => {
+    filterMode = select.value;
+    localStorage.setItem("lhdb_filter", filterMode);
+    trackEvent("layout", `filter ${filterMode}`, { control: "filter" });
+    render();
+  });
+}
+
 function installDownloadFormatControl() {
   const select = $("dl-format");
   if (!select) return;
@@ -922,6 +966,8 @@ async function loadFolderStats() {
     if (seq !== folderStatsSeq || !d?.indexed) return;
     folderStats = d.folders || {};
     document.querySelectorAll(".folder-card[data-fid]").forEach((el) => decorateFolderCard(el, folderStats[el.dataset.fid]));
+    // Stats change folder order for every mode except name: re-render.
+    if ((sortMode !== "name" || filterMode !== "all") && current) render();
   } catch {
     // Stats are a progressive enhancement; the icon tile is the baseline.
   }
@@ -970,6 +1016,89 @@ function decorateFolderCard(el, stats) {
   el.replaceChildren(cover, body);
 }
 
+// Hover card (loose-ends spec §5): everything the stats know about a folder,
+// positioned with the measure-then-flip-or-clamp rule from §3.3. One shared
+// element; closes on leave, scroll or Escape. Mouse only.
+let hoverCard = null;
+let hoverTimer = 0;
+function folderHoverCard() {
+  if (hoverCard) return hoverCard;
+  hoverCard = document.createElement("div");
+  hoverCard.className = "folder-hover";
+  hoverCard.setAttribute("role", "tooltip");
+  hoverCard.hidden = true;
+  document.body.appendChild(hoverCard);
+  const hide = () => hideFolderHover();
+  window.addEventListener("scroll", hide, { passive: true });
+  window.addEventListener("resize", hide);
+  document.addEventListener("keydown", (e) => e.key === "Escape" && hide());
+  return hoverCard;
+}
+function hideFolderHover() {
+  clearTimeout(hoverTimer);
+  hoverTimer = 0;
+  if (hoverCard) hoverCard.hidden = true;
+}
+function showFolderHover(el, sub) {
+  const s = folderStats?.[sub.fid];
+  if (!s || !(s.files || s.folders)) return;
+  const card = folderHoverCard();
+  const other = Math.max(0, s.files - s.photos - s.videos);
+  const range = s.oldest && s.newest ? `${new Date(s.oldest).toLocaleDateString(undefined, { year: "numeric", month: "short" })} – ${new Date(s.newest).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}` : "";
+  card.replaceChildren();
+  if (s.cover) {
+    const img = document.createElement("img");
+    img.src = s.cover;
+    img.alt = "";
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+    card.appendChild(img);
+  }
+  const body = document.createElement("div");
+  const title = document.createElement("b");
+  title.textContent = sub.name;
+  body.appendChild(title);
+  const rows = [
+    [`${s.files} file${s.files === 1 ? "" : "s"}`, fmtBytes(s.bytes || 0)],
+    s.photos ? ["Photos", String(s.photos)] : null,
+    s.videos ? ["Videos", String(s.videos)] : null,
+    other ? ["Other files", String(other)] : null,
+    s.folders ? ["Subfolders", String(s.folders)] : null,
+    range ? ["Taken", range] : null,
+    s.newest ? ["Modified", fmtAgo(s.newest)] : null,
+  ].filter(Boolean);
+  const dl = document.createElement("dl");
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = k;
+    const dd = document.createElement("dd");
+    dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  body.appendChild(dl);
+  const hint = document.createElement("small");
+  hint.textContent = "Click to open";
+  body.appendChild(hint);
+  card.appendChild(body);
+  // First frame hidden but laid out, so the measurement is real (§0.1).
+  card.hidden = false;
+  card.style.visibility = "hidden";
+  const { left, top } = positionPreview(card.getBoundingClientRect(), el.getBoundingClientRect(), window.innerWidth, window.innerHeight);
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+  card.style.visibility = "";
+}
+function installFolderHover(el, sub) {
+  if (!canHoverPreview) return;
+  el.addEventListener("pointerenter", (e) => {
+    if (e.pointerType !== "mouse") return;
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => showFolderHover(el, sub), 380);
+  });
+  el.addEventListener("pointerleave", hideFolderHover);
+  el.addEventListener("click", hideFolderHover);
+}
+
 function folderCard(sub) {
   const el = document.createElement("button");
   el.type = "button";
@@ -977,6 +1106,7 @@ function folderCard(sub) {
   el.dataset.cursor = "folder";
   el.dataset.fid = sub.fid;
   el.dataset.name = sub.name;
+  installFolderHover(el, sub);
   el.innerHTML = `${uiIcon("folder")}<span></span>`;
   el.querySelector("span").textContent = sub.name;
   el.addEventListener("click", () => navigate({ fid: sub.fid, name: sub.name, token: sub.ls }, { push: true }));

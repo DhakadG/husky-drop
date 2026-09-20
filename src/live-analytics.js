@@ -132,6 +132,26 @@ export class Analytics {
 
   // ---- raw telemetry ----
 
+  // Upload-session view (upload spec §1.5): batches for one drop, newest
+  // first, events flattened, with the per-event fields the admin filters on.
+  queryTelemetry({ slug = "", kind = "drop", limit = 300, since = 0 } = {}) {
+    if (!this.ready) return [];
+    const rows = this.sql
+      .exec(
+        `SELECT kind, slug, session_id, at, started_at, viewer, events_json FROM telemetry_batches
+         WHERE (? = '' OR slug = ?) AND (? = '' OR kind = ?) AND at >= ? ORDER BY at DESC LIMIT ?`,
+        slug, slug, kind, kind, Number(since) || 0, Math.max(1, Math.min(2000, Number(limit) || 300)),
+      )
+      .toArray();
+    return rows.map((r) => {
+      let events = [];
+      try {
+        events = JSON.parse(r.events_json) || [];
+      } catch {}
+      return { kind: r.kind, slug: r.slug, sessionId: r.session_id, at: r.at, startedAt: r.started_at, viewer: r.viewer, events };
+    });
+  }
+
   storeTelemetry(body) {
     const events = Array.isArray(body.events) ? body.events.slice(0, 40) : [];
     if (!this.ready || !events.length) return false;

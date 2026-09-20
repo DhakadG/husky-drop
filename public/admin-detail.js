@@ -96,6 +96,11 @@ function renderDetail(d) {
       </div>
       <button class="mini upload-show-all hidden" id="up-show-all" type="button"></button>
     </section>
+    <section class="panel detail-sessions">
+      <div class="section-title"><div><p class="eyebrow">debug</p><h2>${icon("activity")} Upload sessions</h2></div><span class="muted">Every state change the upload page reported, per browser session (30 days).</span></div>
+      <div class="sessions-filters"><select id="us-type" class="mini-select"><option value="">All events</option><option value="upload_error">Errors</option><option value="upload_retry">Retries</option><option value="upload_skipped_duplicate">Skipped duplicates</option><option value="upload_complete">Completed</option><option value="network_offline">Went offline</option></select><input id="us-file" class="mini-input" placeholder="filter by file name" /><button id="us-refresh" class="mini" type="button">Refresh</button></div>
+      <div id="upload-sessions" class="sessions-list"><div class="empty">Loading…</div></div>
+    </section>
     <section class="panel settings-fold">
       <div class="section-title"><div><p class="eyebrow">configuration</p><h2>${icon("sliders-horizontal")} Settings</h2></div><span class="muted">Changes apply to this link only.</span></div>
       <div class="settings-accordion">
@@ -129,6 +134,27 @@ function renderDetail(d) {
   });
   renderUploadRows();
   renderDetailLive(l.slug);
+  const reloadSessions = () => renderUploadSessions(l.slug);
+  $("us-type")?.addEventListener("change", reloadSessions);
+  $("us-file")?.addEventListener("change", reloadSessions);
+  $("us-refresh")?.addEventListener("click", reloadSessions);
+  reloadSessions();
+}
+
+// Upload spec §1.5: the per-file event stream, grouped by session, with the
+// filters that turn "it failed and nobody knows why" into a lookup.
+async function renderUploadSessions(slug) {
+  const box = $("upload-sessions");
+  if (!box) return;
+  const params = new URLSearchParams({ type: $("us-type")?.value || "", file: $("us-file")?.value.trim() || "" });
+  const r = await fetch(`/api/admin/upload-sessions/${encodeURIComponent(slug)}?${params}`).catch(() => null);
+  const d = r?.ok ? await r.json() : { sessions: [] };
+  if (!d.sessions.length) {
+    box.innerHTML = `<div class="empty">No upload events recorded${params.get("type") || params.get("file") ? " for this filter" : " yet"}.</div>`;
+    return;
+  }
+  const label = (e) => `${esc(e.t.replaceAll("_", " "))}${e.name ? ` · ${esc(e.name)}` : ""}${e.data?.status ? ` · HTTP ${esc(String(e.data.status))}` : ""}${e.data?.message ? ` · ${esc(String(e.data.message))}` : ""}${e.data?.percent != null ? ` · ${esc(String(e.data.percent))}%` : ""}${e.data?.retry ? ` · retry ${esc(String(e.data.retry))}` : ""}`;
+  box.innerHTML = d.sessions.map((s) => `<details class="session-card${s.errors ? " has-errors" : ""}"><summary><b>${esc(s.viewer || "anonymous")}</b><span>${esc(fmtDateDMY(s.startedAt || s.lastAt))}</span><span>${s.files} file${s.files === 1 ? "" : "s"}</span><span>${s.events.length} events</span>${s.errors ? `<span class="err">${s.errors} problem${s.errors === 1 ? "" : "s"}</span>` : ""}<code>${esc(s.sessionId.slice(0, 10))}</code></summary><ol class="session-events">${s.events.map((e) => `<li class="${/error|fail/.test(e.t) ? "err" : /retry|offline|stall|skipped/.test(e.t) ? "warn" : ""}"><time>${esc(new Date(e.at).toLocaleTimeString())}</time>${label(e)}</li>`).join("")}</ol></details>`).join("");
 }
 
 function renderUploadRows() {

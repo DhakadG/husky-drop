@@ -14,7 +14,11 @@ const shards = Math.max(1, Number(process.env.SHARDS) || 1);
 const shard = Math.max(0, Number(process.env.SHARD) || 0);
 const parallel = Math.max(1, Math.min(16, Number(process.env.PARALLEL) || 8));
 const budgetMs = (Number(process.env.TIME_BUDGET_MIN) || 270) * 60_000;
-const QUALITY = Number(process.env.THUMB_QUALITY) || 80;
+// Caps per tier (sizing spec §2): resolution is where the bytes go, not
+// quality. lo serves 512px cells and folder covers, md the default grid,
+// hi the hover/large grid. Drive's derivative is already at most this size;
+// the resize is the guarantee, not the usual path.
+const TIER = { "thumb-lo": { edge: 512, quality: 75 }, "thumb-md": { edge: 1024, quality: 78 }, "thumb-hi": { edge: 1600, quality: 80 } };
 if (!origin || !token) {
   console.error("HUSKY_ORIGIN and HUSKY_ADMIN_TOKEN are required");
   process.exit(2);
@@ -45,9 +49,15 @@ const worker = async () => {
       }
       if (!src.ok) throw new Error(`source ${src.status}`);
       const input = Buffer.from(await src.arrayBuffer());
-      const webp = await sharp(input, { failOn: "none" }).rotate().webp({ quality: QUALITY, effort: 4 }).toBuffer();
-      const put = await api(`/api/admin/share-index/thumb/${job.id}/${job.variant}/${job.rev}`, { method: "PUT", headers: { "content-type": "image/webp", "content-length": String(webp.length) }, body: webp });
-      if (!put.ok) throw new Error(`put ${put.status}`);
+      const tier = TIER[job.variant] || TIER["thumb-md"];
+      const webp = await sharp(input, { failOn: "none" }).rotate().resize({ width: tier.edge, height: tier.edge, fit: "inside", withoutEnlargement: true }).webp({ quality: tier.quality, effort: 4 }).toBuffer();
+      let put;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        put = await api(`/api/admin/share-index/thumb/${job.id}/${job.variant}/${job.rev}`, { method: "PUT", headers: { "content-type": "image/webp", "content-length": String(webp.length) }, body: webp }).catch(() => null);
+        if (put?.ok || (put && put.status < 500)) break;
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+      }
+      if (!put?.ok) throw new Error(`put ${put?.status || "network"}`);
       made += 1;
       bytesIn += input.length;
       bytesOut += webp.length;

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeJustifiedRows, hoverZoomOrigin } from "../public/share-gallery-layout.js";
+import { computeJustifiedRows, hoverZoomOrigin, positionPreview } from "../public/share-gallery-layout.js";
 
 const items = [
   { id: "a", aspect: 1.5 },
@@ -43,5 +43,14 @@ assert.equal(hoverZoomOrigin({ ...tile, left: 1350, right: 1600 }, 1.5, 1600, 90
 assert.equal(hoverZoomOrigin({ ...tile, left: 600, right: 850, top: 10, bottom: 260 }, 1.5, 1600, 900), "center top");
 assert.equal(hoverZoomOrigin({ ...tile, left: 600, right: 850 }, 1.5, 1600, 900), "center center");
 assert.equal(hoverZoomOrigin(tile, 1, 1600, 900), "", "no zoom, no override");
+
+// Hover card placement (loose-ends spec §3.3): right of the anchor, flip
+// left when it would overflow, above when the bottom is short, below when
+// flipping up would leave the top.
+const card = { width: 300, height: 220 };
+assert.deepEqual(positionPreview(card, { left: 100, right: 340, top: 200, bottom: 300 }, 1600, 900), { left: 348, top: 200 });
+assert.deepEqual(positionPreview(card, { left: 1300, right: 1540, top: 200, bottom: 300 }, 1600, 900), { left: 992, top: 200 });
+assert.deepEqual(positionPreview(card, { left: 100, right: 340, top: 780, bottom: 880 }, 1600, 900), { left: 348, top: 660 });
+assert.deepEqual(positionPreview(card, { left: 100, right: 340, top: 4, bottom: 104 }, 1600, 300), { left: 348, top: 8 });
 
 console.log("share gallery layout checks passed");

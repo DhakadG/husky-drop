@@ -44,6 +44,22 @@ export function computeJustifiedRows(items, options) {
 // edge of the grid past the viewport (the left half of a first-column tile
 // vanished off-screen). Measured before the transition starts: whichever
 // edge would clip becomes the transform origin, so the tile grows inward.
+// Floating card next to an anchor (folder hover card): prefer the right of
+// the anchor, flip left when that overflows; prefer top-aligned, flip up to
+// sit above the bottom edge, and fall back to below when flipping would go
+// off the top. Then clamp. (Loose-ends spec §3.3.)
+export function positionPreview(size, anchorRect, vw, vh, margin = 8) {
+  const { width: pw, height: ph } = size;
+  let left = anchorRect.right + margin;
+  if (left + pw > vw - margin) left = anchorRect.left - pw - margin;
+  left = Math.min(Math.max(left, margin), vw - pw - margin);
+  let top = anchorRect.top;
+  if (top + ph > vh - margin) top = anchorRect.bottom - ph;
+  if (top < margin) top = anchorRect.top;
+  top = Math.min(Math.max(top, margin), vh - ph - margin);
+  return { left, top };
+}
+
 // `bounds` is the box the grown tile must stay inside: the viewport minus
 // whatever covers it (the sticky toolbar at the top, a bottom bar on phones).
 // When a tile cannot fit either way the side with more room wins, and a

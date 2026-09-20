@@ -580,6 +580,53 @@ async function main() {
   // has no alarm, so seed the recent list directly.)
   await env.KV.put("recent:inbox", JSON.stringify([{ n: "IMG.HEIC", s: 200, m: "image/heic", u: "Riya", f: "drive-file-1", si: "session-1", at: Date.now() }]));
   await env.KV.put("stats:inbox", JSON.stringify({ opens: 1, sessions: 1, files: 1, bytes: 200 }));
+
+  // Preflight (upload spec §1.2): the browser asks before sending a byte.
+  res = await worker.fetch(publicJsonRequest("/api/preflight", { linkId: "inbox", files: [
+    { name: "IMG.HEIC", size: 200, lastModified: 0 },
+    { name: "IMG.HEIC", size: 201, lastModified: 0 },
+    { name: "New.mov", size: 999, lastModified: 123 },
+  ] }), env);
+  assert.equal(res.status, 200, "preflight answers for a known drop");
+  const preflight = (await res.json()).results.map((r) => r.status);
+  assert.deepEqual(preflight, ["duplicate", "new", "new"], "same name + size is a duplicate, a different size or name is new");
+  // Recorded lastModified must match when the browser also supplies one.
+  await env.KV.put("recent:inbox", JSON.stringify([{ n: "IMG.HEIC", s: 200, m: "image/heic", u: "Riya", f: "drive-file-1", si: "session-1", at: Date.now(), lm: 555 }]));
+  res = await worker.fetch(publicJsonRequest("/api/preflight", { linkId: "inbox", files: [{ name: "IMG.HEIC", size: 200, lastModified: 556 }, { name: "IMG.HEIC", size: 200, lastModified: 555 }, { name: "IMG.HEIC", size: 200 }] }), env);
+  assert.deepEqual((await res.json()).results.map((r) => r.status), ["new", "duplicate", "duplicate"], "lastModified breaks ties only when both sides have it");
+
+  // Upload sessions view (upload spec §1.5): the per-file telemetry the
+  // page already flushes is queryable per drop, grouped by session. The
+  // Durable Object is stood in for by a store that answers the two routes.
+  const telemetryBatches = [];
+  env.LIVE_TRACKER = { idFromName: () => "live", get: () => ({ fetch: async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.pathname === "/telemetry") {
+      const body = JSON.parse(init.body);
+      telemetryBatches.unshift({ kind: body.kind, slug: body.slug, sessionId: body.sessionId, at: body.at, startedAt: body.startedAt, viewer: body.viewer || "", events: body.events });
+      return new Response(JSON.stringify({ ok: true, stored: true }), { headers: { "content-type": "application/json" } });
+    }
+    if (url.pathname === "/telemetry-query") return new Response(JSON.stringify({ batches: telemetryBatches.filter((b) => b.slug === url.searchParams.get("slug")) }), { headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, first: false, allowed: true, retryAfter: 0 }), { headers: { "content-type": "application/json" } });
+  } }) };
+  await worker.fetch(publicJsonRequest("/api/drop/track", { slug: "inbox", sessionId: "sess-a", startedAt: 1, events: [
+    { t: "upload_start", name: "a.mp4", at: 10, data: { size: 5 } },
+    { t: "upload_error", name: "a.mp4", at: 20, data: { status: 0, message: "stalled" } },
+    { t: "upload_complete", name: "b.jpg", at: 30, data: {} },
+  ] }), env);
+  res = await worker.fetch(request("/api/admin/upload-sessions/inbox", { headers: { authorization: "Bearer test-admin" } }), env);
+  assert.equal(res.status, 200, "upload sessions are admin readable");
+  const sessionsView = await res.json();
+  assert.equal(sessionsView.sessions.length, 1);
+  assert.equal(sessionsView.sessions[0].sessionId, "sess-a");
+  assert.equal(sessionsView.sessions[0].errors, 1, "error-class events are counted");
+  assert.equal(sessionsView.sessions[0].files, 2);
+  res = await worker.fetch(request("/api/admin/upload-sessions/inbox?type=upload_error", { headers: { authorization: "Bearer test-admin" } }), env);
+  assert.deepEqual((await res.json()).sessions[0].events.map((e) => e.t), ["upload_error"], "the view filters by event type");
+  res = await worker.fetch(request("/api/admin/upload-sessions/inbox?file=b.jpg", { headers: { authorization: "Bearer test-admin" } }), env);
+  assert.deepEqual((await res.json()).sessions[0].events.map((e) => e.name), ["b.jpg"], "and by file name");
+  delete env.LIVE_TRACKER;
+  await env.KV.put("recent:inbox", JSON.stringify([{ n: "IMG.HEIC", s: 200, m: "image/heic", u: "Riya", f: "drive-file-1", si: "session-1", at: Date.now() }]));
   res = await worker.fetch(request("/api/admin/uploads/inbox/drive-file-1", { method: "DELETE", headers: { authorization: "Bearer test-admin" } }), env);
   assert.equal(res.status, 200, "admin can trash a delivered upload");
   assert.equal((await res.json()).removed, true);

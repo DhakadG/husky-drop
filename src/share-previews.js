@@ -108,23 +108,27 @@ export async function reportSharePreviews(request, env, ctx) {
     if (!d.id || !d.rev) continue;
     index.files[d.id] = { r: cleanText(d.rev, 16), s: Number(d.size) || 0, at: now, w: Number(d.w) || 0, h: Number(d.h) || 0 };
   }
+  const failed = [];
   for (const s of b.skipped || []) {
     if (!s.id || !s.rev) continue;
     // Gain-map HDR is a decision, not a failure: the original is served.
-    // Other failures are retried on the next run.
+    // "unsupported" = every decoder refused: also served as-is, and not
+    // retried night after night. Anything else is transient and retried.
     if (s.gainmap) index.files[s.id] = { r: cleanText(s.rev, 16), at: now, skip: "gainmap" };
-    else appLog(env, ctx, { level: "warn", area: "share-previews", message: `preview failed: ${cleanText(s.name || s.id, 120)}`, detail: s.error });
+    else if (s.unsupported) index.files[s.id] = { r: cleanText(s.rev, 16), at: now, skip: "unsupported", why: cleanText(s.error || "", 160) };
+    else failed.push(`${cleanText(s.name || s.id, 80)}: ${cleanText(s.error || "", 120)}`);
   }
+  if (failed.length) appLog(env, ctx, { level: "warn", area: "share-previews", message: `${failed.length} preview(s) failed this batch (will retry)`, detail: failed.slice(0, 20) });
   const runId = String(b.runId).slice(0, 40);
   const run = index.runs.find((r) => r.id === runId) || { id: runId, startedAt: now, done: 0, skipped: 0, bytes: 0 };
   run.done += (b.done || []).length;
-  run.skipped += (b.skipped || []).filter((s) => !s.gainmap).length;
-  run.kept = (run.kept || 0) + (b.skipped || []).filter((s) => s.gainmap).length;
+  run.skipped += (b.skipped || []).filter((s) => !s.gainmap && !s.unsupported).length;
+  run.kept = (run.kept || 0) + (b.skipped || []).filter((s) => s.gainmap || s.unsupported).length;
   run.bytes += (b.done || []).reduce((t, d) => t + (Number(d.size) || 0), 0);
   if (b.finishedAt || b.finished) {
     run.finishedAt = now;
     run.pendingLeft = Number(b.pendingLeft) || 0;
-    appLog(env, ctx, { area: "share-previews", message: `run ${runId} finished: ${run.done} previews, ${run.kept || 0} kept as original (HDR), ${run.skipped} failed, ${run.pendingLeft} left` });
+    appLog(env, ctx, { area: "share-previews", message: `run ${runId} finished: ${run.done} previews, ${run.kept || 0} kept as original (HDR / undecodable), ${run.skipped} failed, ${run.pendingLeft} left` });
   }
   if (!index.runs.some((r) => r.id === runId)) index.runs.unshift(run);
   index.runs = index.runs.slice(0, RUNS_KEPT);

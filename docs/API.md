@@ -10,6 +10,9 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 > Public:
 > - `POST /api/client-error` `{linkId?, uploader?, name, message}` - rate
 >   limited 5/min/IP via the Durable Object; logged as `clienterror` events.
+> - `POST /api/preflight` `{linkId, pin, files:[{name,size,lastModified}]}` -
+>   per file `{status:"new"|"duplicate", fileId?, at?, uploader?}` against the
+>   drop's completed uploads (name + size, + lastModified when recorded).
 > - `GET /api/share/meta/:slug` - public share-link metadata (no folder IDs).
 > - `POST /api/share/verify` `{slug, pin}` - share PIN gate (same lockouts).
 > - `POST /api/share/opened` `{slug}` - share open counter (DO-batched).
@@ -425,6 +428,13 @@ Storage: KV `share-index:jobs` (written at job start/end only), KV
 `share-stats:<slug>` pointer, R2 `stats/<slug>.json` (folders),
 `stats/<slug>.files.json` (file rows), `stats/<slug>.job.json` (cursor), KV
 `changes:cursor` (one Drive change token for the app).
+
+### `GET /api/admin/upload-sessions/:slug?type=&file=&since=&limit=`
+
+Per-file upload telemetry for one drop, grouped by browser session (30-day
+DO table `telemetry_batches`), filterable by event type and file name.
+`GET /api/admin/share-index/gaps/:slug` lists subfolders a completed index
+never walked and folders that are simply empty.
 
 ### `GET /api/admin/thumb/:fileId`
 

@@ -121,6 +121,15 @@
             <svg class="ico" aria-hidden="true"><use href="/icons.svg#chevron-down"></use></svg>
           </span>
           <span class="sort-control">
+            <select id="filter" class="sort-select" aria-label="show only" title="Show only photos, videos or other files; folders without any stay hidden too">
+              <option value="all">Show: everything</option>
+              <option value="photos">Show: photos</option>
+              <option value="videos">Show: videos</option>
+              <option value="other">Show: other files</option>
+            </select>
+            <svg class="ico" aria-hidden="true"><use href="/icons.svg#chevron-down"></use></svg>
+          </span>
+          <span class="sort-control">
             <select id="dl-format" class="sort-select" aria-label="Download format" title="Original files, or the smaller WebP versions where one has been made (RAW and very large photos)">
               <option value="original">Download: original</option>
               <option value="webp">Download: smaller (WebP)</option>
@@ -128,12 +137,14 @@
             <svg class="ico" aria-hidden="true"><use href="/icons.svg#chevron-down"></use></svg>
           </span>
           <span class="sort-control">
-            <select id="sort" class="sort-select" aria-label="sort files">
+            <select id="sort" class="sort-select" aria-label="sort files and folders">
               <option value="name">Name A-Z</option>
               <option value="new">Newest first</option>
               <option value="old">Oldest first</option>
               <option value="size">Largest first</option>
               <option value="type">Type</option>
+              <option value="photos">Most photos</option>
+              <option value="videos">Most videos</option>
             </select>
             <svg class="ico" aria-hidden="true"><use href="/icons.svg#chevron-down"></use></svg>
           </span>

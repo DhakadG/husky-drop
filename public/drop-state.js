@@ -31,15 +31,17 @@ export const MAX_ACTIVE = IS_MOBILE ? 8 : 12; // hard cap on parallel files
 export const MEM_WINDOW = IS_MOBILE ? 256 * 1024 * 1024 : 2 * 1024 ** 3;
 export const MAX_CHUNK = (IS_MOBILE ? 64 : 256) * 1024 * 1024; // adaptive chunk ceiling
 export const MIN_CHUNK = 8 * 1024 * 1024;
-export const STALL_MS = 60000; // abort a chunk when no progress for this long
+export const STALL_MS = 20000; // abort a chunk when no progress for this long (upload spec §1.3: 15-20 s)
 export const FAST_CHUNK_MS = 8000; // chunk finished quicker than this -> grow chunk (32 MB in 8 s = 4 MB/s, anything faster deserves bigger PUTs)
-export const ATTENTION_STATES = new Set(["error", "warning", "canceled"]);
+export const ATTENTION_STATES = new Set(["error", "warning", "canceled", "skipped"]);
 
 export const totals = {
   count: 0,
   bytes: 0,
   sent: 0,
   queued: 0,
+  checking: 0,
+  skipped: 0,
   uploading: 0,
   done: 0,
   error: 0,
