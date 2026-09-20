@@ -17,6 +17,9 @@ the way they are. Goal-by-goal status for the September round lives in
 - **Folder dedupe** (`share-index/dedupe`): same md5 + size inside a folder
   subtree, oldest kept, the rest to Drive's trash, index updated by a
   targeted job. Dry run by default. Name-only matches are reported only.
+- **Fix:** the share index asked Drive for file metadata without `trashed`, so a
+  file moved to the trash (dedupe, admin trash, a user tidying up) kept its row
+  until a full walk. Metadata now carries `trashed` and targeted jobs drop it.
 - **Fix:** changes folded into a running index job during its warm phase were
   never applied and vanished when the job finished. Changes now apply in any
   phase and re-open the walk when folders are queued.

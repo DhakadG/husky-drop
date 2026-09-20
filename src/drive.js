@@ -178,7 +178,7 @@ export async function driveFileMeta(env, fileId) {
   const tok = await accessToken(env);
   const url = `https://www.googleapis.com/drive/v3/files/${id}?` + new URLSearchParams({
     fields:
-      "id,name,size,mimeType,parents,appProperties,thumbnailLink,webViewLink,iconLink,createdTime,modifiedTime,md5Checksum," +
+      "id,name,size,mimeType,parents,trashed,appProperties,thumbnailLink,webViewLink,iconLink,createdTime,modifiedTime,md5Checksum," +
       "imageMediaMetadata(aperture,cameraMake,cameraModel,colorSpace,exposureBias,exposureMode,exposureTime," +
       "flashUsed,focalLength,height,isoSpeed,lens,location(latitude,longitude,altitude),maxApertureValue,meteringMode,rotation,sensor," +
       "subjectDistance,time,whiteBalance,width),videoMediaMetadata(width,height,durationMillis)",

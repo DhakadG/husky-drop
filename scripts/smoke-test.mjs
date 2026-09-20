@@ -270,7 +270,9 @@ async function withMockedGoogleDrive(fn) {
         });
       }
       if ((init.method || "GET").toUpperCase() === "PATCH") {
-        calls.trashed.push(decodeURIComponent(url.pathname.split("/").pop().split("?")[0]));
+        const tid = decodeURIComponent(url.pathname.split("/").pop().split("?")[0]);
+        calls.trashed.push(tid);
+        if (files[tid]) files[tid] = { ...files[tid], trashed: true };
         return new Response(JSON.stringify({ id: "ok" }), { headers: { "content-type": "application/json" } });
       }
       if (url.searchParams.get("alt") === "media") {
@@ -310,8 +312,10 @@ async function withMockedGoogleDrive(fn) {
       const id = decodeURIComponent(url.pathname.split("/").pop());
       if (id && id !== "files") {
         const file = files[id];
+        // Drive only returns fields you ask for: a trashed file looks live otherwise.
+        const shown = file && !(url.searchParams.get("fields") || "").includes("trashed") ? { ...file, trashed: undefined } : file;
         return file
-          ? new Response(JSON.stringify(file), { headers: { "content-type": "application/json" } })
+          ? new Response(JSON.stringify(shown), { headers: { "content-type": "application/json" } })
           : new Response(JSON.stringify({ error: "not found" }), { status: 404 });
       }
 
@@ -333,6 +337,7 @@ async function withMockedGoogleDrive(fn) {
     return originalFetch(input, init);
   };
   globalThis.caches = { default: new FakeCache() };
+  calls.files = files;
 
   try {
     return await fn(calls);
@@ -1131,6 +1136,7 @@ async function main() {
     const filesObj = await driveEnv.MEDIA_BUCKET.get("stats/drive-share.files.json").then((o) => o.json());
     const rawRow = filesObj.files.find((f) => f.id === "file-raw");
     filesObj.files.push({ ...rawRow, id: "file-raw-dup", n: "E Raw copy.ARW", t: rawRow.t + 1000 });
+    calls.files["file-raw-dup"] = { ...calls.files["file-raw"], id: "file-raw-dup", name: "E Raw copy.ARW" };
     await driveEnv.MEDIA_BUCKET.put("stats/drive-share.files.json", JSON.stringify(filesObj), {});
     res = await worker.fetch(jsonRequest("/api/admin/share-index/dedupe", { slug: "drive-share", folder: "nested-folder" }), driveEnv);
     assert.equal(res.status, 200, "dedupe dry run answers");
