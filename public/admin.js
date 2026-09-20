@@ -69,6 +69,7 @@ import { previewFile, refreshDetail, renderDetailLive } from "./admin-detail.js"
 import { shareCreatedDrop } from "./admin-folders.js";
 import { refreshPreviews, stopPreviewsPolling, updatePreviewsLive } from "./admin-previews.js";
 import { refreshImages, stopImagesPolling } from "./admin-images.js";
+import { cancelPipelineRun, checkChangesNow, refreshPipelines, stopPipelinesPolling } from "./admin-pipelines.js";
 import { refreshLogs, refreshAlertsBadge } from "./admin-logs.js";
 import { refreshPeople, openPersonByKey } from "./admin-people.js";
 
@@ -288,6 +289,8 @@ export function showTab(name, { push = true } = {}) {
   else stopPreviewsPolling();
   if (name === "images") refreshImages();
   else stopImagesPolling();
+  if (name === "pipelines") refreshPipelines();
+  else stopPipelinesPolling();
   if (name === "logs") refreshLogs();
   if (name === "people") refreshPeople();
   // Panes slide in; the class is removed so the next switch animates again.
@@ -530,6 +533,11 @@ export function handleAdminAction(e) {
   if (runPrev) return runSharePreviewsNow(runPrev);
   const sweep = e.target.closest("[data-sweep-orphans]");
   if (sweep) return sweepMediaOrphans(sweep);
+  const cancelRun = e.target.closest("[data-cancel-run]");
+  if (cancelRun) return cancelPipelineRun(cancelRun);
+  const checkChanges = e.target.closest("[data-check-changes]");
+  if (checkChanges) return checkChangesNow(checkChanges);
+  if (e.target.closest("#pipelines-refresh")) return refreshPipelines();
   const sedit = e.target.closest("[data-edit-share]");
   if (sedit) return openShareEditor(sedit.dataset.editShare);
   const sdel = e.target.closest("[data-del-share]");

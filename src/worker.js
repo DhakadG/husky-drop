@@ -36,8 +36,9 @@ import {
   verifySharePin,
 } from "./share.js";
 import { createShare, deleteShare, listShares, patchShare } from "./share-admin.js";
-import { listShareIndexJobs, runShareIndexChunk, shareIndexGaps, shareIndexStatus } from "./share-index.js";
+import { dedupeShareFolder, listShareIndexJobs, runShareIndexChunk, shareIndexGaps, shareIndexStatus } from "./share-index.js";
 import { maybeCheckChanges, runDueShareIndex, sweepOrphans } from "./share-changes.js";
+import { cancelPipelineRun, pipelinesOverview, reportShareThumbs } from "./pipelines.js";
 import { shareStats, startShareIndex } from "./share-stats.js";
 import { listPendingSharePreviews, listPendingShareThumbs, putSharePreview, putShareThumb, reportSharePreviews, shareThumbSource, startSharePreviews } from "./share-previews.js";
 import { refreshShareDownload, shareDownload, shareFileInfo, shareMedia, shareThumbnail } from "./share-media.js";
@@ -287,6 +288,11 @@ async function api(request, env, url, ctx) {
       if (m === "POST" && seg[0] === "run") return startShareIndex(request, env, ctx);
       if (m === "GET" && seg[0] === "status" && seg[1]) return json(await shareIndexStatus(env, cleanText(seg[1], 60)));
       if (m === "GET" && seg[0] === "gaps" && seg[1]) return json(await shareIndexGaps(env, cleanText(seg[1], 60)));
+      if (m === "POST" && seg[0] === "dedupe") {
+        const b = await request.json().catch(() => ({}));
+        const out = await dedupeShareFolder(env, ctx, request, { slug: cleanText(b.slug || "", 60), folder: cleanText(b.folder || "", 300), dryRun: b.dryRun !== false, limit: Math.max(1, Math.min(500, Number(b.limit) || 200)) });
+        return json(out, out.error ? out.status || 400 : 200);
+      }
       if (m === "POST" && seg[0] === "check-changes") return json(await maybeCheckChanges(env, ctx, request, { force: true }));
       if (m === "GET" && seg[0] === "previews" && seg[1] === "pending") return listPendingSharePreviews(request, env);
       if (m === "POST" && seg[0] === "previews" && seg[1] === "run") return startSharePreviews(request, env);
@@ -297,6 +303,9 @@ async function api(request, env, url, ctx) {
       if (m === "POST" && seg[0] === "preview-report") return reportSharePreviews(request, env, ctx);
     }
     if (m === "POST" && p === "/api/admin/media/orphans") return sweepOrphans(request, env);
+    if (m === "GET" && p === "/api/admin/pipelines") return pipelinesOverview(env);
+    if (m === "POST" && p === "/api/admin/pipelines/cancel") return cancelPipelineRun(request, env);
+    if (m === "POST" && p === "/api/admin/share-index/thumbs-report") return reportShareThumbs(request, env);
     if (m === "PATCH" && p.startsWith("/api/admin/shares/")) {
       return patchShare(request, env, p.slice("/api/admin/shares/".length));
     }

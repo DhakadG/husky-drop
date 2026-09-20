@@ -33,6 +33,8 @@ const queue = pending.flatMap((row) => row.v.map((variant) => ({ ...row, variant
 console.log(`${pending.length} files / ${queue.length} thumbnails for shard ${shard}/${shards} (${total} files overall) · ${parallel} in parallel`);
 
 const started = Date.now();
+const runId = process.env.GITHUB_RUN_ID || `local-${Date.now()}`;
+const report = (finished = false) => api("/api/admin/share-index/thumbs-report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ runId, shard, shards, made, had, failed, bytesIn, bytesOut, total: queue.length + made + had + failed, finished }) }).catch(() => null);
 let made = 0;
 let had = 0;
 let failed = 0;
@@ -65,8 +67,13 @@ const worker = async () => {
       failed += 1;
       if (failed <= 20) console.log(`skip ${job.id} ${job.variant}: ${error.message}`);
     }
-    if ((made + had + failed) % 500 === 0) console.log(`… ${made} made, ${had} already WebP, ${failed} failed`);
+    if ((made + had + failed) % 500 === 0) {
+      console.log(`… ${made} made, ${had} already WebP, ${failed} failed`);
+      await report();
+    }
   }
 };
+await report();
 await Promise.all(Array.from({ length: Math.min(parallel, queue.length) }, worker));
+await report(true);
 console.log(`finished: ${made} made (${(bytesIn / 1e6).toFixed(1)} MB JPEG -> ${(bytesOut / 1e6).toFixed(1)} MB WebP), ${had} already WebP, ${failed} failed`);

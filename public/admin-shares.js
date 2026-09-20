@@ -103,7 +103,7 @@ export async function sweepMediaOrphans(button) {
   let scanned = 0;
   try {
     do {
-      const r = await fetch("/api/admin/media/orphans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cursor }) });
+      const r = await fetch("/api/admin/media/orphans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cursor, scannedSoFar: scanned, removedSoFar: removed }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "sweep failed");
       removed += d.removed || 0;

@@ -18,7 +18,7 @@
 // real numbers, saves its cursor and re-invokes itself. Paid raises the
 // chunk size; the code never asks which plan it is on.
 
-import { driveFileMeta, driveFileMetaCached, driveListFolder } from "./drive.js";
+import { driveFileMeta, driveFileMetaCached, driveListFolder, driveTrashFile } from "./drive.js";
 import { previewIndex } from "./previews.js";
 import { cleanText, json, sha256 } from "./util.js";
 import { mediaRev, mediaThumbs } from "./media-cache.js";
@@ -163,7 +163,11 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
   try {
     const { pointer, folders } = await loadStats(env, job.slug);
     const state = { folders: folders || {}, files: await loadFiles(env, job.slug) };
-    if (cur.phase === "walk" && cur.changed.length) await applyChanges(env, cur, state, budget);
+    // Changes folded into a running job (change feed while it walks or
+    // warms) are applied whatever phase it is in; a folder they add is
+    // queued and walked before the job may complete.
+    if (cur.changed.length) await applyChanges(env, cur, state, budget);
+    if (cur.queue.length && cur.phase !== "walk") cur.phase = "walk";
     if (cur.phase === "walk") await walkChunk(env, cur, state, budget);
     if (cur.phase === "warm") await warmChunk(env, cur, state, budget);
     // Preview entries that never got a duration (runs before the runner
@@ -173,7 +177,7 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
     cur.chunks += 1;
     cur.updatedAt = Date.now();
     cur.progress.files = state.files.length;
-    const complete = cur.phase === "done" || cur.chunks >= MAX_CHUNKS;
+    const complete = (cur.phase === "done" && !cur.changed.length && !cur.queue.length) || cur.chunks >= MAX_CHUNKS;
     // Stats are whole once the walk is over; warming thumbnails afterwards
     // does not change a single number, so readers need not wait for it.
     const walked = cur.phase !== "walk" || !!pointer?.complete;
@@ -299,7 +303,7 @@ async function applyChanges(env, cur, state, budget) {
     }
     for (const folderId of touched) if (state.folders[folderId]) state.folders[folderId] = folderStatsFrom(state.files, folderId, state.folders[folderId]);
   }
-  if (!cur.changed.length && !cur.queue.length) {
+  if (!cur.changed.length && !cur.queue.length && cur.phase === "walk") {
     cur.phase = "warm";
     cur.warmAt = 0;
   }
@@ -462,4 +466,63 @@ export async function shareIndexGaps(env, slug) {
 export async function knownIds(env, slug) {
   const [{ folders }, files] = await Promise.all([loadStats(env, slug), loadFiles(env, slug)]);
   return { folderIds: new Set(Object.keys(folders || {})), fileIds: new Set(files.map((f) => f.id)) };
+}
+
+// ---- dedupe (admin) ----
+// Identical files (same Drive md5 + size) inside one folder subtree of an
+// indexed share: the oldest copy stays, the rest go to Drive's trash (30-day
+// recoverable), and a targeted job drops them from the index. Name-only
+// matches are reported, never touched. dryRun lists without trashing.
+export async function dedupeShareFolder(env, ctx, request, { slug, folder, dryRun = true, limit = 200 }) {
+  const share = await env.KV.get(`share:${slug}`, "json");
+  if (!share) return { error: "share not found", status: 404 };
+  const { folders } = await loadStats(env, slug);
+  if (!folders) return { error: "share is not indexed yet", status: 409 };
+  const rootId = folders[folder] ? folder : Object.keys(folders).find((id) => folders[id].path === folder || folders[id].name === folder);
+  if (!rootId) return { error: "folder not found in the index", status: 404 };
+  const inTree = new Set([rootId]);
+  const stack = [rootId];
+  while (stack.length) for (const sub of folders[stack.pop()]?.subfolders || []) if (folders[sub] && !inTree.has(sub)) { inTree.add(sub); stack.push(sub); }
+  const rows = (await loadFiles(env, slug)).filter((f) => inTree.has(f.f));
+  const byContent = new Map();
+  const byName = new Map();
+  for (const f of rows) {
+    if (!f.r.startsWith("m")) {
+      const k = `${f.r}|${f.s}`;
+      if (!byContent.has(k)) byContent.set(k, []);
+      byContent.get(k).push(f);
+    }
+    const nk = `${f.n.toLowerCase()}|${f.s}`;
+    if (!byName.has(nk)) byName.set(nk, []);
+    byName.get(nk).push(f);
+  }
+  const groups = [...byContent.values()].filter((g) => g.length > 1).map((g) => g.sort((a, b) => a.t - b.t));
+  const nameOnly = [...byName.values()].filter((g) => g.length > 1 && new Set(g.map((f) => f.r)).size > 1).map((g) => g.map((f) => ({ id: f.id, name: f.n, size: f.s, at: f.t })));
+  const doomed = groups.flatMap((g) => g.slice(1)).slice(0, limit);
+  const bytes = doomed.reduce((t, f) => t + f.s, 0);
+  let trashed = 0;
+  const failed = [];
+  if (!dryRun) {
+    for (const f of doomed) {
+      if (await driveTrashFile(env, f.id)) trashed += 1;
+      else failed.push(f.n);
+    }
+    if (trashed) {
+      const { job, started } = await planShareIndex(env, ctx, share, { trigger: "dedupe", full: false, changed: doomed.map((f) => f.id) });
+      if (started && job) ctx?.waitUntil?.(runShareIndexChunk(env, ctx, job.id, request));
+      appLog(env, ctx, { area: "share-index", message: `dedupe ${slug} / ${folders[rootId].path}: trashed ${trashed} duplicate copies (${(bytes / 1e6).toFixed(0)} MB)${failed.length ? `, ${failed.length} failed` : ""}` });
+    }
+  }
+  return {
+    folder: { id: rootId, path: folders[rootId].path },
+    scanned: rows.length,
+    groups: groups.length,
+    duplicates: doomed.length,
+    bytes,
+    trashed,
+    failed,
+    sample: groups.slice(0, 25).map((g) => g.map((f) => ({ id: f.id, name: f.n, size: f.s, at: f.t, keep: f === g[0] }))),
+    nameOnly: nameOnly.slice(0, 25),
+    dryRun,
+  };
 }
