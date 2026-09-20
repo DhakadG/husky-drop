@@ -436,6 +436,27 @@ DO table `telemetry_batches`), filterable by event type and file name.
 `GET /api/admin/share-index/gaps/:slug` lists subfolders a completed index
 never walked and folders that are simply empty.
 
+`POST /api/admin/share-index/dedupe` `{slug, folder, dryRun?, limit?}` finds files
+with the same Drive md5 and size inside one indexed folder subtree (`folder`
+is an id, path or name). The oldest copy stays; with `dryRun:false` the rest go
+to Drive's trash (recoverable for 30 days) and a targeted job drops them from
+the index. Name-only matches are listed under `nameOnly`, never touched.
+
+`POST /api/admin/share-index/thumbs-report` is the WebP thumbnail runner's
+progress report (`{runId, shard, shards, made, had, failed, bytesIn, bytesOut,
+total, finished}`), merged per run into `share-thumbs:runs`.
+
+### Pipelines (`/api/admin/pipelines`)
+
+`GET /api/admin/pipelines` is the admin **Pipelines** tab: share-index jobs
+with their live cursor (phase, chunk, folders/files walked, warm progress,
+queued folders, pending changes), the RAW/HEIC preview runner (indexed, kept
+original, pending, last runs), the WebP thumbnail runs, video previews, the
+image-archive job, the Drive change feed cursor and the last orphan sweep.
+With `GITHUB_TOKEN` set it also lists recent GitHub Actions runs of the three
+transcode workflows with per-shard jobs for the active ones.
+`POST /api/admin/pipelines/cancel` `{runId}` cancels a GitHub run.
+
 ### `GET /api/admin/thumb/:fileId`
 
 Returns Drive file preview metadata for admin-side preview/open actions.

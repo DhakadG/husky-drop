@@ -97,6 +97,10 @@
           <svg class="ico" aria-hidden="true"><use href="/icons.svg#images"></use></svg>
           <span class="tab-label">Image archive</span>
         </button>
+        <button class="tab" data-tab="pipelines" type="button">
+          <svg class="ico" aria-hidden="true"><use href="/icons.svg#activity"></use></svg>
+          <span class="tab-label">Pipelines</span>
+        </button>
         <button class="tab" data-tab="logs" type="button">
           <svg class="ico" aria-hidden="true"><use href="/icons.svg#terminal"></use></svg>
           <span class="tab-label">Alerts &amp; log</span>
@@ -252,6 +256,12 @@
       <section id="tab-images" class="tab-pane hidden">
         <div class="pane-head"><div><p class="eyebrow">drive storage</p><h1 class="pane-title">Image archive</h1><span class="muted">Re-encode photos to a resolution cap and sane quality - 8-15 MB originals become 2-3 MB - with a dry run first and a choice of what happens to the originals. RAW (Sony ARW etc.), HEIC, TIFF, PNG, JPEG, WebP.</span></div></div>
         <div id="images-body"></div>
+      </section>
+
+      <!-- PIPELINES: everything running in the background -->
+      <section id="tab-pipelines" class="tab-pane hidden">
+        <div class="pane-head"><div><p class="eyebrow">background work</p><h1 class="pane-title">Pipelines</h1><span class="muted">Share indexing, RAW/HEIC previews, WebP thumbnails, video previews, image archive, the Drive change feed and R2 sweeps - what is running, what ran, what is queued.</span></div><button class="mini" id="pipelines-refresh" type="button">Refresh</button></div>
+        <div id="pipelines-body"><p class="muted">Loading…</p></div>
       </section>
 
       <!-- PEOPLE: one profile per visitor -->

@@ -16,6 +16,7 @@ import { json, shareState } from "./util.js";
 import { appLog } from "./applog.js";
 import { getAllShares } from "./share-admin.js";
 import { knownIds, loadFiles, loadJobs, planShareIndex, runShareIndexChunk, statsPointerKey } from "./share-index.js";
+import { noteOrphanSweep } from "./pipelines.js";
 
 const CURSOR_KEY = "changes:cursor";
 const MAX_CHANGE_PAGES = 5;
@@ -140,5 +141,7 @@ export async function sweepOrphans(request, env) {
     doomed.push(obj.key);
   }
   if (doomed.length && !b.dryRun) await env.MEDIA_BUCKET.delete(doomed);
-  return json({ ok: true, scanned: (page.objects || []).length, removed: b.dryRun ? 0 : doomed.length, wouldRemove: doomed.length, cursor: page.truncated ? page.cursor : null, referenced: live.size });
+  const result = { ok: true, scanned: (page.objects || []).length, removed: b.dryRun ? 0 : doomed.length, wouldRemove: doomed.length, cursor: page.truncated ? page.cursor : null, referenced: live.size };
+  if (!b.dryRun && !result.cursor) await noteOrphanSweep(env, { scanned: (Number(b.scannedSoFar) || 0) + result.scanned, removed: (Number(b.removedSoFar) || 0) + result.removed, referenced: live.size });
+  return json(result);
 }

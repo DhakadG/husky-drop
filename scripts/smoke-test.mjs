@@ -145,7 +145,7 @@ function publicJsonRequest(path, body, method = "POST") {
 async function withMockedGoogleDrive(fn) {
   const originalFetch = globalThis.fetch;
   const originalCaches = globalThis.caches;
-  const calls = { listPageSizes: [], mediaRanges: [], thumbnailUrls: [], thumbnailAuth: [] };
+  const calls = { listPageSizes: [], mediaRanges: [], thumbnailUrls: [], thumbnailAuth: [], trashed: [] };
   const files = {
     "drive-folder": {
       id: "drive-folder",
@@ -268,6 +268,10 @@ async function withMockedGoogleDrive(fn) {
           status: 200,
           headers: { "content-type": "application/json" },
         });
+      }
+      if ((init.method || "GET").toUpperCase() === "PATCH") {
+        calls.trashed.push(decodeURIComponent(url.pathname.split("/").pop().split("?")[0]));
+        return new Response(JSON.stringify({ id: "ok" }), { headers: { "content-type": "application/json" } });
       }
       if (url.searchParams.get("alt") === "media") {
         const id = decodeURIComponent(url.pathname.split("/").pop());
@@ -1122,6 +1126,44 @@ async function main() {
     assert.equal(swept.removed, 1, "a superseded revision is swept");
     assert.equal(driveEnv.MEDIA_BUCKET.objects.has("media/file-img/thumb-lo-deadbeef"), false);
     assert.ok(mediaKeys().length >= 1, "live thumbnails stay");
+
+    // ---- dedupe: identical md5+size inside a folder subtree, oldest stays ----
+    const filesObj = await driveEnv.MEDIA_BUCKET.get("stats/drive-share.files.json").then((o) => o.json());
+    const rawRow = filesObj.files.find((f) => f.id === "file-raw");
+    filesObj.files.push({ ...rawRow, id: "file-raw-dup", n: "E Raw copy.ARW", t: rawRow.t + 1000 });
+    await driveEnv.MEDIA_BUCKET.put("stats/drive-share.files.json", JSON.stringify(filesObj), {});
+    res = await worker.fetch(jsonRequest("/api/admin/share-index/dedupe", { slug: "drive-share", folder: "nested-folder" }), driveEnv);
+    assert.equal(res.status, 200, "dedupe dry run answers");
+    const dry = await res.json();
+    assert.equal(dry.duplicates, 1, "one duplicate copy found by md5+size");
+    assert.equal(dry.trashed, 0, "dry run trashes nothing");
+    assert.deepEqual(dry.sample[0].map((f) => [f.id, f.keep]), [["file-raw", true], ["file-raw-dup", false]], "the oldest copy stays, the newer goes");
+    res = await worker.fetch(jsonRequest("/api/admin/share-index/dedupe", { slug: "drive-share", folder: "nested-folder", dryRun: false }), driveEnv);
+    assert.equal((await res.json()).trashed, 1, "the duplicate is trashed on Drive");
+    assert.deepEqual(calls.trashed, ["file-raw-dup"], "and only that copy");
+    status = await (await worker.fetch(request("/api/admin/share-index/status/drive-share", { headers: { authorization: "Bearer test-admin" } }), driveEnv)).json();
+    for (let i = 0; i < 20 && status.active; i++) {
+      await worker.fetch(jsonRequest(`/api/admin/share-index/jobs/${status.active.id}/continue`, {}), driveEnv);
+      status = await (await worker.fetch(request("/api/admin/share-index/status/drive-share", { headers: { authorization: "Bearer test-admin" } }), driveEnv)).json();
+    }
+    assert.equal(status.last.trigger, "dedupe", "a targeted job follows the trash");
+    assert.ok(!(await driveEnv.MEDIA_BUCKET.get("stats/drive-share.files.json").then((o) => o.json())).files.some((f) => f.id === "file-raw-dup"), "and drops the trashed copy from the index");
+
+    // ---- pipelines overview + thumbnail runner reports ----
+    res = await worker.fetch(jsonRequest("/api/admin/share-index/thumbs-report", { runId: "thumbs-1", shard: 0, shards: 2, made: 3, had: 1, failed: 0, bytesIn: 300, bytesOut: 100, total: 4, finished: true }), driveEnv);
+    assert.equal(res.status, 200, "thumb runner reports progress");
+    await worker.fetch(jsonRequest("/api/admin/share-index/thumbs-report", { runId: "thumbs-1", shard: 1, shards: 2, made: 2, had: 0, failed: 1, bytesIn: 200, bytesOut: 50, total: 3, finished: true }), driveEnv);
+    res = await worker.fetch(request("/api/admin/pipelines", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
+    assert.equal(res.status, 200, "pipelines overview is admin readable");
+    const pipes = await res.json();
+    assert.equal(pipes.github.configured, false, "no GitHub token in tests");
+    assert.equal(pipes.shareIndex.shares.find((s) => s.slug === "drive-share").last.status, "done", "share rows carry the last job");
+    assert.equal(pipes.shareThumbs.runs[0].made, 5, "thumb run totals merge across shards");
+    assert.ok(pipes.shareThumbs.runs[0].finishedAt, "and the run closes when every shard finished");
+    assert.equal(pipes.orphans.removed, 1, "the last orphan sweep is remembered");
+    assert.equal(pipes.sharePreviews.pending, 1, "pending previews are counted from the index");
+    res = await worker.fetch(request("/api/admin/pipelines"), driveEnv);
+    assert.equal(res.status, 401, "pipelines needs admin");
 
     // ---- share previews (spec §5/§6): RAW gets a WebP preview-equivalent in R2 ----
     res = await worker.fetch(request("/api/admin/share-index/previews/pending?limit=10", { headers: { authorization: "Bearer test-admin" } }), driveEnv);

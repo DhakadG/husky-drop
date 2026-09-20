@@ -4,6 +4,23 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-21 — Pipelines tab, folder dedupe, changes applied in any phase (PR #96)
+
+- **Pipelines tab** in admin: one page for everything running in the
+  background - share-index jobs with their live cursor, the RAW/HEIC preview
+  runner, WebP thumbnail runs, video previews, the image-archive job, the
+  Drive change feed and the last orphan sweep - plus the GitHub Actions runs
+  behind them (with `GITHUB_TOKEN`), cancel buttons, and the existing
+  Process now / Run now / Sweep actions. Polls every 10 s while something
+  runs, 30 s otherwise. The thumbnail runner now reports progress
+  (`share-index/thumbs-report`) and the orphan sweep notes its last result.
+- **Folder dedupe** (`share-index/dedupe`): same md5 + size inside a folder
+  subtree, oldest kept, the rest to Drive's trash, index updated by a
+  targeted job. Dry run by default. Name-only matches are reported only.
+- **Fix:** changes folded into a running index job during its warm phase were
+  never applied and vanished when the job finished. Changes now apply in any
+  phase and re-open the walk when folders are queued.
+
 ## 2026-09-21 — Upload preflight and session log, runner decode fixes, folder sort/filter/hover (PR #95)
 
 Second design doc, [upload flow and loose ends](superpowers/specs/2026-09-20-upload-flow-and-loose-ends-design.md),
