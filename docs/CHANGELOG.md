@@ -4,6 +4,22 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-20 — WebP thumbnails, even folder grid, 5,000-file preview runs (PR #94)
+
+- **Thumbnails are stored and served as WebP.** Drive only hands out JPEG
+  derivatives; the new `thumbs` job in `transcode-share-previews.yml`
+  (`scripts/transcode-share-thumbs.mjs`) pulls each one through the worker
+  (`thumb-source`, which answers `204` once a WebP is already in R2),
+  re-encodes with sharp (q80) and PUTs it under the same content-addressed
+  key - lo + md for every file, hi for photos over 3 MB. Roughly a third of
+  the bytes in R2 and on the wire. The Worker no longer pre-fills JPEG
+  thumbnails in its warm phase (it still fills on a live cold miss); a
+  finished share-index dispatches the runner instead.
+- **Folder cards** are a uniform grid (`repeat(auto-fill, minmax(228px,1fr))`)
+  with a fixed two-line name slot so counts and dates line up across the row;
+  icon-only cards take the same box.
+- Preview runner defaults raised to 5,000 files over 8 runners per run.
+
 ## 2026-09-20 — Drop creation can create the share too (PR #92)
 
 Spec §7 of the [media-cache plan](superpowers/specs/2026-09-20-media-cache-ladder-design.md).

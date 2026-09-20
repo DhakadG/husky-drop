@@ -409,6 +409,7 @@ Folder stats + thumbnail pre-warm per gallery share (design spec §2/§4/§8.3).
   `transcode-share-previews.yml`. Listings then carry `previewImage`,
   `previewImageUrl`, `previewImageBytes`, `heavy` and point `thumbs.max` at
   the WebP.
+- `GET /api/admin/share-index/thumbs/pending`, `GET .../thumb-source/:id/:variant/:rev` (`204` when R2 already has a WebP, else Drive's JPEG), `PUT .../thumb/:id/:variant/:rev` (WebP) - the runner's WebP thumbnail loop.
 - `GET /api/share/media/.../preview-webp/...?dl=<name>` serves the WebP as
   an attachment; `POST /api/share/zip-ticket` accepts `format: "webp"` and
   pulls previews from R2 for files that have one (originals otherwise).

@@ -39,7 +39,7 @@ import { createShare, deleteShare, listShares, patchShare } from "./share-admin.
 import { listShareIndexJobs, runShareIndexChunk, shareIndexStatus } from "./share-index.js";
 import { maybeCheckChanges, runDueShareIndex, sweepOrphans } from "./share-changes.js";
 import { shareStats, startShareIndex } from "./share-stats.js";
-import { listPendingSharePreviews, putSharePreview, reportSharePreviews, startSharePreviews } from "./share-previews.js";
+import { listPendingSharePreviews, listPendingShareThumbs, putSharePreview, putShareThumb, reportSharePreviews, shareThumbSource, startSharePreviews } from "./share-previews.js";
 import { refreshShareDownload, shareDownload, shareFileInfo, shareMedia, shareThumbnail } from "./share-media.js";
 import { createShareZipTicket, shareZipDownload } from "./share-zip.js";
 import {
@@ -287,6 +287,9 @@ async function api(request, env, url, ctx) {
       if (m === "GET" && seg[0] === "previews" && seg[1] === "pending") return listPendingSharePreviews(request, env);
       if (m === "POST" && seg[0] === "previews" && seg[1] === "run") return startSharePreviews(request, env);
       if (m === "PUT" && seg[0] === "preview" && seg[1]) return putSharePreview(request, env, seg[1]);
+      if (m === "GET" && seg[0] === "thumbs" && seg[1] === "pending") return listPendingShareThumbs(request, env);
+      if (m === "GET" && seg[0] === "thumb-source" && seg[3]) return shareThumbSource(request, env, seg.slice(1, 4));
+      if (m === "PUT" && seg[0] === "thumb" && seg[3]) return putShareThumb(request, env, seg.slice(1, 4));
       if (m === "POST" && seg[0] === "preview-report") return reportSharePreviews(request, env, ctx);
     }
     if (m === "POST" && p === "/api/admin/media/orphans") return sweepOrphans(request, env);

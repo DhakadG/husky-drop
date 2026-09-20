@@ -9,7 +9,8 @@
 
 import { cleanText, json, shareState } from "./util.js";
 import { typeOf } from "./images.js";
-import { mediaRev, mediaUrl, r2PutBytes } from "./media-cache.js";
+import { mediaRev, mediaUrl, mediaVariantTier, r2PutBytes } from "./media-cache.js";
+import { driveFileMetaCached, driveThumbnail } from "./drive.js";
 import { mediaSig } from "./share-token.js";
 import { getAllShares } from "./share-admin.js";
 import { loadFiles } from "./share-index.js";
@@ -132,7 +133,7 @@ export async function reportSharePreviews(request, env, ctx) {
 }
 
 // Kick the runner (admin button, or the end of a share-index job).
-export async function dispatchSharePreviews(env, { limit = 400, shards = 2 } = {}) {
+export async function dispatchSharePreviews(env, { limit = 5000, shards = 8 } = {}) {
   if (!env.GITHUB_TOKEN) return { dispatched: false, reason: "GITHUB_TOKEN not set - the nightly run will pick it up" };
   const repo = env.GITHUB_REPO || "DhakadG/husky-drop";
   const r = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${WORKFLOW}/dispatches`, {
@@ -145,7 +146,54 @@ export async function dispatchSharePreviews(env, { limit = 400, shards = 2 } = {
 
 export async function startSharePreviews(request, env) {
   const b = await request.json().catch(() => ({}));
-  const result = await dispatchSharePreviews(env, { limit: Math.max(1, Math.min(5000, Number(b.limit) || 400)), shards: Math.max(1, Math.min(20, Number(b.shards) || 2)) });
+  const result = await dispatchSharePreviews(env, { limit: Math.max(1, Math.min(5000, Number(b.limit) || 5000)), shards: Math.max(1, Math.min(20, Number(b.shards) || 8)) });
   const index = await sharePreviewIndex(env);
   return json({ ok: true, ...result, indexed: Object.keys(index.files).length, runs: index.runs.slice(0, 5) }, result.dispatched ? 202 : 200);
+}
+
+// ---- WebP thumbnails (runner-made) ----
+// Drive hands out JPEG thumbnails; the runner re-encodes them as WebP under
+// the same content-addressed key so R2 holds a third of the bytes and every
+// viewer downloads a third of the bytes. The Worker itself never encodes.
+const THUMB_HI_BYTES = 3 * 1024 * 1024;
+export async function listPendingShareThumbs(request, env) {
+  const url = new URL(request.url);
+  const limit = Math.max(1, Math.min(50_000, Number(url.searchParams.get("limit")) || 20_000));
+  const shards = Math.max(1, Math.min(20, Number(url.searchParams.get("shards")) || 1));
+  const shard = Math.max(0, Math.min(shards - 1, Number(url.searchParams.get("shard")) || 0));
+  const seen = new Set();
+  const rows = [];
+  for (const share of await getAllShares(env)) {
+    if (share.mode !== "gallery" || shareState(share) !== "active") continue;
+    for (const f of await loadFiles(env, share.slug)) {
+      if (seen.has(f.id) || !f.th || !/^(image|video)\//.test(f.m || "")) continue;
+      seen.add(f.id);
+      const v = ["thumb-lo", "thumb-md"];
+      if (/^image\//.test(f.m) && f.s >= THUMB_HI_BYTES) v.push("thumb-hi");
+      rows.push({ id: f.id, rev: f.r, v });
+    }
+  }
+  const mine = shards > 1 ? rows.filter((r) => shardOf(r.id, shards) === shard) : rows;
+  return json({ pending: mine.slice(0, Math.ceil(limit / shards)), total: rows.length, shard, shards });
+}
+
+// 204 when R2 already holds a WebP for this key; otherwise Drive's JPEG.
+export async function shareThumbSource(request, env, parts) {
+  const [fileId, variant, rev] = parts.map((p) => cleanText(p || "", 120).replace(/[^a-zA-Z0-9_-]/g, ""));
+  if (!fileId || !variant || !rev || !env.MEDIA_BUCKET) return json({ error: "bad request" }, 400);
+  const head = await env.MEDIA_BUCKET.head(`media/${fileId}/${variant}-${rev}`).catch(() => null);
+  if (head?.httpMetadata?.contentType === "image/webp") return new Response(null, { status: 204 });
+  const meta = await driveFileMetaCached(env, fileId);
+  const asset = meta?.thumbnailLink ? await driveThumbnail(env, meta, mediaVariantTier(variant)) : null;
+  if (!asset?.response?.body) return json({ error: "thumbnail unavailable" }, 404);
+  return new Response(asset.response.body, { headers: { "content-type": asset.response.headers.get("content-type") || "image/jpeg" } });
+}
+
+export async function putShareThumb(request, env, parts) {
+  const [fileId, variant, rev] = parts.map((p) => cleanText(p || "", 120).replace(/[^a-zA-Z0-9_-]/g, ""));
+  if (!fileId || !mediaVariantTier(variant) || !rev || !env.MEDIA_BUCKET) return json({ error: "bad request" }, 400);
+  const body = await request.arrayBuffer();
+  if (!body.byteLength || body.byteLength > 8 * 1024 * 1024) return json({ error: "empty or too large" }, 413);
+  await r2PutBytes(env.MEDIA_BUCKET, `media/${fileId}/${variant}-${rev}`, body, "image/webp");
+  return json({ ok: true, bytes: body.byteLength }, 201);
 }
