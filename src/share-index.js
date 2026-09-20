@@ -21,7 +21,7 @@
 import { driveFileMeta, driveFileMetaCached, driveListFolder } from "./drive.js";
 import { previewIndex } from "./previews.js";
 import { cleanText, json, sha256 } from "./util.js";
-import { mediaRev, mediaThumbs, warmMedia } from "./media-cache.js";
+import { mediaRev, mediaThumbs } from "./media-cache.js";
 import { appLog } from "./applog.js";
 import { dispatchSharePreviews } from "./share-previews.js";
 
@@ -32,9 +32,6 @@ const SKIP_FOLDERS = /^_(archive|compressed|previews)$/;
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const isPhoto = (mime) => /^image\//.test(mime || "");
 const isVideo = (mime) => /^video\//.test(mime || "");
-// Photos this large get the 1600px tier warmed too (spec §4: "high-res for
-// anything actually large enough to matter").
-const HI_RES_BYTES = 3 * 1024 * 1024;
 
 export const chunkBudget = (env) => Math.max(8, Math.min(9000, Number(env.INDEX_CHUNK) || 40));
 // Wall-clock cap per chunk. Background work (ctx.waitUntil) is cut off at
@@ -322,12 +319,8 @@ async function warmChunk(env, cur, state, budget) {
     await Promise.all(batch.map(async (f) => {
       if (isVideo(f.m)) await backfillDuration(env, state, f, budget);
       if (f.w || !f.th || !(isPhoto(f.m) || isVideo(f.m))) return;
-      const variants = f.s >= HI_RES_BYTES && isPhoto(f.m) ? ["thumb-lo", "thumb-hi"] : ["thumb-lo"];
-      for (const variant of variants) {
-        const used = await warmMedia(env, f.id, variant, f.r);
-        budget.left -= used;
-        if (used > 1) cur.progress.warmed += 1;
-      }
+      // Thumbnails are warmed as WebP by the GitHub runner (dispatched when
+      // this job completes); the Worker only fills JPEG on a live cold miss.
       f.w = 1;
     }));
   }

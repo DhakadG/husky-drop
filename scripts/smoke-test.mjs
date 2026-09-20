@@ -1047,7 +1047,7 @@ async function main() {
     assert.equal(statsBody.folders[nestedFid].files, 2);
     assert.equal(statsBody.folders[nestedFid].photos, 2);
     assert.ok(Object.values(statsBody.folders).every((f) => !("path" in f) && !("name" in f)), "no Drive names or ids leak through stats");
-    assert.ok(mediaKeys().some((key) => key.startsWith("media/file-video/thumb-lo-")), "the warm phase pre-filled thumbnails into R2");
+    assert.ok(!mediaKeys().some((key) => key.startsWith("media/file-video/thumb-lo-")), "the Worker no longer pre-fills JPEG thumbnails - the runner makes WebP ones");
     assert.equal(JSON.stringify(statsBody).includes("googleusercontent"), false);
 
     // Targeted reindex (spec §3.1): a change feed naming a known file starts a
@@ -1115,6 +1115,23 @@ async function main() {
     assert.ok(zipText.includes("IMG!"), "and the original bytes for the rest");
     res = await worker.fetch(request("/api/admin/share-index/previews/pending?limit=10", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
     assert.equal((await res.json()).pending.length, 0, "a made preview leaves the pending list");
+
+    // ---- WebP thumbnails via the runner ----
+    res = await worker.fetch(request("/api/admin/share-index/thumbs/pending", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
+    const thumbRows = (await res.json()).pending;
+    assert.ok(thumbRows.some((r) => r.id === "file-img" && r.v.includes("thumb-lo") && r.v.includes("thumb-md")), "every file with a Drive thumbnail is listed with lo + md");
+    const imgRow = thumbRows.find((r) => r.id === "file-img");
+    res = await worker.fetch(request(`/api/admin/share-index/thumb-source/file-img/thumb-lo/${imgRow.rev}`, { headers: { authorization: "Bearer test-admin" } }), driveEnv);
+    assert.equal(res.status, 200, "the JPEG source streams while R2 holds no WebP (the earlier JPEG fill does not count)");
+    assert.equal(await res.text(), "THUMBNAIL");
+    res = await worker.fetch(request(`/api/admin/share-index/thumb/file-img/thumb-lo/${imgRow.rev}`, { method: "PUT", headers: { authorization: "Bearer test-admin", "content-type": "image/webp" }, body: new TextEncoder().encode("WEBPTHUMB") }), driveEnv);
+    assert.equal(res.status, 201, "runner stores the WebP thumbnail");
+    res = await worker.fetch(request(`/api/admin/share-index/thumb-source/file-img/thumb-lo/${imgRow.rev}`, { headers: { authorization: "Bearer test-admin" } }), driveEnv);
+    assert.equal(res.status, 204, "once WebP is stored the source says so instead of re-fetching Drive");
+    globalThis.caches.default.values.clear();
+    res = await worker.fetch(request(firstImage.thumbs.base), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.headers.get("content-type"), "image/webp", "viewers now get the WebP under the same URL");
+    assert.equal(await res.text(), "WEBPTHUMB");
 
     // ---- drop -> share toggle (spec §7) ----
     res = await worker.fetch(jsonRequest("/api/admin/links", { label: "Trip drop", slug: "trip-drop", folderId: "drive-folder", pin: "1357", requireAuth: false, createShare: true }), driveEnv);

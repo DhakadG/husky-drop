@@ -2170,16 +2170,17 @@ body.has-fx-cursor .mobile-select-bar * {
 
 /* Folder cards */
 .folder-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
   gap: 8px;
   margin: 4px 0 10px;
 }
 .folder-card {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 9px;
-  max-width: 300px;
+  min-width: 0;
+  min-height: 96px;
   border: 1px solid var(--line-2);
   border-radius: var(--r-sm);
   background: rgba(255, 255, 255, 0.75);
@@ -2215,8 +2216,6 @@ body.has-fx-cursor .mobile-select-bar * {
   align-items: stretch;
   gap: 0;
   padding: 0;
-  width: 236px;
-  max-width: 100%;
   overflow: hidden;
   text-align: left;
 }
@@ -2241,10 +2240,11 @@ body.has-fx-cursor .mobile-select-bar * {
 .folder-card.rich .folder-body {
   flex: 1 1 auto;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px 10px 8px 10px;
+  display: grid;
+  grid-template-rows: 33px auto auto;
+  align-content: start;
+  gap: 4px;
+  padding: 9px 10px 8px;
   white-space: normal;
 }
 .folder-card.rich b {
@@ -2255,6 +2255,7 @@ body.has-fx-cursor .mobile-select-bar * {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  align-self: start;
 }
 .folder-card.rich small {
   display: flex;
@@ -2283,11 +2284,15 @@ body.has-fx-cursor .mobile-select-bar * {
   color: var(--muted, #8a97a8);
 }
 @media (max-width: 640px) {
-  .folder-card.rich {
-    width: calc(50% - 4px);
+  .folder-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .folder-card {
+    min-height: 84px;
   }
   .folder-card.rich .folder-cover {
-    flex-basis: 62px;
+    flex-basis: 58px;
   }
 }
 
