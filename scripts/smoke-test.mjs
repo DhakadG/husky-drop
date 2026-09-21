@@ -1237,6 +1237,13 @@ async function main() {
     res = await worker.fetch(request("/api/admin/share-index/previews/pending?limit=10", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
     assert.equal((await res.json()).pending.length, 0, "a made preview leaves the pending list");
 
+    // ---- warm-on-browse: pre-warm heavy on-demand tiers into the edge ----
+    res = await worker.fetch(publicJsonRequest("/api/share/warm", { slug: "drive-share", pin: "2468", urls: [rawFile.thumbs.max, rawFile.previewImageUrl, firstImage.thumbs.base] }), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.status, 200, "warm endpoint accepts a folder prefetch");
+    assert.equal((await res.json()).warmed, 2, "only thumb-hi and preview-webp are warmed; the lo/md tiers (already in R2) are skipped");
+    res = await worker.fetch(publicJsonRequest("/api/share/warm", { slug: "drive-share", urls: [rawFile.thumbs.max] }), driveEnv);
+    assert.equal(res.status, 403, "warming still requires the viewer gate");
+
     // ---- WebP thumbnails via the runner ----
     res = await worker.fetch(request("/api/admin/share-index/thumbs/pending", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
     const thumbRows = (await res.json()).pending;

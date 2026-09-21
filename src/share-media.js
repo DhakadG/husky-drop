@@ -34,6 +34,47 @@ export async function shareMedia(request, env, ctx, parts) {
   return serveMedia(request, ctx, env, { fileId, variant, rev, range, download });
 }
 
+// POST /api/share/warm { slug, pin?, urls:[signed media paths] } - when a
+// viewer opens a folder, the client asks us to pre-warm that folder's heavy
+// on-demand tiers (thumb-hi, preview-webp) into Cloudflare's edge cache. The
+// Worker fetches them from Drive/Google and fills the edge; the viewer's own
+// bandwidth is untouched, so the next lightbox open is instant and no data is
+// spent until they actually look. lo/md (already in R2) and video (too big to
+// warm eagerly) are ignored.
+const WARM_TIERS = new Set(["thumb-hi", "preview-webp"]);
+const WARM_MAX = 15; // keep the fan-out under the free-tier subrequest budget
+export async function shareWarm(request, env, ctx) {
+  const b = await request.json().catch(() => ({}));
+  const slug = cleanText(b.slug || "", 60);
+  const { share, error } = await loadActiveShare(env, slug);
+  if (error) return error;
+  const gate = await requireViewer(request, env, share);
+  if (gate.error) return gate.error;
+  const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
+  if (failure) return failure;
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
+  const urls = Array.isArray(b.urls) ? b.urls.slice(0, WARM_MAX) : [];
+  let warmed = 0;
+  await Promise.all(
+    urls.map(async (raw) => {
+      const m = String(raw || "").match(/^\/api\/share\/media\/([^/]+)\/([^/]+)\/([^/]+)\/([a-z0-9]{1,16})\/([^/?#]+)/i);
+      if (!m) return;
+      const uslug = decodeURIComponent(m[1]);
+      const fileId = decodeURIComponent(m[2]);
+      const variant = decodeURIComponent(m[3]);
+      const rev = decodeURIComponent(m[4]);
+      const sig = decodeURIComponent(m[5]);
+      if (uslug !== slug || !WARM_TIERS.has(variant)) return;
+      if (!(await verifyMediaSig(env, slug, fileId, sig))) return;
+      const res = await serveMedia(request, ctx, env, { fileId, variant, rev }).catch(() => null);
+      // serveMedia fills the edge cache via ctx.waitUntil; we don't need the body.
+      res?.body?.cancel?.().catch(() => {});
+      warmed += 1;
+    }),
+  );
+  return json({ ok: true, warmed });
+}
+
 export async function refreshShareDownload(request, env) {
   const b = await request.json().catch(() => ({}));
   const oldToken = downloadTokenFrom(b.dl || b.token);

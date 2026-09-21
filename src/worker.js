@@ -41,7 +41,7 @@ import { maybeCheckChanges, runDueShareIndex, sweepOrphans } from "./share-chang
 import { cancelPipelineRun, pipelinesOverview, reportShareThumbs } from "./pipelines.js";
 import { shareStats, startShareIndex } from "./share-stats.js";
 import { listPendingSharePreviews, listPendingShareThumbs, migratePreviewsToDrive, putSharePreview, putShareThumb, reportSharePreviews, shareThumbSource, startSharePreviews, sweepStaleTiers } from "./share-previews.js";
-import { refreshShareDownload, shareDownload, shareFileInfo, shareMedia, shareThumbnail } from "./share-media.js";
+import { refreshShareDownload, shareDownload, shareFileInfo, shareMedia, shareThumbnail, shareWarm } from "./share-media.js";
 import { createShareZipTicket, shareZipDownload } from "./share-zip.js";
 import {
   adminAuthCallback,
@@ -232,6 +232,7 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/share/stats") return shareStats(request, env);
   if (m === "POST" && p === "/api/share/refresh-dl") return refreshShareDownload(request, env);
   if (m === "POST" && p === "/api/share/file-info") return shareFileInfo(request, env);
+  if (m === "POST" && p === "/api/share/warm") return shareWarm(request, env, ctx);
   if (m === "POST" && p === "/api/share/zip-ticket") return createShareZipTicket(request, env);
   if (m === "POST" && p === "/api/share/redirect") return shareRedirect(request, env);
   if (m === "GET" && p.startsWith("/api/share/media/")) {
