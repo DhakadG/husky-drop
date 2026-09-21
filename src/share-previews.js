@@ -278,11 +278,12 @@ export async function migratePreviewsToDrive(request, env) {
   return json({ ok: true, migrated, gone, failed: failed.length, remaining: Math.max(0, pending.length - migrated - gone - failed.length) });
 }
 
-// ---- one-time sweep: evict the tiers that no longer belong in R2 ----
-// thumb-hi and video-720 are now served live from Drive/Google + edge cache, so
-// their old R2 objects are dead weight. preview-webp is left to the migration
-// above (its R2 copy may still be the only one). Cursor-paged; loop until null.
-const R2_EVICT = new Set(["thumb-hi", "video-720"]);
+// ---- one-time sweep: evict the tier that no longer belongs in R2 ----
+// thumb-hi is now served live from Google + edge cache, so its old R2 objects
+// are dead weight. video-720 stays: watched previews are a deliberate on-demand
+// R2 cache. preview-webp is left to the migration above (its R2 copy may still
+// be the only one). Cursor-paged; loop until null.
+const R2_EVICT = new Set(["thumb-hi"]);
 export async function sweepStaleTiers(request, env) {
   if (!env.MEDIA_BUCKET) return json({ error: "MEDIA_BUCKET not bound" }, 503);
   const b = await request.json().catch(() => ({}));

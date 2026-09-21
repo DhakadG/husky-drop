@@ -1055,22 +1055,23 @@ async function main() {
     assert.equal(res.status, 403, "a paused share serves nothing from any cache tier");
     await worker.fetch(jsonRequest("/api/admin/shares/drive-share", { disabled: false }, "test-admin", "PATCH"), driveEnv);
 
-    // 720p previews stream from Drive + edge only - never persisted to R2, so
-    // the 10 GB bucket stays reserved for the lo/md page-load thumbnails.
+    // 720p previews: a full play warms R2 (watched previews become the durable
+    // copy); ranged reads then come straight from R2.
     await driveEnv.KV.put("previews:index", JSON.stringify({ files: { "file-video": { id: "file-mov", size: 5, at: 1 } }, failed: {}, runs: [] }));
     res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468" }), driveEnv);
     const relisted = (await res.json()).folders[0].files.find((file) => file.name === "B Video.mp4");
     assert.match(relisted.preview, /^\/api\/share\/media\/drive-share\/file-video\/video-720\/filemov\//, "video preview URL goes through the ladder");
     res = await worker.fetch(request(relisted.preview, { headers: { range: "bytes=0-" } }), driveEnv, { waitUntil: (promise) => promise });
-    assert.equal(res.status, 200, "an open-ended range from byte 0 is the whole file and fills the edge cache");
+    assert.equal(res.status, 200, "an open-ended range from byte 0 is the whole file and fills the caches");
     assert.equal(await res.text(), "MOV!!");
-    assert.ok(!driveEnv.MEDIA_BUCKET.objects.has("media/file-video/video-720-filemov"), "video previews are never persisted to R2 (bucket reserved for lo/md thumbnails)");
+    assert.ok(driveEnv.MEDIA_BUCKET.objects.has("media/file-video/video-720-filemov") || typeof FixedLengthStream !== "function", "a watched preview lands in R2 when the runtime can size the stream");
+    await driveEnv.MEDIA_BUCKET.put("media/file-video/video-720-filemov", new TextEncoder().encode("MOV!!"), { httpMetadata: { contentType: "video/mp4" } });
     const mediaRangeCalls = calls.mediaRanges.length;
     res = await worker.fetch(request(relisted.preview, { headers: { range: "bytes=1-3" } }), driveEnv);
-    assert.equal(res.status, 206, "ranged preview reads proxy from Drive");
+    assert.equal(res.status, 206, "ranged preview reads come from R2");
     assert.equal(res.headers.get("content-range"), "bytes 1-3/5");
     assert.equal(await res.text(), "OV!");
-    assert.equal(calls.mediaRanges.length, mediaRangeCalls + 1, "each ranged read goes to Drive since video is not cached in R2");
+    assert.equal(calls.mediaRanges.length, mediaRangeCalls, "without touching Drive");
 
     res = await worker.fetch(
       publicJsonRequest("/api/share/summary", { slug: "drive-share", pin: "2468" }),
