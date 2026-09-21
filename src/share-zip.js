@@ -46,13 +46,14 @@ export async function createShareZipTicket(request, env) {
       continue;
     }
     const preview = previews.files[parsed.fileId];
-    const usePreview = smaller && preview && !preview.skip && preview.r === mediaRev(meta) && env.MEDIA_BUCKET;
+    // The WebP preview lives in Drive (`d`); older ones may still be in R2.
+    const usePreview = smaller && preview && !preview.skip && preview.r === mediaRev(meta) && (preview.d || env.MEDIA_BUCKET);
     files.push({
       fileId: parsed.fileId,
       name: sanitizeFilename(usePreview ? (meta.name || `${parsed.fileId}`).replace(/\.[^.]+$/, "") + ".webp" : meta.name || item?.name || `${parsed.fileId}.bin`),
       size: Math.max(0, Number(usePreview ? preview.s : meta.size || item?.size) || 0),
       mime: usePreview ? "image/webp" : cleanText(meta.mimeType || item?.mime || "application/octet-stream", 100),
-      ...(usePreview ? { r2Key: `media/${parsed.fileId}/preview-webp-${preview.r}` } : {}),
+      ...(usePreview ? (preview.d ? { previewDriveId: preview.d } : { r2Key: `media/${parsed.fileId}/preview-webp-${preview.r}` }) : {}),
     });
   }
   if (!files.length && blocked.length) {
@@ -85,7 +86,7 @@ export async function shareZipDownload(request, env, ticket) {
       ...file,
       name: sanitizeFilename(file.name || `${file.fileId}.bin`),
       size: Math.max(0, Number(file.size) || 0),
-      stream: async () => (file.r2Key ? r2MediaStream(env, file.r2Key, file.fileId) : driveMediaStream(env, file.fileId)),
+      stream: async () => (file.previewDriveId ? driveMediaStream(env, file.previewDriveId) : file.r2Key ? r2MediaStream(env, file.r2Key, file.fileId) : driveMediaStream(env, file.fileId)),
     }));
   if (!files.length) {
     return json({ error: "This ZIP contains no files allowed by the public-download safety policy." }, 451, { "x-robots-tag": "noindex, nofollow, noarchive" });

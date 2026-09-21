@@ -626,6 +626,33 @@ export function render(revealOnlyIds = null) {
   updateSelInfo();
   scheduleLayout();
   fx.reveal(revealOnlyIds ? newRevealTargets : revealTargets);
+  if (!revealOnlyIds) warmVisible();
+}
+
+// Ask the Worker to pre-warm this folder's heavy on-demand tiers (thumb-hi,
+// preview-webp) into the edge cache, so opening a photo is instant. The Worker
+// pulls them from Drive - the viewer's bandwidth is not spent, so we only skip
+// on explicit data-saver / very slow links (out of courtesy for the tiny POST),
+// and fire once per folder.
+let _warmedFolder = "";
+function warmVisible() {
+  try {
+    const conn = navigator.connection;
+    if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ""))) return;
+    const key = location.hash || "root";
+    if (key === _warmedFolder) return;
+    _warmedFolder = key;
+    const urls = [];
+    for (const file of visibleFiles.values()) {
+      if (file.thumbs?.max) urls.push(file.thumbs.max);
+      if (file.previewImageUrl) urls.push(file.previewImageUrl);
+      if (urls.length >= 15) break;
+    }
+    if (!urls.length) return;
+    fetch("/api/share/warm", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug, pin, urls }), keepalive: true }).catch(() => {});
+  } catch {
+    /* warming is best-effort */
+  }
 }
 
 function loadMoreButton(folder) {

@@ -40,8 +40,8 @@ import { dedupeShareFolder, listShareIndexJobs, runShareIndexChunk, shareIndexGa
 import { maybeCheckChanges, runDueShareIndex, sweepOrphans } from "./share-changes.js";
 import { cancelPipelineRun, pipelinesOverview, reportShareThumbs } from "./pipelines.js";
 import { shareStats, startShareIndex } from "./share-stats.js";
-import { listPendingSharePreviews, listPendingShareThumbs, putSharePreview, putShareThumb, reportSharePreviews, shareThumbSource, startSharePreviews } from "./share-previews.js";
-import { refreshShareDownload, shareDownload, shareFileInfo, shareMedia, shareThumbnail } from "./share-media.js";
+import { listPendingSharePreviews, listPendingShareThumbs, migratePreviewsToDrive, putSharePreview, putShareThumb, reportSharePreviews, shareThumbSource, startSharePreviews, sweepStaleTiers } from "./share-previews.js";
+import { refreshShareDownload, shareDownload, shareFileInfo, shareMedia, shareThumbnail, shareWarm } from "./share-media.js";
 import { createShareZipTicket, shareZipDownload } from "./share-zip.js";
 import {
   adminAuthCallback,
@@ -232,6 +232,7 @@ async function api(request, env, url, ctx) {
   if (m === "POST" && p === "/api/share/stats") return shareStats(request, env);
   if (m === "POST" && p === "/api/share/refresh-dl") return refreshShareDownload(request, env);
   if (m === "POST" && p === "/api/share/file-info") return shareFileInfo(request, env);
+  if (m === "POST" && p === "/api/share/warm") return shareWarm(request, env, ctx);
   if (m === "POST" && p === "/api/share/zip-ticket") return createShareZipTicket(request, env);
   if (m === "POST" && p === "/api/share/redirect") return shareRedirect(request, env);
   if (m === "GET" && p.startsWith("/api/share/media/")) {
@@ -301,6 +302,8 @@ async function api(request, env, url, ctx) {
       if (m === "GET" && seg[0] === "thumb-source" && seg[3]) return shareThumbSource(request, env, seg.slice(1, 4));
       if (m === "PUT" && seg[0] === "thumb" && seg[3]) return putShareThumb(request, env, seg.slice(1, 4));
       if (m === "POST" && seg[0] === "preview-report") return reportSharePreviews(request, env, ctx);
+      if (m === "POST" && seg[0] === "migrate-previews") return migratePreviewsToDrive(request, env);
+      if (m === "POST" && seg[0] === "sweep-stale-tiers") return sweepStaleTiers(request, env);
     }
     if (m === "POST" && p === "/api/admin/media/orphans") return sweepOrphans(request, env);
     if (m === "GET" && p === "/api/admin/pipelines") return pipelinesOverview(env);

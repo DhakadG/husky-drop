@@ -146,6 +146,7 @@ async function withMockedGoogleDrive(fn) {
   const originalFetch = globalThis.fetch;
   const originalCaches = globalThis.caches;
   const calls = { listPageSizes: [], mediaRanges: [], thumbnailUrls: [], thumbnailAuth: [], trashed: [] };
+  let uploadSeq = 1;
   const files = {
     "drive-folder": {
       id: "drive-folder",
@@ -261,6 +262,24 @@ async function withMockedGoogleDrive(fn) {
         : { newStartPageToken: tokenIn, changes: [] };
       return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
     }
+    // Multipart uploads (share-preview WebPs land in Drive's _share_previews).
+    if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/upload/drive/v3/files")) {
+      const buf = new Uint8Array(await init.body.arrayBuffer());
+      const text = new TextDecoder("latin1").decode(buf);
+      const marker = "image/webp\r\n\r\n";
+      const at = text.indexOf(marker);
+      let bytes = new Uint8Array();
+      if (at >= 0) {
+        const start = at + marker.length;
+        const tail = text.indexOf("\r\n--", start);
+        bytes = buf.slice(start, tail >= 0 ? tail : buf.length);
+      }
+      const id = `sp-${uploadSeq++}`;
+      files[id] = { id, mimeType: "image/webp" };
+      mediaBytes[id] = bytes;
+      (calls.uploaded ||= []).push(id);
+      return new Response(JSON.stringify({ id, size: bytes.length }), { headers: { "content-type": "application/json" } });
+    }
     if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/drive/v3/files")) {
       if ((init.method || "GET").toUpperCase() === "POST") {
         const body = JSON.parse(String(init.body || "{}"));
@@ -319,9 +338,14 @@ async function withMockedGoogleDrive(fn) {
           : new Response(JSON.stringify({ error: "not found" }), { status: 404 });
       }
 
+      const qParam = url.searchParams.get("q") || "";
+      // Folder lookups (e.g. _share_previews): report "not found" so the code
+      // creates it via POST rather than mistaking a listed file for a folder.
+      if (qParam.includes("application/vnd.google-apps.folder")) {
+        return new Response(JSON.stringify({ files: [] }), { headers: { "content-type": "application/json" } });
+      }
       calls.listPageSizes.push(url.searchParams.get("pageSize"));
       const pageToken = url.searchParams.get("pageToken") || "";
-      const qParam = url.searchParams.get("q") || "";
       // A folder one level down from the share root, so the recursive
       // summary walk has something real to descend into.
       if (qParam.includes("'nested-folder' in parents")) {
@@ -1031,22 +1055,22 @@ async function main() {
     assert.equal(res.status, 403, "a paused share serves nothing from any cache tier");
     await worker.fetch(jsonRequest("/api/admin/shares/drive-share", { disabled: false }, "test-admin", "PATCH"), driveEnv);
 
-    // 720p previews ride the same ladder, with Range reads straight from R2.
+    // 720p previews stream from Drive + edge only - never persisted to R2, so
+    // the 10 GB bucket stays reserved for the lo/md page-load thumbnails.
     await driveEnv.KV.put("previews:index", JSON.stringify({ files: { "file-video": { id: "file-mov", size: 5, at: 1 } }, failed: {}, runs: [] }));
     res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468" }), driveEnv);
     const relisted = (await res.json()).folders[0].files.find((file) => file.name === "B Video.mp4");
     assert.match(relisted.preview, /^\/api\/share\/media\/drive-share\/file-video\/video-720\/filemov\//, "video preview URL goes through the ladder");
     res = await worker.fetch(request(relisted.preview, { headers: { range: "bytes=0-" } }), driveEnv, { waitUntil: (promise) => promise });
-    assert.equal(res.status, 200, "an open-ended range from byte 0 is the whole file and fills the caches");
+    assert.equal(res.status, 200, "an open-ended range from byte 0 is the whole file and fills the edge cache");
     assert.equal(await res.text(), "MOV!!");
-    assert.ok(driveEnv.MEDIA_BUCKET.objects.has("media/file-video/video-720-filemov") || typeof FixedLengthStream !== "function", "the preview lands in R2 when the runtime can size the stream");
-    await driveEnv.MEDIA_BUCKET.put("media/file-video/video-720-filemov", new TextEncoder().encode("MOV!!"), { httpMetadata: { contentType: "video/mp4" } });
+    assert.ok(!driveEnv.MEDIA_BUCKET.objects.has("media/file-video/video-720-filemov"), "video previews are never persisted to R2 (bucket reserved for lo/md thumbnails)");
     const mediaRangeCalls = calls.mediaRanges.length;
     res = await worker.fetch(request(relisted.preview, { headers: { range: "bytes=1-3" } }), driveEnv);
-    assert.equal(res.status, 206, "ranged preview reads come from R2");
+    assert.equal(res.status, 206, "ranged preview reads proxy from Drive");
     assert.equal(res.headers.get("content-range"), "bytes 1-3/5");
     assert.equal(await res.text(), "OV!");
-    assert.equal(calls.mediaRanges.length, mediaRangeCalls, "without touching Drive");
+    assert.equal(calls.mediaRanges.length, mediaRangeCalls + 1, "each ranged read goes to Drive since video is not cached in R2");
 
     res = await worker.fetch(
       publicJsonRequest("/api/share/summary", { slug: "drive-share", pin: "2468" }),
@@ -1179,7 +1203,9 @@ async function main() {
     assert.equal(pendingPreviews.pending[0].rev, "abcdef0123456789", "the preview is keyed by the Drive md5");
     res = await worker.fetch(request("/api/admin/share-index/preview/file-raw?rev=abcdef0123456789", { method: "PUT", headers: { authorization: "Bearer test-admin", "content-type": "image/webp" }, body: new TextEncoder().encode("WEBP!") }), driveEnv);
     assert.equal(res.status, 201, "runner stores the WebP");
-    assert.ok(driveEnv.MEDIA_BUCKET.objects.has("media/file-raw/preview-webp-abcdef0123456789"), "preview lives in R2 under the content-addressed key");
+    assert.ok(!driveEnv.MEDIA_BUCKET.objects.has("media/file-raw/preview-webp-abcdef0123456789"), "the full preview is stored in Drive, never in R2 (10 GB cap)");
+    const spIndex = await driveEnv.KV.get("share-previews:index", "json");
+    assert.ok(spIndex.files["file-raw"].d, "the index records the Drive id of the preview");
     res = await worker.fetch(jsonRequest("/api/admin/share-index/preview-report", { runId: "run-1", done: [{ id: "file-raw", rev: "abcdef0123456789", name: "E Raw.ARW", size: 5, ms: 3, via: "libraw", w: 4000, h: 3000 }], skipped: [{ id: "file-img", rev: "x", name: "A Photo.jpg", error: "gain-map", gainmap: true }], finished: true }), driveEnv);
     assert.equal(res.status, 200, "batch report is accepted");
     const secondPage = await (await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderIndex: 0, pageToken: listed.folders[0].nextPageToken }), driveEnv)).json();
@@ -1200,16 +1226,23 @@ async function main() {
     const webpTicket = await res.json();
     const ticketPayload = await driveEnv.KV.get(`sharezip:${webpTicket.ticket}`, "json");
     assert.equal(ticketPayload.files[0].name, "E Raw.webp", "the RAW comes out of the ZIP as WebP");
-    assert.equal(ticketPayload.files[0].r2Key, "media/file-raw/preview-webp-abcdef0123456789");
+    assert.ok(ticketPayload.files[0].previewDriveId && !ticketPayload.files[0].r2Key, "the RAW's ZIP entry streams the WebP from Drive, not R2");
     assert.equal(ticketPayload.files[1].name, "A Photo.jpg", "a file without a preview stays original");
     res = await worker.fetch(request(webpTicket.url), driveEnv);
     assert.equal(res.status, 200, "WebP ZIP streams");
     const zipBytes = new Uint8Array(await res.arrayBuffer());
     const zipText = new TextDecoder("latin1").decode(zipBytes);
-    assert.ok(zipText.includes("E Raw.webp") && zipText.includes("WEBP!"), "ZIP carries the R2 preview bytes under the .webp name");
+    assert.ok(zipText.includes("E Raw.webp") && zipText.includes("WEBP!"), "ZIP carries the Drive preview bytes under the .webp name");
     assert.ok(zipText.includes("IMG!"), "and the original bytes for the rest");
     res = await worker.fetch(request("/api/admin/share-index/previews/pending?limit=10", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
     assert.equal((await res.json()).pending.length, 0, "a made preview leaves the pending list");
+
+    // ---- warm-on-browse: pre-warm heavy on-demand tiers into the edge ----
+    res = await worker.fetch(publicJsonRequest("/api/share/warm", { slug: "drive-share", pin: "2468", urls: [rawFile.thumbs.max, rawFile.previewImageUrl, firstImage.thumbs.base] }), driveEnv, { waitUntil: (promise) => promise });
+    assert.equal(res.status, 200, "warm endpoint accepts a folder prefetch");
+    assert.equal((await res.json()).warmed, 2, "only thumb-hi and preview-webp are warmed; the lo/md tiers (already in R2) are skipped");
+    res = await worker.fetch(publicJsonRequest("/api/share/warm", { slug: "drive-share", urls: [rawFile.thumbs.max] }), driveEnv);
+    assert.equal(res.status, 403, "warming still requires the viewer gate");
 
     // ---- WebP thumbnails via the runner ----
     res = await worker.fetch(request("/api/admin/share-index/thumbs/pending", { headers: { authorization: "Bearer test-admin" } }), driveEnv);
