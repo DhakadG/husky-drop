@@ -21,12 +21,15 @@ import { mediaSig } from "./share-token.js";
 
 export const MEDIA_TTL = 30 * 86400; // seconds
 const EDGE_KEY = "https://media.internal.share/v1";
-// R2 (10 GB free tier) holds ONLY the two page-load thumbnail tiers. Everything
-// heavier - the 1600px hover tier, RAW/HEIC full previews, and 720p video - is
-// served from Drive/Google on demand and kept warm by Cloudflare's free edge
-// cache, never persisted to R2. This is the whole storage cap, enforced by
-// construction: nothing big is ever written to the bucket.
-const R2_VARIANTS = new Set(["thumb-lo", "thumb-md"]);
+// What R2 is allowed to hold, kept deliberately small:
+//   - thumb-lo / thumb-md: the page-load thumbnails, always pre-warmed.
+//   - video-720: cached lazily on first full play, so only *watched* previews
+//     become durable R2 copies (the rest stay in Drive). 30-day lifecycle ages
+//     out the ones that stop being watched.
+// The 1600px hover tier and RAW/HEIC full previews never touch R2 - they are
+// served from Drive/Google on demand and kept warm by the edge cache.
+const R2_VARIANTS = new Set(["thumb-lo", "thumb-md"]); // pre-warmed + runner-written
+const R2_CACHED = new Set(["thumb-lo", "thumb-md", "video-720"]); // read from R2
 // variant -> Drive thumbnail tier (or the 720p preview from previews.js)
 const VARIANTS = { "thumb-lo": "base", "thumb-md": "mid", "thumb-hi": "max", "video-720": "preview", "preview-webp": "preview-webp" };
 export const TIER_VARIANT = { base: "thumb-lo", mid: "thumb-md", max: "thumb-hi" };
@@ -98,8 +101,10 @@ async function serveMediaInner(request, ctx, env, { fileId, variant, rev, range,
     if (hit?.body) return new Response(hit.body, { status: 200, headers: clientHeaders(hit.headers.get("content-type") || "application/octet-stream", tier, lengthOf(hit.headers)) });
   }
 
-  const r2ok = R2_VARIANTS.has(variant);
-  if (bucket && r2ok) {
+  // R2 is consulted for the two thumbnail tiers (always present) and for
+  // video-720 (cached on first play - see below). thumb-hi and preview-webp
+  // never touch R2.
+  if (bucket && R2_CACHED.has(variant)) {
     const obj = await bucket.get(r2Key, range ? { range: r2Range(range) } : undefined).catch(() => null);
     if (obj?.body) {
       const type = obj.httpMetadata?.contentType || "application/octet-stream";
@@ -112,15 +117,16 @@ async function serveMediaInner(request, ctx, env, { fileId, variant, rev, range,
       fill(ctx, cache.put(edgeKey, edgeCopy(res.clone(), type)));
       return res;
     }
-    // Not in R2 yet: fall through to fromThumbnail, which fills it.
+    // Not in R2 yet: fall through; the source path below fills it.
   }
 
   // preview-webp: RAW/HEIC/TIFF full preview, kept in Drive's _share_previews
   // folder, streamed on demand and edge-cached (never R2).
   if (tier === "preview-webp") return fromDrivePreview(request, ctx, env, { fileId, r2Key, edgeKey, bucket, cache });
-  // 720p video: streamed from Drive + edge only, never persisted to R2.
-  if (tier === "preview") return fromPreview(request, ctx, env, { fileId, edgeKey, range, cache });
-  return fromThumbnail(ctx, env, { fileId, tier, r2Key, edgeKey, bucket: r2ok ? bucket : null, cache });
+  // 720p video: streamed from Drive, and a full (byte-0) play warms R2 so the
+  // watched previews - and only those - become the durable R2 copy.
+  if (tier === "preview") return fromPreview(request, ctx, env, { fileId, r2Key, edgeKey, range, bucket, cache });
+  return fromThumbnail(ctx, env, { fileId, tier, r2Key, edgeKey, bucket: R2_VARIANTS.has(variant) ? bucket : null, cache });
 }
 
 function lengthOf(headers) {
@@ -196,7 +202,7 @@ async function fromThumbnail(ctx, env, { fileId, tier, r2Key, edgeKey, bucket, c
 // L2 for the 720p video preview that previews.js keeps in Drive's _previews
 // folder. Full requests stream to the client while a tee fills the edge and
 // (when the runtime can size the stream) R2. Ranged requests are proxied.
-async function fromPreview(request, ctx, env, { fileId, edgeKey, range, cache }) {
+async function fromPreview(request, ctx, env, { fileId, r2Key, edgeKey, range, bucket, cache }) {
   const index = await previewIndex(env);
   const entry = index.files[fileId];
   if (!entry?.id) return json({ error: "preview unavailable" }, 404);
@@ -213,10 +219,18 @@ async function fromPreview(request, ctx, env, { fileId, edgeKey, range, cache })
     return partial(r.body, type, "preview", Number(m[1]), Number(m[2]), Number(m[3]));
   }
   const length = Number(r.headers.get("content-length")) || 0;
-  // Full request: client + edge only. R2 never holds video (10 GB cap).
-  const [clientBody, edgeBody] = r.body.tee();
+  // A full (byte-0) play fills the edge and, when the runtime can size the
+  // stream, warms R2 - so a watched preview becomes the durable R2 copy.
+  const [clientBody, rest] = r.body.tee();
+  const [edgeBody, r2Body] = rest.tee();
   const extra = { "accept-ranges": "bytes", ...(length ? { "content-length": String(length) } : {}) };
   fill(ctx, cache.put(edgeKey, edgeCopy(new Response(edgeBody, { headers: extra }), type)));
+  if (bucket && length && typeof FixedLengthStream === "function") {
+    const sized = new FixedLengthStream(length);
+    fill(ctx, Promise.all([r2Body.pipeTo(sized.writable), r2Put(bucket, r2Key, sized.readable, type, length)]));
+  } else {
+    r2Body.cancel().catch(() => {});
+  }
   return new Response(clientBody, { status: 200, headers: clientHeaders(type, "preview", extra) });
 }
 
