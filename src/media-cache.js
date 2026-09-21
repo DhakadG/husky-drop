@@ -21,6 +21,12 @@ import { mediaSig } from "./share-token.js";
 
 export const MEDIA_TTL = 30 * 86400; // seconds
 const EDGE_KEY = "https://media.internal.share/v1";
+// R2 (10 GB free tier) holds ONLY the two page-load thumbnail tiers. Everything
+// heavier - the 1600px hover tier, RAW/HEIC full previews, and 720p video - is
+// served from Drive/Google on demand and kept warm by Cloudflare's free edge
+// cache, never persisted to R2. This is the whole storage cap, enforced by
+// construction: nothing big is ever written to the bucket.
+const R2_VARIANTS = new Set(["thumb-lo", "thumb-md"]);
 // variant -> Drive thumbnail tier (or the 720p preview from previews.js)
 const VARIANTS = { "thumb-lo": "base", "thumb-md": "mid", "thumb-hi": "max", "video-720": "preview", "preview-webp": "preview-webp" };
 export const TIER_VARIANT = { base: "thumb-lo", mid: "thumb-md", max: "thumb-hi" };
@@ -92,7 +98,8 @@ async function serveMediaInner(request, ctx, env, { fileId, variant, rev, range,
     if (hit?.body) return new Response(hit.body, { status: 200, headers: clientHeaders(hit.headers.get("content-type") || "application/octet-stream", tier, lengthOf(hit.headers)) });
   }
 
-  if (bucket) {
+  const r2ok = R2_VARIANTS.has(variant);
+  if (bucket && r2ok) {
     const obj = await bucket.get(r2Key, range ? { range: r2Range(range) } : undefined).catch(() => null);
     if (obj?.body) {
       const type = obj.httpMetadata?.contentType || "application/octet-stream";
@@ -105,13 +112,15 @@ async function serveMediaInner(request, ctx, env, { fileId, variant, rev, range,
       fill(ctx, cache.put(edgeKey, edgeCopy(res.clone(), type)));
       return res;
     }
-    // Not in R2 yet: a ranged request is proxied from Drive below; the next
-    // full request fills R2.
+    // Not in R2 yet: fall through to fromThumbnail, which fills it.
   }
 
-  // preview-webp is made by the GitHub runner and only ever lives in R2.
-  if (tier === "preview-webp") return json({ error: "preview not made yet" }, 404);
-  return tier === "preview" ? fromPreview(request, ctx, env, { fileId, r2Key, edgeKey, range, bucket, cache }) : fromThumbnail(ctx, env, { fileId, tier, r2Key, edgeKey, bucket, cache });
+  // preview-webp: RAW/HEIC/TIFF full preview, kept in Drive's _share_previews
+  // folder, streamed on demand and edge-cached (never R2).
+  if (tier === "preview-webp") return fromDrivePreview(request, ctx, env, { fileId, r2Key, edgeKey, bucket, cache });
+  // 720p video: streamed from Drive + edge only, never persisted to R2.
+  if (tier === "preview") return fromPreview(request, ctx, env, { fileId, edgeKey, range, cache });
+  return fromThumbnail(ctx, env, { fileId, tier, r2Key, edgeKey, bucket: r2ok ? bucket : null, cache });
 }
 
 function lengthOf(headers) {
@@ -156,7 +165,8 @@ export const r2PutBytes = (bucket, key, bytes, type) => r2Put(bucket, key, bytes
 // there already. Returns the subrequests spent so chunked jobs can budget.
 export async function warmMedia(env, fileId, variant, rev) {
   const bucket = env.MEDIA_BUCKET;
-  if (!bucket) return 0;
+  if (!bucket || !R2_VARIANTS.has(variant)) return 0; // only lo/md thumbs live in R2
+
   const r2Key = `media/${fileId}/${variant}-${rev}`;
   if (await bucket.head(r2Key).catch(() => null)) return 1;
   const meta = await driveFileMetaCached(env, fileId);
@@ -186,7 +196,7 @@ async function fromThumbnail(ctx, env, { fileId, tier, r2Key, edgeKey, bucket, c
 // L2 for the 720p video preview that previews.js keeps in Drive's _previews
 // folder. Full requests stream to the client while a tee fills the edge and
 // (when the runtime can size the stream) R2. Ranged requests are proxied.
-async function fromPreview(request, ctx, env, { fileId, r2Key, edgeKey, range, bucket, cache }) {
+async function fromPreview(request, ctx, env, { fileId, edgeKey, range, cache }) {
   const index = await previewIndex(env);
   const entry = index.files[fileId];
   if (!entry?.id) return json({ error: "preview unavailable" }, 404);
@@ -203,16 +213,38 @@ async function fromPreview(request, ctx, env, { fileId, r2Key, edgeKey, range, b
     return partial(r.body, type, "preview", Number(m[1]), Number(m[2]), Number(m[3]));
   }
   const length = Number(r.headers.get("content-length")) || 0;
-  const [clientBody, rest] = r.body.tee();
-  const [edgeBody, r2Body] = rest.tee();
+  // Full request: client + edge only. R2 never holds video (10 GB cap).
+  const [clientBody, edgeBody] = r.body.tee();
   const extra = { "accept-ranges": "bytes", ...(length ? { "content-length": String(length) } : {}) };
   fill(ctx, cache.put(edgeKey, edgeCopy(new Response(edgeBody, { headers: extra }), type)));
-  if (bucket && length && typeof FixedLengthStream === "function") {
-    // R2 needs a sized stream; a tee branch has no length of its own.
-    const sized = new FixedLengthStream(length);
-    fill(ctx, Promise.all([r2Body.pipeTo(sized.writable), r2Put(bucket, r2Key, sized.readable, type, length)]));
-  } else {
-    r2Body.cancel().catch(() => {});
-  }
   return new Response(clientBody, { status: 200, headers: clientHeaders(type, "preview", extra) });
+}
+
+// preview-webp full preview: a WebP in Drive's _share_previews folder. The
+// Drive file id lives in share-previews:index (read directly to avoid a
+// circular import). WebP is small, so buffer once to feed client + edge; R2
+// is never touched.
+async function fromDrivePreview(request, ctx, env, { fileId, r2Key, edgeKey, bucket, cache }) {
+  const idx = await env.KV.get("share-previews:index", "json").catch(() => null);
+  const driveId = idx?.files?.[fileId]?.d;
+  if (!driveId) {
+    // Not migrated yet: the WebP may still be in R2 from before this change.
+    // Serve it (no re-persist) so RAW previews never break mid-migration.
+    if (bucket) {
+      const obj = await bucket.get(r2Key).catch(() => null);
+      if (obj?.body) {
+        const res = new Response(obj.body, { status: 200, headers: clientHeaders("image/webp", "preview-webp", { "content-length": String(obj.size) }) });
+        fill(ctx, cache.put(edgeKey, edgeCopy(res.clone(), "image/webp")));
+        return res;
+      }
+    }
+    return json({ error: "preview not made yet" }, 404);
+  }
+  const tok = await accessToken(env);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?alt=media&supportsAllDrives=true`, { headers: { authorization: `Bearer ${tok}` }, signal: request.signal });
+  if (!r.ok || !r.body) return json({ error: "preview unavailable" }, 502);
+  const bytes = await r.arrayBuffer();
+  const res = new Response(bytes, { status: 200, headers: clientHeaders("image/webp", "preview-webp", { "content-length": String(bytes.byteLength) }) });
+  fill(ctx, cache.put(edgeKey, edgeCopy(res.clone(), "image/webp")));
+  return res;
 }

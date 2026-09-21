@@ -10,7 +10,7 @@
 import { cleanText, json, shareState } from "./util.js";
 import { typeOf } from "./images.js";
 import { mediaRev, mediaUrl, mediaVariantTier, r2PutBytes } from "./media-cache.js";
-import { driveFileMetaCached, driveThumbnail } from "./drive.js";
+import { accessToken, driveCreateFolder, driveFindFolder, driveFileMetaCached, driveThumbnail, driveTrashFile } from "./drive.js";
 import { mediaSig } from "./share-token.js";
 import { getAllShares } from "./share-admin.js";
 import { loadFiles } from "./share-index.js";
@@ -86,15 +86,56 @@ function shardOf(id, shards) {
 }
 
 const MAX_PREVIEW_BYTES = 40 * 1024 * 1024;
+
+// Full previews live in Drive (cold storage), not R2. R2 stays under its 10 GB
+// free tier by only ever holding the lo/md thumbnails.
+const PREV_FOLDER_KEY = "share-previews:folder";
+const PREV_FOLDER_NAME = "_share_previews";
+async function sharePreviewFolderId(env) {
+  const cached = await env.KV.get(PREV_FOLDER_KEY);
+  if (cached) return cached;
+  const parent = env.DRIVE_PARENT_ID || undefined;
+  const folder = (await driveFindFolder(env, PREV_FOLDER_NAME, parent)) || (await driveCreateFolder(env, PREV_FOLDER_NAME, parent));
+  await env.KV.put(PREV_FOLDER_KEY, folder.id);
+  return folder.id;
+}
+export async function driveUploadWebp(env, name, bytes, appProperties) {
+  const tok = await accessToken(env);
+  const meta = { name, parents: [await sharePreviewFolderId(env)], appProperties };
+  const boundary = `hd-${crypto.randomUUID()}`;
+  const head = `--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\ncontent-type: image/webp\r\n\r\n`;
+  const payload = new Blob([head, bytes, `\r\n--${boundary}--`]);
+  const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,size&supportsAllDrives=true", {
+    method: "POST",
+    headers: { authorization: `Bearer ${tok}`, "content-type": `multipart/related; boundary=${boundary}` },
+    body: payload,
+  });
+  if (!r.ok) throw new Error("Drive upload failed: " + (await r.text()).slice(0, 200));
+  return r.json();
+}
+
+// Runner PUTs the WebP bytes; we store them in Drive and record the Drive id so
+// serveMedia can stream the preview on demand. A superseded revision's Drive
+// file is trashed.
 export async function putSharePreview(request, env, fileId) {
   const id = cleanText(fileId, 120).replace(/[^a-zA-Z0-9_-]/g, "");
   const rev = cleanText(new URL(request.url).searchParams.get("rev") || "", 16).replace(/[^a-z0-9]/gi, "");
   if (!id || !rev) return json({ error: "file id and rev required" }, 400);
-  if (!env.MEDIA_BUCKET) return json({ error: "MEDIA_BUCKET not bound" }, 503);
   const body = await request.arrayBuffer();
   if (!body.byteLength || body.byteLength > MAX_PREVIEW_BYTES) return json({ error: "empty or too large" }, 413);
-  await r2PutBytes(env.MEDIA_BUCKET, `media/${id}/preview-webp-${rev}`, body, "image/webp");
-  return json({ ok: true, bytes: body.byteLength }, 201);
+  let created;
+  try {
+    created = await driveUploadWebp(env, `${id}-${rev}.webp`, body, { sharePreviewOf: id, rev });
+  } catch (e) {
+    return json({ error: String(e.message || e) }, 502);
+  }
+  if (!created?.id) return json({ error: "Drive upload failed" }, 502);
+  const index = await sharePreviewIndex(env);
+  const prev = index.files[id];
+  if (prev?.d && prev.d !== created.id) await driveTrashFile(env, prev.d).catch(() => {});
+  index.files[id] = { ...(prev || {}), r: rev, s: body.byteLength, at: Date.now(), d: created.id };
+  await saveIndex(env, index);
+  return json({ ok: true, bytes: body.byteLength, driveId: created.id }, 201);
 }
 
 // Batch report: {runId, done:[{id, rev, name, size, ms, via, w, h}],
@@ -106,7 +147,7 @@ export async function reportSharePreviews(request, env, ctx) {
   const now = Date.now();
   for (const d of b.done || []) {
     if (!d.id || !d.rev) continue;
-    index.files[d.id] = { r: cleanText(d.rev, 16), s: Number(d.size) || 0, at: now, w: Number(d.w) || 0, h: Number(d.h) || 0 };
+    index.files[d.id] = { ...(index.files[d.id] || {}), r: cleanText(d.rev, 16), s: Number(d.size) || 0, at: now, w: Number(d.w) || 0, h: Number(d.h) || 0 };
   }
   const failed = [];
   for (const s of b.skipped || []) {
@@ -159,7 +200,8 @@ export async function startSharePreviews(request, env) {
 // Drive hands out JPEG thumbnails; the runner re-encodes them as WebP under
 // the same content-addressed key so R2 holds a third of the bytes and every
 // viewer downloads a third of the bytes. The Worker itself never encodes.
-const THUMB_HI_BYTES = 3 * 1024 * 1024;
+// Only the two page-load tiers (lo/md) are stored in R2; the 1600px hover tier
+// is served live from Google + edge cache, so the runner never makes it.
 export async function listPendingShareThumbs(request, env) {
   const url = new URL(request.url);
   const limit = Math.max(1, Math.min(50_000, Number(url.searchParams.get("limit")) || 20_000));
@@ -172,9 +214,7 @@ export async function listPendingShareThumbs(request, env) {
     for (const f of await loadFiles(env, share.slug)) {
       if (seen.has(f.id) || !f.th || !/^(image|video)\//.test(f.m || "")) continue;
       seen.add(f.id);
-      const v = ["thumb-lo", "thumb-md"];
-      if (/^image\//.test(f.m) && f.s >= THUMB_HI_BYTES) v.push("thumb-hi");
-      rows.push({ id: f.id, rev: f.r, v });
+      rows.push({ id: f.id, rev: f.r, v: ["thumb-lo", "thumb-md"] });
     }
   }
   const mine = shards > 1 ? rows.filter((r) => shardOf(r.id, shards) === shard) : rows;
@@ -193,9 +233,72 @@ export async function shareThumbSource(request, env, parts) {
   return new Response(asset.response.body, { headers: { "content-type": asset.response.headers.get("content-type") || "image/jpeg" } });
 }
 
+const R2_THUMB_VARIANTS = new Set(["thumb-lo", "thumb-md"]);
+// ---- one-time migration: preview-webp R2 -> Drive ----
+// Moves the WebPs that used to live in R2 into Drive's _share_previews folder
+// so R2 drops back under its 10 GB cap without re-encoding anything. Idempotent
+// and resumable: entries that already have a Drive id (`d`) are skipped, so a
+// runner just calls this until `remaining` is 0. Drive upload + index save
+// happen BEFORE the R2 delete, so an interrupted run never loses the only copy.
+export async function migratePreviewsToDrive(request, env) {
+  if (!env.MEDIA_BUCKET) return json({ error: "MEDIA_BUCKET not bound" }, 503);
+  const limit = Math.max(1, Math.min(20, Number(new URL(request.url).searchParams.get("limit")) || 12));
+  const index = await sharePreviewIndex(env);
+  const pending = Object.keys(index.files).filter((id) => index.files[id].r && !index.files[id].d && !index.files[id].skip);
+  const todo = pending.slice(0, limit);
+  const results = await Promise.all(
+    todo.map(async (id) => {
+      const e = index.files[id];
+      try {
+        const obj = await env.MEDIA_BUCKET.get(`media/${id}/preview-webp-${e.r}`);
+        if (!obj) return { id, gone: true }; // no R2 object (already swept): drop the stale entry
+        const bytes = await obj.arrayBuffer();
+        const created = await driveUploadWebp(env, `${id}-${e.r}.webp`, bytes, { sharePreviewOf: id, rev: e.r });
+        return { id, d: created.id, s: bytes.byteLength };
+      } catch (err) {
+        return { id, error: String(err?.message || err).slice(0, 120) };
+      }
+    }),
+  );
+  let migrated = 0;
+  let gone = 0;
+  const failed = [];
+  for (const r of results) {
+    if (r.gone) {
+      delete index.files[r.id];
+      gone += 1;
+    } else if (r.d) {
+      index.files[r.id] = { ...index.files[r.id], s: r.s, at: Date.now(), d: r.d };
+      migrated += 1;
+    } else failed.push(r.error);
+  }
+  await saveIndex(env, index);
+  // Only now, with the Drive copy indexed and durable, drop the R2 bytes.
+  await Promise.all(results.filter((r) => r.d).map((r) => env.MEDIA_BUCKET.delete(`media/${r.id}/preview-webp-${index.files[r.id].r}`).catch(() => {})));
+  return json({ ok: true, migrated, gone, failed: failed.length, remaining: Math.max(0, pending.length - migrated - gone - failed.length) });
+}
+
+// ---- one-time sweep: evict the tiers that no longer belong in R2 ----
+// thumb-hi and video-720 are now served live from Drive/Google + edge cache, so
+// their old R2 objects are dead weight. preview-webp is left to the migration
+// above (its R2 copy may still be the only one). Cursor-paged; loop until null.
+const R2_EVICT = new Set(["thumb-hi", "video-720"]);
+export async function sweepStaleTiers(request, env) {
+  if (!env.MEDIA_BUCKET) return json({ error: "MEDIA_BUCKET not bound" }, 503);
+  const b = await request.json().catch(() => ({}));
+  const page = await env.MEDIA_BUCKET.list({ prefix: "media/", cursor: b.cursor || undefined, limit: 1000 });
+  const doomed = [];
+  for (const obj of page.objects || []) {
+    const m = obj.key.match(/^media\/[^/]+\/(.+)-[A-Za-z0-9]{1,16}$/);
+    if (m && R2_EVICT.has(m[1])) doomed.push(obj.key);
+  }
+  if (doomed.length && !b.dryRun) await env.MEDIA_BUCKET.delete(doomed);
+  return json({ ok: true, scanned: (page.objects || []).length, removed: b.dryRun ? 0 : doomed.length, wouldRemove: doomed.length, cursor: page.truncated ? page.cursor : null });
+}
+
 export async function putShareThumb(request, env, parts) {
   const [fileId, variant, rev] = parts.map((p) => cleanText(p || "", 120).replace(/[^a-zA-Z0-9_-]/g, ""));
-  if (!fileId || !mediaVariantTier(variant) || !rev || !env.MEDIA_BUCKET) return json({ error: "bad request" }, 400);
+  if (!fileId || !R2_THUMB_VARIANTS.has(variant) || !rev || !env.MEDIA_BUCKET) return json({ error: "bad request" }, 400);
   const body = await request.arrayBuffer();
   if (!body.byteLength || body.byteLength > 8 * 1024 * 1024) return json({ error: "empty or too large" }, 413);
   await r2PutBytes(env.MEDIA_BUCKET, `media/${fileId}/${variant}-${rev}`, body, "image/webp");
