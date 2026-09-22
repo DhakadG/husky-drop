@@ -14,11 +14,49 @@ the way they are. Goal-by-goal status for the September round lives in
 - **Skylos** now runs on pull-request diffs only. The whole-repo run on main
   failed permanently on ~61 pre-existing `innerHTML` findings, and a check
   that is always red is a check nobody reads.
+- **innerHTML audit.** Skylos reports ~61 "unsafe innerHTML" findings on this
+  repo and nobody had gone through them. All of them are escaped, set with
+  `textContent`, or not text at all - the one thing worth fixing was that
+  nothing stopped the next one from being different. `scripts/innerhtml-audit-test.mjs`
+  now fails the build when a value whose name says it carries user text (a
+  Drive file or folder name, an uploader, a label, an error or log message, a
+  typed filter, an email) reaches HTML without `esc()` / `escAttr()` /
+  `escapeHtml()`. Thirteen reviewed exceptions are listed in the test with a
+  reason each, and the escapers themselves are asserted.
 - **Loading skeletons** (`public/skeleton.js`): one vocabulary - lines, rows,
   cards, photo tiles, folder tiles - sized like the real content so nothing
   jumps when data lands. Used by the share opening screen, folder navigation
   (only when a listing takes longer than 180 ms), folder tiles waiting on
   stats, the admin log, upload sessions and the Pipelines tab.
+
+## 2026-09-21 — R2 holds thumbnails and watched video previews only (PR #98, #99)
+
+R2 had grown to 17.9 GB, past the 10 GB free tier, and 11.74 GB of that was
+10,257 `preview-webp` objects: 4096px WebP renditions the runner builds from
+RAW/HEIC/TIFF originals. The bucket is now, by construction, for the two
+page-load thumbnail tiers plus video previews people actually watch.
+
+- `thumb-lo` / `thumb-md` are the only tiers read from or written to R2 on a
+  page load. `thumb-hi` is served live from Google (`=s1600`), `preview-webp`
+  streams from Drive's `_share_previews` folder, and both stay fast through
+  Cloudflare's edge cache instead of through storage we pay for.
+- `video-720` went back to being an on-demand R2 cache: a full (byte-0) play
+  warms the preview into R2, so only watched videos get a durable copy and the
+  30-day lifecycle ages out the rest. Fast seeking survives for the videos that
+  get seeked.
+- `putSharePreview` stores the WebP in Drive and records the Drive id in the
+  index; the thumbnail runner no longer produces the hi tier; the
+  "smaller (WebP)" download streams from Drive.
+- `scripts/migrate-r2.mjs` plus two admin endpoints did the one-time,
+  resumable move of the existing preview objects R2 → Drive with no re-encode,
+  then swept the stale `thumb-hi` objects.
+- **Warm-on-browse** (PR #98): opening a folder asks the Worker to pull that
+  folder's heavy tiers into the edge cache, capped at 15 files. The Worker does
+  the fetching, so a viewer's own bandwidth is never spent warming something
+  they may not open; the client skips it entirely on data-saver or 2G.
+
+Result: R2 fell from ~17.9 GB to ~2–3 GB with nothing becoming unviewable, and
+RAW previews survived in Drive without being re-encoded.
 
 ## 2026-09-21 — Pipelines tab, folder dedupe, changes applied in any phase (PR #96)
 

@@ -1,7 +1,7 @@
 // The skeleton grammar: shapes must carry the stagger index and the restore
 // must not wipe content that something else painted in the meantime.
 import assert from "node:assert/strict";
-import { showSkeleton, skelCards, skelFolders, skelLines, skelRows, skelTiles } from "../public/skeleton.js";
+import { delayedSkeleton, showSkeleton, skelCards, skelFolders, skelLines, skelPairs, skelRows, skelTiles } from "../public/skeleton.js";
 
 assert.equal((skelRows(5).match(/skel-row"/g) || []).length, 5, "skelRows makes n rows");
 assert.ok(skelRows(2, 44).includes("height:44px"), "row height is honored");
@@ -26,4 +26,19 @@ first();
 assert.equal(host.attrs["aria-busy"], "true", "a stale restore does not clear a newer skeleton");
 
 assert.equal(showSkeleton(null, "x")(), undefined, "a missing host is a no-op");
+assert.equal((skelPairs(5).match(/--i:/g) || []).length, 5, "skelPairs makes n rows");
+
+// delayedSkeleton: a fast answer must never flash a skeleton.
+const quick = { dataset: {}, innerHTML: "real", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } };
+delayedSkeleton(quick, "<i>bones</i>", 50)();
+await new Promise((r) => setTimeout(r, 80));
+assert.equal(quick.innerHTML, "real", "cancelled before the delay, nothing is painted");
+assert.equal(quick.attrs["aria-busy"], undefined, "and the host is never marked busy");
+
+const slow = { dataset: {}, innerHTML: "real", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } };
+const settle = delayedSkeleton(slow, "<i>bones</i>", 10);
+await new Promise((r) => setTimeout(r, 40));
+assert.equal(slow.innerHTML, "<i>bones</i>", "past the delay, the skeleton paints");
+settle();
+assert.equal(slow.attrs["aria-busy"], undefined, "and clears when the data lands");
 console.log("skeleton tests passed");

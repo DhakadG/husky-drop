@@ -27,6 +27,10 @@ export const skelTiles = (n = 12) => {
 export const skelFolders = (n = 4) =>
   `<div class="skel-folders">${Array.from({ length: n }, (_, i) => `<div class="skel-folder" style="--i:${i}">${bone("height:100%;border-radius:12px 12px 0 0")}<span>${bone("width:70%;height:12px")}${bone("width:45%;height:10px")}</span></div>`).join("")}</div>`;
 
+// Key/value rows, the shape of the viewer's file-info panel.
+export const skelPairs = (n = 6) =>
+  `<div class="skel-pairs">${Array.from({ length: n }, (_, i) => `<div style="--i:${i}"><i class="skel-bone" style="width:${38 + ((i * 13) % 26)}%"></i><i class="skel-bone" style="width:${50 + ((i * 17) % 34)}%"></i></div>`).join("")}</div>`;
+
 // Swap a host's contents for a skeleton and hand back a restore function that
 // only fires if nothing else has painted in the meantime.
 export function showSkeleton(host, html) {
@@ -39,5 +43,20 @@ export function showSkeleton(host, html) {
     if (host.dataset.skeleton !== token) return;
     delete host.dataset.skeleton;
     host.removeAttribute("aria-busy");
+  };
+}
+
+// The same swap, but only if the wait is long enough to notice. Anything that
+// answers quickly (a cached listing, a warm API) paints its real content
+// without a skeleton flashing first. Returns a function to call when the data
+// lands - it cancels a skeleton that has not appeared yet.
+export function delayedSkeleton(host, html, delayMs = 180) {
+  let restore = () => {};
+  const timer = setTimeout(() => {
+    restore = showSkeleton(host, html);
+  }, delayMs);
+  return () => {
+    clearTimeout(timer);
+    restore();
   };
 }
