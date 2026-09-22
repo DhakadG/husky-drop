@@ -1,4 +1,5 @@
 import { $, icon } from "./admin-state.js";
+import { skelCards } from "./skeleton.js";
 import { showTab } from "./admin.js";
 
 // Pipelines tab: everything running in the background, on one page, polled
@@ -25,6 +26,7 @@ const runClass = (run) => (["queued", "in_progress", "waiting", "pending"].inclu
 export async function refreshPipelines() {
   const host = $("pipelines-body");
   if (!host) return;
+  if (!state) host.innerHTML = skelCards(4, 4);
   try {
     const r = await fetch("/api/admin/pipelines");
     if (!r.ok) throw new Error(`HTTP ${r.status}`);

@@ -13,6 +13,7 @@ import {
   setDetailSort,
   value,
 } from "./admin-state.js";
+import { skelRows } from "./skeleton.js";
 import { showTab, refreshAll, setEmpty } from "./admin.js";
 import { initialsOf, makeLiveRow, updateLiveRow } from "./admin-live.js";
 import { deleteLink, linkActionButton, openFolderPicker, dropEditFolder, setDropEditFolder } from "./admin-links.js";
@@ -99,7 +100,7 @@ function renderDetail(d) {
     <section class="panel detail-sessions">
       <div class="section-title"><div><p class="eyebrow">debug</p><h2>${icon("activity")} Upload sessions</h2></div><span class="muted">Every state change the upload page reported, per browser session (30 days).</span></div>
       <div class="sessions-filters"><select id="us-type" class="mini-select"><option value="">All events</option><option value="upload_error">Errors</option><option value="upload_retry">Retries</option><option value="upload_skipped_duplicate">Skipped duplicates</option><option value="upload_complete">Completed</option><option value="network_offline">Went offline</option></select><input id="us-file" class="mini-input" placeholder="filter by file name" /><button id="us-refresh" class="mini" type="button">Refresh</button></div>
-      <div id="upload-sessions" class="sessions-list"><div class="empty">Loading…</div></div>
+      <div id="upload-sessions" class="sessions-list">${skelRows(3, 58)}</div>
     </section>
     <section class="panel settings-fold">
       <div class="section-title"><div><p class="eyebrow">configuration</p><h2>${icon("sliders-horizontal")} Settings</h2></div><span class="muted">Changes apply to this link only.</span></div>
@@ -147,6 +148,7 @@ async function renderUploadSessions(slug) {
   const box = $("upload-sessions");
   if (!box) return;
   const params = new URLSearchParams({ type: $("us-type")?.value || "", file: $("us-file")?.value.trim() || "" });
+  box.innerHTML = skelRows(3, 58);
   const r = await fetch(`/api/admin/upload-sessions/${encodeURIComponent(slug)}?${params}`).catch(() => null);
   const d = r?.ok ? await r.json() : { sessions: [] };
   if (!d.sessions.length) {

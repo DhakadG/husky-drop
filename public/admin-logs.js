@@ -1,4 +1,5 @@
 import { $, icon } from "./admin-state.js";
+import { skelRows } from "./skeleton.js";
 
 // System log tab: reads the app log kept in the live tracker's SQLite.
 // Rows are selectable (click, shift-click range, click-drag) for copying;
@@ -152,7 +153,7 @@ export async function refreshLogs({ more = false } = {}) {
     oldest = 0;
     rows = [];
     selected.clear();
-    body.innerHTML = `<p class="muted">${icon("loader-circle", "ico-sm")} Loading…</p>`;
+    body.innerHTML = skelRows(8, 44);
   }
   const params = new URLSearchParams({ limit: "200", area: $("logs-area").value, level: $("logs-level").value, before: String(oldest || 0) });
   const r = await fetch(`/api/admin/logs?${params}`);
