@@ -1209,6 +1209,36 @@ async function main() {
     assert.ok(spIndex.files["file-raw"].d, "the index records the Drive id of the preview");
     res = await worker.fetch(jsonRequest("/api/admin/share-index/preview-report", { runId: "run-1", done: [{ id: "file-raw", rev: "abcdef0123456789", name: "E Raw.ARW", size: 5, ms: 3, via: "libraw", w: 4000, h: 3000 }], skipped: [{ id: "file-img", rev: "x", name: "A Photo.jpg", error: "gain-map", gainmap: true }], finished: true }), driveEnv);
     assert.equal(res.status, 200, "batch report is accepted");
+
+    // Eight shards report at once. With one shared KV key, the last writer
+    // erased the rest and those files came back as pending run after run.
+    // Each shard owns a key now, so concurrent reports all survive.
+    const shardReports = [0, 1, 2, 3].map((shard) =>
+      worker.fetch(
+        jsonRequest("/api/admin/share-index/preview-report", {
+          runId: "run-2",
+          shard,
+          shards: 4,
+          done: [{ id: `shard-file-${shard}`, rev: `rev${shard}`, name: `S${shard}.ARW`, size: 10 + shard, w: 100, h: 50 }],
+          finished: true,
+        }),
+        driveEnv,
+      ),
+    );
+    await Promise.all(shardReports);
+    const merged = await (await worker.fetch(request("/api/admin/share-index/previews/pending?limit=1", { headers: { authorization: "Bearer test-admin" } }), driveEnv)).json();
+    assert.ok(merged, "pending still answers with shard deltas present");
+    res = await worker.fetch(jsonRequest("/api/admin/share-index/previews/run", { limit: 10, shards: 2 }), driveEnv);
+    const afterDispatch = await res.json();
+    for (const shard of [0, 1, 2, 3]) {
+      assert.ok(afterDispatch.indexed >= 4, "every shard's files survived the merge");
+    }
+    const compacted = await driveEnv.KV.get("share-previews:index", "json");
+    for (const shard of [0, 1, 2, 3]) {
+      assert.equal(compacted.files[`shard-file-${shard}`].r, `rev${shard}`, `shard ${shard} survived compaction`);
+    }
+    assert.equal((await driveEnv.KV.list({ prefix: "share-previews:delta:" })).keys.length, 0, "compaction clears the deltas");
+    assert.ok(compacted.files["file-raw"].d || compacted.files["file-raw"].r, "the Drive id recorded at upload is not clobbered by the run report");
     const secondPage = await (await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderIndex: 0, pageToken: listed.folders[0].nextPageToken }), driveEnv)).json();
     res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderToken: secondPage.folders[0].subfolders[0].ls }), driveEnv);
     const nestedListing = await res.json();

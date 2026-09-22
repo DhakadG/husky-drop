@@ -4,6 +4,24 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The RAW preview backlog was a lost-update race (PR #104)
+
+Every nightly run made two to five hundred previews and the backlog fell by a
+fraction of that, so the same RAW files were decoded again the next night. The
+runner was fine: eight shards reported their results to one KV key, each
+doing a read-modify-write, and KV has no compare-and-set - whichever shard
+wrote last erased what the other seven had recorded.
+
+- Each shard now writes its own `share-previews:delta:<run>-<shard>` key.
+  Readers union the deltas over the base index (per file, so the Drive id
+  recorded at upload is not clobbered by the run's report), and dispatching a
+  run folds them into the base and deletes them, which is safe because the new
+  run's shards have not written anything yet. No extra KV writes.
+- The WebP thumbnail runner reported the same way and had the same race; it
+  only affected what the Pipelines tab displayed, and is fixed alongside.
+- `smoke-test.mjs` reports from four shards at once and fails if any of them
+  is lost.
+
 ## 2026-09-23 — CI on every PR, shared loading skeletons (PR #101, #102)
 
 - **CI** (`ci.yml`): lint and all test scripts now run on every pull request
