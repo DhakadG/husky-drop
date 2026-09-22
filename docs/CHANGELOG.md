@@ -4,6 +4,22 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — CI on every PR, shared loading skeletons (PR #101, #102)
+
+- **CI** (`ci.yml`): lint and all test scripts now run on every pull request
+  into main and on main. They had only ever run on a laptop.
+- **PR review** (`pr-review.yml`): opencode reviews pull requests. The job
+  skips itself until an `ANTHROPIC_API_KEY` secret exists, so it cannot turn
+  PRs red on its own. CodeRabbit already reviews as a GitHub App.
+- **Skylos** now runs on pull-request diffs only. The whole-repo run on main
+  failed permanently on ~61 pre-existing `innerHTML` findings, and a check
+  that is always red is a check nobody reads.
+- **Loading skeletons** (`public/skeleton.js`): one vocabulary - lines, rows,
+  cards, photo tiles, folder tiles - sized like the real content so nothing
+  jumps when data lands. Used by the share opening screen, folder navigation
+  (only when a listing takes longer than 180 ms), folder tiles waiting on
+  stats, the admin log, upload sessions and the Pipelines tab.
+
 ## 2026-09-21 — Pipelines tab, folder dedupe, changes applied in any phase (PR #96)
 
 - **Pipelines tab** in admin: one page for everything running in the

@@ -8155,6 +8155,30 @@ body[data-phase="done"] .dv4-transfer { box-shadow: inset 4px 0 0 var(--green); 
 .ia-rule b { display: block; font-size: 13.5px; }
 .ia-rule small { display: block; }
 
+/* ---------- Shared skeletons (public/skeleton.js) ----------
+   Same footprint as the real content, so the swap does not reflow. */
+.share-skeleton { display: block; padding: 22px; }
+.skel-stack { display: grid; gap: 8px; }
+.skel-row, .skel-tile, .skel-folder > .skel-bone { border-radius: 10px; }
+.skel-row, .skel-tile { background: linear-gradient(90deg, rgba(12, 26, 43, 0.05) 25%, rgba(12, 26, 43, 0.12) 50%, rgba(12, 26, 43, 0.05) 75%); background-size: 200% 100%; animation: skel-wave 1.6s ease-in-out infinite; animation-delay: calc(var(--i, 0) * 70ms); }
+.skel-lines { display: grid; gap: 7px; margin-top: 8px; }
+.skel-lines .skel-bone { height: 10px; border-radius: 6px; display: block; }
+.skel-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.skel-panel { padding: 14px; border: 1px solid var(--line-2); border-radius: 14px; background: rgba(255, 255, 255, 0.55); animation: rise-in 320ms both; animation-delay: calc(var(--i, 0) * 60ms); }
+.skel-panel > .skel-bone { display: block; border-radius: 6px; }
+.skel-tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.skel-tile { height: 168px; flex-basis: 0; min-width: 120px; }
+.skel-folders { display: flex; flex-wrap: wrap; gap: 10px; }
+.skel-folder { width: 176px; height: 156px; display: flex; flex-direction: column; border: 1px solid var(--line-2); border-radius: 14px; overflow: hidden; background: rgba(255, 255, 255, 0.5); animation: rise-in 320ms both; animation-delay: calc(var(--i, 0) * 60ms); }
+.skel-folder > .skel-bone { flex: 1 1 auto; display: block; }
+.skel-folder span { display: grid; gap: 6px; padding: 9px 10px; }
+.skel-folder span .skel-bone { display: block; border-radius: 5px; }
+/* A folder tile whose stats have not arrived: one shimmer line, card size kept. */
+.folder-card:not(.rich) .folder-pending { display: block; width: 58%; height: 9px; border-radius: 5px; margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .skel-row, .skel-tile, .skel-bone, .skel-panel, .skel-folder { animation: none; }
+}
+
 /* ---------- Drive picker: skeleton, enter transitions, busy rows ---------- */
 .folder-list { position: relative; transition: opacity 160ms ease; }
 .folder-list.is-loading { opacity: 0.55; pointer-events: none; }

@@ -1,4 +1,5 @@
 import { computeJustifiedRows, hoverZoomOrigin, positionPreview } from "./share-gallery-layout.js";
+import { showSkeleton, skelFolders, skelTiles } from "./skeleton.js";
 import { createSmartHeaderState } from "./share-smart-header.js";
 import { switchGoogleAccount } from "./share-access.js";
 import {
@@ -433,7 +434,12 @@ export async function navigate(entry, { push = true, fromHistory = false, quiet 
   if (push && crumbs.length && crumbs[crumbs.length - 1].fid === fid) return;
   navigating = true;
   const host = $("folders");
-  host.setAttribute("aria-busy", "true");
+  // Cached listings paint immediately; only a real fetch gets a skeleton, and
+  // only if it is slow enough to notice.
+  let done = () => {};
+  const skelTimer = setTimeout(() => {
+    done = showSkeleton(host, (entry.fid ? skelFolders(3) : "") + skelTiles(12));
+  }, 180);
   try {
     const d = await resolveListing(entry);
     if (push) {
@@ -465,6 +471,8 @@ export async function navigate(entry, { push = true, fromHistory = false, quiet 
       toast("Could not open folder", String(err.message || err).slice(0, 80), "err");
     }
   } finally {
+    clearTimeout(skelTimer);
+    done();
     navigating = false;
     host.removeAttribute("aria-busy");
   }
@@ -1134,7 +1142,7 @@ function folderCard(sub) {
   el.dataset.fid = sub.fid;
   el.dataset.name = sub.name;
   installFolderHover(el, sub);
-  el.innerHTML = `${uiIcon("folder")}<span></span>`;
+  el.innerHTML = `${uiIcon("folder")}<span></span>${folderStats ? "" : `<i class="skel-bone folder-pending"></i>`}`;
   el.querySelector("span").textContent = sub.name;
   el.addEventListener("click", () => navigate({ fid: sub.fid, name: sub.name, token: sub.ls }, { push: true }));
   if (folderStats) decorateFolderCard(el, folderStats[sub.fid]);

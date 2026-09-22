@@ -33,12 +33,12 @@ export default [
   },
   {
     files: ["public/**/*.js"],
-    ignores: ["public/share*.js", "public/admin*.js", "public/drop.js", "public/drop-*.js"],
+    ignores: ["public/share*.js", "public/admin*.js", "public/drop.js", "public/drop-*.js", "public/skeleton.js"],
     languageOptions: { ecmaVersion: 2024, sourceType: "script", globals: PAGE_GLOBALS },
     rules: RULES,
   },
   {
-    files: ["public/share*.js", "public/admin*.js", "public/drop.js", "public/drop-*.js", "public/identity.js"],
+    files: ["public/share*.js", "public/admin*.js", "public/drop.js", "public/drop-*.js", "public/identity.js", "public/skeleton.js"],
     // modules import their helpers explicitly; no classic-script globals here
     languageOptions: { ecmaVersion: 2024, sourceType: "module", globals: { ...PAGE_GLOBALS, $: "off" } },
     rules: { ...RULES, "no-import-assign": "error", "no-unused-vars": ["error", { args: "none", caughtErrors: "none", vars: "all" }] },
