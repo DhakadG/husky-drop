@@ -1,0 +1,51 @@
+# AI review on pull requests, via opencode. It is a no-op until
+# ANTHROPIC_API_KEY exists in the repo secrets, so the workflow can sit here
+# without failing every PR.
+name: PR review
+
+"on":
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    name: opencode review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # A boolean, not the key: the secret itself only reaches the review step.
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.HAS_KEY == 'true'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: anomalyco/opencode/github@latest
+        if: env.HAS_KEY == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: anthropic/claude-sonnet-5
+          use_github_token: true
+          share: false
+          prompt: |
+            Review this pull request for a Cloudflare Worker + vanilla-JS photo
+            drop/share app. Read docs/CHANGELOG.md and CLAUDE.md first for the
+            conventions this repo actually follows.
+
+            Report only things that would bite in production:
+            - correctness bugs, especially around the share index job chain,
+              KV write budget, R2 keys and Drive API usage
+            - auth/permission holes on /api/share/* and /api/admin/*
+            - unescaped values reaching innerHTML
+            - anything that would break the 18 test scripts
+
+            Skip style nits and anything the linter already catches. If the
+            change is fine, say so in one line.
