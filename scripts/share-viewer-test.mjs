@@ -209,7 +209,9 @@ assert.match(
 );
 assert.match(shareJs, /className = "pswp-file-info"/);
 assert.match(shareJs, /File info/);
-assert.match(shareJs, /Reading media details…/);
+// The info panel shows key/value bones while the metadata request is out,
+// not a line of text that reflows once the real rows arrive.
+assert.match(shareJs, /pswp-info-skeleton">\$\{skelPairs\(/);
 assert.doesNotMatch(shareJs, /Reading image metadata…/);
 assert.match(shareJs, /megapixels/);
 assert.match(shareJs, /function inlineUrl\(file\)[\s\S]*inline=1/);

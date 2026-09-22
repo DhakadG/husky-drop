@@ -6,6 +6,7 @@ import { ensureFreshDownload } from "./share-download.js";
 import { vs, viewerChrome } from "./share-viewer-state.js";
 import { syncViewerPanelState, closeViewerPanels } from "./share-viewer-panels.js";
 import { mountStrip, stripHeightForScale } from "./share-viewer-strip.js";
+import { skelPairs } from "./skeleton.js";
 
 // Caption, chrome metrics and the file-info (EXIF) panel.
 export function updateCaption(file) {
@@ -199,7 +200,7 @@ export async function refreshFileInfo(file) {
   if (!vs.fileInfoPanel?.classList.contains("open") || !file) return;
   const body = vs.fileInfoPanel.querySelector(".pswp-file-info-body");
   const seq = ++vs.fileInfoRequest;
-  body.innerHTML = `<div class="pswp-info-loading"><i></i><span>Reading media details…</span></div>`;
+  body.innerHTML = `<section class="pswp-info-skeleton">${skelPairs(7)}</section>`;
   try {
     const data = await fetchFileInfo(file);
     if (seq !== vs.fileInfoRequest) return;

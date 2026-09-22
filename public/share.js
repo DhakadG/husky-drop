@@ -1,5 +1,5 @@
 import { computeJustifiedRows, hoverZoomOrigin, positionPreview } from "./share-gallery-layout.js";
-import { showSkeleton, skelFolders, skelTiles } from "./skeleton.js";
+import { delayedSkeleton, skelFolders, skelTiles } from "./skeleton.js";
 import { createSmartHeaderState } from "./share-smart-header.js";
 import { switchGoogleAccount } from "./share-access.js";
 import {
@@ -434,12 +434,9 @@ export async function navigate(entry, { push = true, fromHistory = false, quiet 
   if (push && crumbs.length && crumbs[crumbs.length - 1].fid === fid) return;
   navigating = true;
   const host = $("folders");
-  // Cached listings paint immediately; only a real fetch gets a skeleton, and
-  // only if it is slow enough to notice.
-  let done = () => {};
-  const skelTimer = setTimeout(() => {
-    done = showSkeleton(host, (entry.fid ? skelFolders(3) : "") + skelTiles(12));
-  }, 180);
+  // Cached listings paint immediately; only a fetch slow enough to notice
+  // gets a skeleton.
+  const done = delayedSkeleton(host, (entry.fid ? skelFolders(3) : "") + skelTiles(12));
   try {
     const d = await resolveListing(entry);
     if (push) {
@@ -471,7 +468,6 @@ export async function navigate(entry, { push = true, fromHistory = false, quiet 
       toast("Could not open folder", String(err.message || err).slice(0, 80), "err");
     }
   } finally {
-    clearTimeout(skelTimer);
     done();
     navigating = false;
     host.removeAttribute("aria-busy");
@@ -698,6 +694,12 @@ function updateLoadMoreCopy(button, folder, state = "") {
 async function loadMore(folder, button) {
   button.disabled = true;
   updateLoadMoreCopy(button, folder, "loading");
+  // Tiles in the space the next page will fill, so the page does not sit
+  // still while 200 more files are fetched.
+  const pending = document.createElement("div");
+  pending.className = "load-more-pending";
+  pending.innerHTML = skelTiles(8);
+  button.insertAdjacentElement("beforebegin", pending);
   try {
     const page = await prefetchMore(folder);
     folder._prefetch = null;
@@ -713,6 +715,8 @@ async function loadMore(folder, button) {
   } catch {
     button.disabled = false;
     updateLoadMoreCopy(button, folder, "error");
+  } finally {
+    pending.remove();
   }
 }
 
