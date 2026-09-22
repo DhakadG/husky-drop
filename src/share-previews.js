@@ -17,17 +17,64 @@ import { loadFiles } from "./share-index.js";
 import { appLog } from "./applog.js";
 
 const INDEX_KEY = "share-previews:index";
+// KV has no compare-and-set, and a run reports from eight shards at once. A
+// read-modify-write of one key therefore loses most of what they say: every
+// run made a few hundred previews and the backlog only fell by a fraction,
+// because whichever shard wrote last erased the others. Each shard now owns
+// one delta key. Readers union the deltas over the base index; a dispatch
+// folds them in and deletes them, which is safe because the new run's shards
+// have not written anything yet.
+const DELTA_PREFIX = "share-previews:delta:";
 const RUNS_KEPT = 20;
 const WORKFLOW = "transcode-share-previews.yml";
 // Decodable in a browser but heavy enough that the WebP wins by default and
 // the original becomes opt-in ("Load original").
 export const HEAVY_BYTES = 50 * 1024 * 1024;
 
+function mergeRun(runs, incoming) {
+  const run = runs.find((r) => r.id === incoming.id);
+  if (!run) {
+    runs.unshift({ ...incoming });
+    return;
+  }
+  run.startedAt = Math.min(run.startedAt || incoming.startedAt, incoming.startedAt || run.startedAt);
+  for (const k of ["done", "skipped", "kept", "bytes"]) run[k] = (run[k] || 0) + (incoming[k] || 0);
+  run.shardsDone = (run.shardsDone || 0) + (incoming.finishedAt ? 1 : 0);
+  if (incoming.finishedAt) run.finishedAt = Math.max(run.finishedAt || 0, incoming.finishedAt);
+  if (incoming.pendingLeft != null) run.pendingLeft = Math.min(run.pendingLeft ?? incoming.pendingLeft, incoming.pendingLeft);
+}
+
+async function readDeltas(env) {
+  const { keys } = await env.KV.list({ prefix: DELTA_PREFIX });
+  return (await Promise.all(keys.map((k) => env.KV.get(k.name, "json").then((v) => [k.name, v])))).filter(([, v]) => v);
+}
+
 export async function sharePreviewIndex(env) {
   const raw = (await env.KV.get(INDEX_KEY, "json")) || {};
-  return { files: raw.files || {}, runs: raw.runs || [] };
+  const index = { files: { ...(raw.files || {}) }, runs: (raw.runs || []).map((r) => ({ ...r })) };
+  for (const [, delta] of await readDeltas(env)) {
+    // Per file, not per key: putSharePreview records the Drive id in the base
+    // index and the runner's report adds the rev and size, so one must not
+    // clobber the other.
+    for (const [id, entry] of Object.entries(delta.files || {})) index.files[id] = { ...(index.files[id] || {}), ...entry };
+    for (const run of delta.runs || []) mergeRun(index.runs, run);
+  }
+  index.runs.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  index.runs = index.runs.slice(0, RUNS_KEPT);
+  return index;
 }
 const saveIndex = (env, index) => env.KV.put(INDEX_KEY, JSON.stringify(index));
+
+// Fold the shard deltas into the base index and drop them. Called when a new
+// run is dispatched, so nothing is writing a delta at that moment.
+async function compactPreviewIndex(env) {
+  const deltas = await readDeltas(env);
+  if (!deltas.length) return 0;
+  const index = await sharePreviewIndex(env);
+  await saveIndex(env, index);
+  await Promise.all(deltas.map(([name]) => env.KV.delete(name)));
+  return deltas.length;
+}
 
 // Which files want a preview-equivalent: anything a browser cannot decode
 // (RAW, HEIC, TIFF) and decodable images at or over HEAVY_BYTES.
@@ -143,7 +190,11 @@ export async function putSharePreview(request, env, fileId) {
 export async function reportSharePreviews(request, env, ctx) {
   const b = await request.json().catch(() => null);
   if (!b?.runId) return json({ error: "runId required" }, 400);
-  const index = await sharePreviewIndex(env);
+  const runId = String(b.runId).slice(0, 40);
+  const shard = String(Math.max(0, Math.min(63, Number(b.shard) || 0)));
+  // This shard's own key: nobody else writes it, so read-modify-write is safe.
+  const deltaKey = `${DELTA_PREFIX}${runId}-${shard}`;
+  const index = (await env.KV.get(deltaKey, "json")) || { files: {}, runs: [] };
   const now = Date.now();
   for (const d of b.done || []) {
     if (!d.id || !d.rev) continue;
@@ -160,7 +211,6 @@ export async function reportSharePreviews(request, env, ctx) {
     else failed.push(`${cleanText(s.name || s.id, 80)}: ${cleanText(s.error || "", 120)}`);
   }
   if (failed.length) appLog(env, ctx, { level: "warn", area: "share-previews", message: `${failed.length} preview(s) failed this batch (will retry)`, detail: failed.slice(0, 20) });
-  const runId = String(b.runId).slice(0, 40);
   const run = index.runs.find((r) => r.id === runId) || { id: runId, startedAt: now, done: 0, skipped: 0, bytes: 0 };
   run.done += (b.done || []).length;
   run.skipped += (b.skipped || []).filter((s) => !s.gainmap && !s.unsupported).length;
@@ -172,13 +222,13 @@ export async function reportSharePreviews(request, env, ctx) {
     appLog(env, ctx, { area: "share-previews", message: `run ${runId} finished: ${run.done} previews, ${run.kept || 0} kept as original (HDR / undecodable), ${run.skipped} failed, ${run.pendingLeft} left` });
   }
   if (!index.runs.some((r) => r.id === runId)) index.runs.unshift(run);
-  index.runs = index.runs.slice(0, RUNS_KEPT);
-  await saveIndex(env, index);
+  await env.KV.put(deltaKey, JSON.stringify(index));
   return json({ ok: true, indexed: Object.keys(index.files).length });
 }
 
 // Kick the runner (admin button, or the end of a share-index job).
 export async function dispatchSharePreviews(env, { limit = 5000, shards = 8 } = {}) {
+  await compactPreviewIndex(env).catch(() => {});
   if (!env.GITHUB_TOKEN) return { dispatched: false, reason: "GITHUB_TOKEN not set - the nightly run will pick it up" };
   const repo = env.GITHUB_REPO || "DhakadG/husky-drop";
   const r = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${WORKFLOW}/dispatches`, {

@@ -69,7 +69,9 @@ async function processOne(file, dir) {
 let batch = { done: [], skipped: [] };
 async function report(extra = {}) {
   if (!batch.done.length && !batch.skipped.length && !Object.keys(extra).length) return;
-  const body = JSON.stringify({ ...batch, ...extra, runId: process.env.GITHUB_RUN_ID || `local-${Date.now()}` });
+  // shard travels with the report: the worker keys each shard's progress
+  // separately, because eight shards writing one KV key lose each other.
+  const body = JSON.stringify({ ...batch, ...extra, shard, runId: process.env.GITHUB_RUN_ID || `local-${Date.now()}` });
   for (let attempt = 0; attempt < 3; attempt++) {
     const r = await api("/api/admin/share-index/preview-report", { method: "POST", headers: { "content-type": "application/json" }, body }).catch(() => null);
     if (r?.ok) {

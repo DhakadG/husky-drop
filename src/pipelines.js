@@ -13,6 +13,9 @@ import { previewIndex } from "./previews.js";
 import { loadJobs as loadImageJobs, publicJob } from "./images.js";
 
 const THUMB_RUNS_KEY = "share-thumbs:runs";
+// Same shape of race as the preview index: shards report concurrently, so
+// each one writes its own key and readers merge them.
+const THUMB_DELTA = "share-thumbs:shard:";
 const ORPHANS_KEY = "media:orphans:last";
 const WORKFLOWS = { "transcode-share-previews.yml": "share-previews", "transcode-previews.yml": "video-previews", "transcode-images.yml": "image-archive" };
 
@@ -55,7 +58,7 @@ export async function pipelinesOverview(env) {
     sharePreviewIndex(env),
     previewIndex(env),
     loadImageJobs(env),
-    env.KV.get(THUMB_RUNS_KEY, "json"),
+    thumbRunsMerged(env),
     env.KV.get(ORPHANS_KEY, "json"),
     env.KV.get("changes:cursor", "json"),
     githubRuns(env),
@@ -114,8 +117,9 @@ export async function pipelinesOverview(env) {
 export async function reportShareThumbs(request, env) {
   const b = await request.json().catch(() => null);
   if (!b?.runId) return json({ error: "runId required" }, 400);
-  const state = (await env.KV.get(THUMB_RUNS_KEY, "json")) || { runs: [] };
   const runId = cleanText(String(b.runId), 40);
+  const shardKey = `${THUMB_DELTA}${runId}-${Number(b.shard) || 0}`;
+  const state = (await env.KV.get(shardKey, "json")) || { runs: [] };
   let run = state.runs.find((r) => r.id === runId);
   if (!run) {
     run = { id: runId, startedAt: Date.now(), shards: {}, made: 0, had: 0, failed: 0, bytesIn: 0, bytesOut: 0 };
@@ -125,10 +129,38 @@ export async function reportShareThumbs(request, env) {
   run.shards[shard] = { made: Number(b.made) || 0, had: Number(b.had) || 0, failed: Number(b.failed) || 0, bytesIn: Number(b.bytesIn) || 0, bytesOut: Number(b.bytesOut) || 0, total: Number(b.total) || 0, finished: !!b.finished, at: Date.now() };
   for (const k of ["made", "had", "failed", "bytesIn", "bytesOut"]) run[k] = Object.values(run.shards).reduce((t, s) => t + (s[k] || 0), 0);
   run.updatedAt = Date.now();
-  if (Object.values(run.shards).length >= (Number(b.shards) || 1) && Object.values(run.shards).every((s) => s.finished)) run.finishedAt = Date.now();
+  run.shardsTotal = Math.max(run.shardsTotal || 0, Number(b.shards) || 1);
   state.runs = state.runs.slice(0, 10);
-  await env.KV.put(THUMB_RUNS_KEY, JSON.stringify(state));
+  await env.KV.put(shardKey, JSON.stringify(state), { expirationTtl: 7 * 24 * 3600 });
   return json({ ok: true });
+}
+
+// Merge every shard's view of a thumbnail run into one row per run.
+async function thumbRunsMerged(env) {
+  const base = (await env.KV.get(THUMB_RUNS_KEY, "json")) || { runs: [] };
+  const { keys } = await env.KV.list({ prefix: THUMB_DELTA });
+  const byId = new Map(base.runs.map((r) => [r.id, r]));
+  for (const key of keys) {
+    const part = await env.KV.get(key.name, "json");
+    for (const run of part?.runs || []) {
+      const merged = byId.get(run.id);
+      if (!merged) byId.set(run.id, { ...run, shards: { ...run.shards } });
+      else {
+        merged.shards = { ...merged.shards, ...run.shards };
+        merged.startedAt = Math.min(merged.startedAt, run.startedAt);
+        merged.updatedAt = Math.max(merged.updatedAt || 0, run.updatedAt || 0);
+        for (const k of ["made", "had", "failed", "bytesIn", "bytesOut"]) merged[k] = Object.values(merged.shards).reduce((t, s) => t + (s[k] || 0), 0);
+        merged.shardsTotal = Math.max(merged.shardsTotal || 0, run.shardsTotal || 0);
+      }
+    }
+  }
+  // A run is done when every shard it was split into has said so.
+  for (const run of byId.values()) {
+    const parts = Object.values(run.shards || {});
+    if (parts.length >= (run.shardsTotal || 1) && parts.length && parts.every((p) => p.finished)) run.finishedAt = Math.max(...parts.map((p) => p.at || 0));
+    else delete run.finishedAt;
+  }
+  return { runs: [...byId.values()].sort((a, b) => b.startedAt - a.startedAt).slice(0, 10) };
 }
 
 export const noteOrphanSweep = (env, result) => env.KV.put(ORPHANS_KEY, JSON.stringify({ ...result, at: Date.now() })).catch(() => {});
