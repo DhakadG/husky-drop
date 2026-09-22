@@ -18,14 +18,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # A boolean, not the key: the secret itself only reaches the review step.
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     steps:
-      - uses: actions/checkout@v5
-        if: env.ANTHROPIC_API_KEY != ''
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.HAS_KEY == 'true'
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: anomalyco/opencode/github@latest
-        if: env.ANTHROPIC_API_KEY != ''
+        if: env.HAS_KEY == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
