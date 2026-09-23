@@ -35,7 +35,9 @@ const startToken = async (env) => (await driveChanges(env, "/startPageToken?supp
 export async function maybeCheckChanges(env, ctx, request, { force = false } = {}) {
   if (!env.GOOGLE_CLIENT_ID || !env.MEDIA_BUCKET) return { skipped: "not configured" };
   const cursor = (await env.KV.get(CURSOR_KEY, "json")) || {};
-  if (!force && cursor.checkedAt && Date.now() - cursor.checkedAt < changeWindowMs(env)) return { skipped: "checked recently" };
+  // A feed left mid-backlog (`behind`) is drained on the next call rather
+  // than waiting out the window.
+  if (!force && !cursor.behind && cursor.checkedAt && Date.now() - cursor.checkedAt < changeWindowMs(env)) return { skipped: "checked recently" };
   // Same cadence, same free ride: a deploy kills whatever continuation chain
   // was mid-flight, so a running job that has not moved in a while is picked
   // up here instead of waiting for the nightly cron.
@@ -68,8 +70,11 @@ export async function maybeCheckChanges(env, ctx, request, { force = false } = {
     appLog(env, ctx, { level: "warn", area: "share-index", message: "Drive change token expired; re-anchored, next full walks will catch up" });
     return { reanchored: true };
   }
-  await env.KV.put(CURSOR_KEY, JSON.stringify({ pageToken: token, checkedAt: Date.now() }));
-  if (!changed.size) return { changes: 0, shares: 0 };
+  // Stopped at MAX_CHANGE_PAGES with more to read: resume from the next page.
+  // Writing the original token back here re-read the same first pages forever
+  // after any burst of more than MAX_CHANGE_PAGES x 1000 changes.
+  await env.KV.put(CURSOR_KEY, JSON.stringify(next ? { pageToken: next, checkedAt: Date.now(), behind: true } : { pageToken: token, checkedAt: Date.now() }));
+  if (!changed.size) return { changes: 0, shares: 0, behind: !!next };
 
   let hits = 0;
   for (const share of await getAllShares(env)) {

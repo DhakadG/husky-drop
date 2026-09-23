@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The Drive change feed no longer sticks after a big burst
+
+`maybeCheckChanges` reads at most five pages (5,000 changes) per check. When
+it stopped there with more to read, it wrote the *original* page token back,
+so every later check re-read the same first five pages and never reached
+anything newer - after one large image-archive job or a big drop, shares
+silently stopped picking up edits until the token expired. It now saves the
+next page token with `behind: true`, and a behind cursor skips the 5-minute
+window so the backlog drains on the next visit. `smoke-test.mjs` fakes a
+seven-page feed and asserts the cursor advances.
+
 ## 2026-09-23 — Pausing an image rule no longer changes what it does
 
 The rule's pause/enable button re-posted the whole stored rule. Stored options

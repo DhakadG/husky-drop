@@ -403,7 +403,9 @@ Folder stats + thumbnail pre-warm per gallery share (design spec §2/§4/§8.3).
   Worker calls this on itself after every chunk; the nightly cron resumes any
   running job that stalled.
 - `GET /api/admin/share-index/status/:slug` - `{pointer, active, last}`.
-- `POST /api/admin/share-index/check-changes` - force the change check.
+- `POST /api/admin/share-index/check-changes` - force the change check. Reads
+  at most 5 pages; when more remain it saves the next page token and
+  answers `behind: true`, and the next check continues from there.
 - `POST /api/admin/media/orphans` `{cursor?, dryRun?}` - deletes R2 media
   objects no indexed share references (one bucket page per call; loop while
   `cursor` is returned).
