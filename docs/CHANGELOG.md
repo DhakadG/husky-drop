@@ -4,6 +4,18 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — A failed Drive revoke is retried instead of forgotten
+
+Redirect shares make their folders "anyone with the link" in Drive. When one
+was paused, deleted or expired, `driveRevokePermission` ignored the response
+and `revokeSharePermissions` cleared `permissionIds` anyway, so a token
+failure or a Drive 5xx left the folder public while the app said access was
+gone, with nothing left to retry. The revoke now reports success (404 counts
+as already gone). Failures go to `drive:revoke-pending` with an error in the
+Logs tab, and the nightly cron retries them. Drive gives every "anyone" grant
+on a folder the same permission id, so the retry skips any folder a share has
+granted again since. `scripts/revoke-retry-test.mjs` covers both paths.
+
 ## 2026-09-23 — The PR review action is pinned to a commit
 
 `pr-review.yml` ran `anomalyco/opencode/github@latest` with the Anthropic

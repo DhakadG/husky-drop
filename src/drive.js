@@ -308,16 +308,20 @@ export async function driveGrantAnyoneReader(env, folderId) {
   return d.id;
 }
 
+// True once Drive confirms the permission is gone (404: already gone).
 export async function driveRevokePermission(env, folderId, permissionId) {
   try {
     const tok = await accessToken(env);
-    await fetch(
+    const r = await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}/permissions/${encodeURIComponent(permissionId)}?supportsAllDrives=true`,
       { method: "DELETE", headers: { authorization: `Bearer ${tok}` } }
     );
+    if (r.ok || r.status === 404) return true;
+    console.error("permission revoke failed", r.status);
   } catch (err) {
     console.error("permission revoke failed", err.message);
   }
+  return false;
 }
 
 export async function driveUploadsForLink(env, slug) {

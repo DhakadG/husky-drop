@@ -35,7 +35,7 @@ import {
   shareTrack,
   verifySharePin,
 } from "./share.js";
-import { createShare, deleteShare, listShares, patchShare } from "./share-admin.js";
+import { createShare, deleteShare, listShares, patchShare, retryPendingRevokes } from "./share-admin.js";
 import { dedupeShareFolder, listShareIndexJobs, runShareIndexChunk, shareIndexGaps, shareIndexStatus } from "./share-index.js";
 import { maybeCheckChanges, runDueShareIndex, sweepOrphans } from "./share-changes.js";
 import { cancelPipelineRun, pipelinesOverview, reportShareThumbs } from "./pipelines.js";
@@ -118,6 +118,7 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runDueRules(env, ctx));
     ctx.waitUntil(runDueShareIndex(env, ctx).catch((e) => appLog(env, ctx, { level: "error", area: "share-index", message: `scheduled share-index crashed: ${e.message}` })));
+    ctx.waitUntil(retryPendingRevokes(env, ctx).catch((e) => appLog(env, ctx, { level: "error", area: "drive", message: `revoke retry crashed: ${e.message}` })));
     ctx.waitUntil(runIdentityStitch(env, ctx).catch((e) => appLog(env, ctx, { level: "error", area: "people", message: `identity stitch crashed: ${e.message}` })));
   },
   async fetch(request, env, ctx) {

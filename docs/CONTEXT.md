@@ -141,7 +141,7 @@ no watch mode, and `npm test` runs all of them in sequence after ESLint.
 | `share-viewer-test.mjs`, `share-viewer-engine-test.mjs` | viewer contracts and state machine |
 | `share-gallery-layout-test.mjs`, `share-selection-engine-test.mjs`, `share-smart-header-test.mjs`, `share-video-session-test.mjs` | share page pure logic |
 | `ui-v3-test.mjs`, `mobile-responsive-test.mjs`, `icon-audit-test.mjs`, `readme-test.mjs` | UI/asset/doc invariants |
-| `admin-workflow-test.mjs`, `kv-budget-test.mjs`, `exif-test.mjs`, `transcode-previews-test.mjs`, `identity-ban-test.mjs`, `image-rules-test.mjs`, `image-archive-order-test.mjs`, `timeseries-test.mjs`, `preflight-index-test.mjs`, `completion-flush-test.mjs` | admin flows, KV write budget, EXIF, transcoder API, ban ids keep their case, pausing a rule keeps its recipe, the archive keeps HDR originals and never moves one before its replacement is stored, the chart keeps drop and share traffic apart, preflight sees every past completion, a failed completion flush still counts each file once |
+| `admin-workflow-test.mjs`, `kv-budget-test.mjs`, `exif-test.mjs`, `transcode-previews-test.mjs`, `identity-ban-test.mjs`, `image-rules-test.mjs`, `image-archive-order-test.mjs`, `timeseries-test.mjs`, `preflight-index-test.mjs`, `completion-flush-test.mjs`, `revoke-retry-test.mjs` | admin flows, KV write budget, EXIF, transcoder API, ban ids keep their case, pausing a rule keeps its recipe, the archive keeps HDR originals and never moves one before its replacement is stored, the chart keeps drop and share traffic apart, preflight sees every past completion, a failed completion flush still counts each file once, a failed Drive revoke is kept and retried |
 | `plan-policy-test.mjs` | plans stay untracked, durable specs stay tracked |
 | `docs-test.mjs` | doc links resolve, and every path this file names still exists |
 | `review-test.mjs` | the deep-review tooling: surfaces name real files, sharding covers each file once, unchanged targets are skipped |
@@ -262,6 +262,7 @@ decode, `PUT`s the result back, and reports progress.
 | --- | --- |
 | `link:<slug>`, `links:index` | drop links |
 | `share:<slug>`, `shares:index` | share links |
+| `drive:revoke-pending` | redirect-share folders Drive did not confirm un-sharing; retried by the nightly cron |
 | `share-index:jobs` | index job records (written at start and end only) |
 | `share-stats:<slug>` | pointer to the R2 stats blob |
 | `share-previews:index` | which files have a WebP preview, plus run history |
