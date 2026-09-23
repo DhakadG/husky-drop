@@ -143,7 +143,10 @@ export async function refreshLogs({ more = false } = {}) {
       }
       const b = e.target.closest("[data-alert-area]");
       if (!b) return;
-      $("logs-area").value = b.dataset.alertArea;
+      // An area with no dropdown option would silently fall back to "all areas".
+      const area = b.dataset.alertArea;
+      if (![...$("logs-area").options].some((o) => o.value === area)) $("logs-area").add(new Option(area, area));
+      $("logs-area").value = area;
       $("logs-level").value = "error";
       refreshLogs();
     });

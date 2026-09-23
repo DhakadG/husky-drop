@@ -4,6 +4,13 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The log area filter covers every area that logs
+
+The Logs tab's area dropdown was a hard-coded list without `share-index`,
+`share-previews` or `people`, which 14 `appLog` calls use. Clicking one of
+those areas in the alert strip set the select to a value it did not have, so
+it fell back to "all areas" and showed every error. The three options are
+added, and the strip adds an option on the fly for any area the list lacks.
 ## 2026-09-23 — A failed Drive revoke is retried instead of forgotten
 
 Redirect shares make their folders "anyone with the link" in Drive. When one
