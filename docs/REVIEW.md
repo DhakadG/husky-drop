@@ -29,6 +29,7 @@ Actions → **Deep review** → Run workflow.
 | `only` | comma-separated targets, e.g. `src/share-index.js` or `admin-pipelines`. Blank means everything |
 | `force` | re-review targets whose content has not changed since the last run |
 | `shards` | how many parallel jobs the file pass uses (default 8) |
+| `model` | override the model; blank uses Sonnet for files and Opus for surfaces |
 
 Locally, the same runner works if you have a key in your environment:
 
