@@ -338,8 +338,10 @@ pixel work with sharp + libraw + libheif + exiftool.
 
 - `GET /api/admin/images/rules`, `POST /api/admin/images/rules` (`{id?,
   name, every daily|weekly|monthly, enabled, notify, options, confirm}`),
-  `DELETE /api/admin/images/rules/:id`, `POST …/rules/:id/run`. The cron
-  trigger runs due rules via `runDueRules`.
+  `DELETE /api/admin/images/rules/:id`, `POST …/rules/:id/run`. A POST with
+  an existing `id` and no `options` only changes `enabled`/`notify`/`every`/
+  `name` and leaves the stored recipe untouched. The cron trigger runs due
+  rules via `runDueRules`.
 - `POST /api/admin/images/jobs/:id/convert` `{to: copy|archive}` —
   chunked outcome switch for finished copy/archive jobs.
 - `GET /api/admin/logs?limit&area&level&before` — app log rows from the

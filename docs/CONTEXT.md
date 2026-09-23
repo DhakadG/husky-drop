@@ -141,7 +141,7 @@ no watch mode, and `npm test` runs all of them in sequence after ESLint.
 | `share-viewer-test.mjs`, `share-viewer-engine-test.mjs` | viewer contracts and state machine |
 | `share-gallery-layout-test.mjs`, `share-selection-engine-test.mjs`, `share-smart-header-test.mjs`, `share-video-session-test.mjs` | share page pure logic |
 | `ui-v3-test.mjs`, `mobile-responsive-test.mjs`, `icon-audit-test.mjs`, `readme-test.mjs` | UI/asset/doc invariants |
-| `admin-workflow-test.mjs`, `kv-budget-test.mjs`, `exif-test.mjs`, `transcode-previews-test.mjs`, `identity-ban-test.mjs` | admin flows, KV write budget, EXIF, transcoder API, ban ids keep their case |
+| `admin-workflow-test.mjs`, `kv-budget-test.mjs`, `exif-test.mjs`, `transcode-previews-test.mjs`, `identity-ban-test.mjs`, `image-rules-test.mjs` | admin flows, KV write budget, EXIF, transcoder API, ban ids keep their case, pausing a rule keeps its recipe |
 | `plan-policy-test.mjs` | plans stay untracked, durable specs stay tracked |
 | `docs-test.mjs` | doc links resolve, and every path this file names still exists |
 | `review-test.mjs` | the deep-review tooling: surfaces name real files, sharding covers each file once, unchanged targets are skipped |

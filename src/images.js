@@ -52,7 +52,9 @@ export function normalizeOptions(raw = {}) {
     minBytes: Math.max(0, Number(raw.minBytes) || 0),
     onlyIfSmaller: raw.onlyIfSmaller !== false,
     mode: ["replace", "archive", "copy"].includes(raw.mode) ? raw.mode : "copy",
-    excludeRe: safeRegex(cleanText(raw.exclude || "", 200)),
+    // The form sends `exclude`; stored options carry `excludeRe`. Accept both
+    // so re-saving a stored rule can never drop its name exclusions.
+    excludeRe: safeRegex(cleanText(raw.exclude ?? raw.excludeRe ?? "", 200)),
     // Optional size target per photo: the runner nudges quality up on smooth
     // frames and down on busy ones until the output lands near it.
     targetBytes: Math.max(0, Math.min(20 * 1024 * 1024, Number(raw.targetBytes) || 0)),
