@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Image-job undo says when files could not be restored
+
+When some originals of an archive job could not be moved back (permissions
+changed, file deleted by hand), undo left them out of `remaining`, so the loop
+ended, the button said "undone" and the job was marked undone while those
+files still sat in `_archive/`. The endpoint now returns `failed`, the job
+stays "done" so undo can be retried (a successful retry clears the error),
+the button says "undone, N could not be restored", and the job's
+"failed only" view lists those files with the reason.
+`scripts/image-undo-test.mjs` covers a failed undo and its retry.
+
 ## 2026-09-23 — The orphan sweep waits for complete share indexes
 
 "Clear orphaned media" kept every R2 object referenced by a share's

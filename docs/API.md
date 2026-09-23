@@ -331,7 +331,9 @@ pixel work with sharp + libraw + libheif + exiftool.
   the job is `queued` and starts from the finishing job's final report.
 - `POST /api/admin/images/jobs/:id/undo` — copy jobs: trash the copies;
   archive jobs: move originals back and trash the copies. Chunked (60 per
-  call, returns `remaining`). Replace jobs: 409.
+  call, returns `remaining` and `failed`). Files that could not be restored
+  are counted in `failed`, keep the job out of `undone` and are retried on the
+  next call. Replace jobs: 409.
 - `GET /api/admin/images/jobs/:id/items` — processed files with outcome.
 - Runner: `GET …/:id/next?n=8`, `GET /api/admin/images/source/:fileId`,
   `PUT …/:id/file/:fileId` (header `x-format`; the worker applies the mode -
