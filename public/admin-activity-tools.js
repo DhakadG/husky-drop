@@ -51,8 +51,14 @@ export function wireActivityTools() {
     renderEvents();
     // Pull earlier days until the loaded window covers the range (max 14).
     const target = new Date(Date.now() - tools.days * 86400e3).toISOString().slice(0, 10);
-    // activityOldestDay is a live binding; it moves as each load lands.
-    for (let i = 0; i < 5 && activityOldestDay > target; i++) await loadEarlierActivity();
+    // One page after another: each load moves activityOldestDay (a live
+    // binding) back, which decides whether another is needed.
+    const pull = async (left) => {
+      if (!left || activityOldestDay <= target) return;
+      await loadEarlierActivity();
+      await pull(left - 1);
+    };
+    await pull(5);
   });
   on("activity-refresh", "click", async () => {
     const b = $("activity-refresh");

@@ -1,6 +1,6 @@
-// Finds browser code that can end in an "unhandledrejection" or crash the
-// page on a flaky connection or locked-down browser. Each finding is a place
-// where a rejection nobody handles is possible:
+// Finds browser code that can end in an "unhandledrejection" on a flaky
+// connection. Each finding is a place where a rejection nobody handles is
+// possible:
 //
 //   floating   a call to an async function that can reject, whose promise is
 //              dropped (statement, `a && f()`, `void f()`, `.then`/`.finally`
@@ -8,176 +8,220 @@
 //   listener   an async function that can reject, handed to an event
 //              listener / observer / timer, which ignore the promise
 //
-// Storage that throws (blocked site data, full quota) is handled once, by the
-// safeStorage shim at the top of public/public.js; the test checks it loads
-// first on every page.
 // "Can reject" is worked out per function: an `await` of a call that can
 // reject (fetch, json(), import(), or an async function that can reject),
-// or a `throw`, outside a try block with a catch. Used by
-// scripts/promise-audit-test.mjs; run directly to list everything.
+// or a `throw`, outside a try block with a catch.
+//
+// Storage that throws (blocked site data, full quota) is handled once, by the
+// safeStorage shim at the top of public/public.js; the test checks it loads
+// first on every page. Used by scripts/promise-audit-test.mjs; run directly
+// to list everything.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as espree from "espree";
 
-const PARSE = { ecmaVersion: "latest", sourceType: "module" };
+const PARSE = { ecmaVersion: "latest", sourceType: "module", loc: true };
 const FN = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
 // Calls that reject on a network drop or a bad response.
 const REJECTING_CALLS = new Set(["fetch", "json", "text", "arrayBuffer", "blob", "import"]);
 // Callbacks whose return value is ignored by the platform.
 const IGNORING_SINKS = new Set(["addEventListener", "setTimeout", "setInterval", "requestAnimationFrame", "requestIdleCallback", "forEach", "IntersectionObserver", "ResizeObserver", "MutationObserver", "on", "once"]);
+// Wrappers a dropped promise passes through on its way to a statement.
+const PASS_THROUGH = new Set(["LogicalExpression", "ConditionalExpression", "SequenceExpression"]);
 
-function walk(node, visit, parent = null) {
-  if (!node || typeof node.type !== "string") return;
-  if (visit(node, parent) === false) return;
+function children(node) {
+  const out = [];
   for (const key of Object.keys(node)) {
     if (key === "parent") continue;
     const v = node[key];
-    if (Array.isArray(v)) v.forEach((c) => c && typeof c.type === "string" && walk(c, visit, node));
-    else if (v && typeof v.type === "string") walk(v, visit, node);
+    if (Array.isArray(v)) out.push(...v.filter((c) => c && typeof c.type === "string"));
+    else if (v && typeof v.type === "string") out.push(v);
   }
+  return out;
 }
 
-const calleeName = (call) => {
+function walk(node, visit, parent = null) {
+  if (visit(node, parent) === false) return;
+  for (const child of children(node)) walk(child, visit, node);
+}
+
+function calleeName(call) {
   const c = call.callee;
   if (c.type === "Identifier") return c.name;
   if (c.type === "MemberExpression" && !c.computed) return c.property.name;
-  if (c.type === "Import") return "import";
   return "";
-};
+}
 
-export function audit(root, files) {
+function sinkName(node) {
+  return node.type === "NewExpression" ? node.callee.name : calleeName(node);
+}
+
+function nameOf(fn) {
+  const p = fn.parent;
+  if (fn.id?.name) return fn.id.name;
+  if (p?.type === "VariableDeclarator") return p.id.name;
+  if (p?.type === "Property" || p?.type === "MethodDefinition") return p.key?.name || "";
+  return "";
+}
+
+// Inside a try block (with a catch) of the same function.
+function guarded(node, fnNode) {
+  for (let p = node.parent, child = node; p && p !== fnNode; child = p, p = p.parent) {
+    if (FN.has(p.type)) return false;
+    if (p.type === "TryStatement" && p.block === child && p.handler) return true;
+  }
+  return false;
+}
+
+// x.catch(..) or x.then(a, b), possibly after .then(a)/.finally(..) links.
+function handledChain(call) {
+  const m = call.parent;
+  if (m?.type !== "MemberExpression" || m.object !== call || m.parent?.type !== "CallExpression") return false;
+  const name = m.property.name;
+  if (name === "catch") return true;
+  if (name === "then" && m.parent.arguments.length >= 2) return true;
+  return (name === "then" || name === "finally") && handledChain(m.parent);
+}
+
+// `await x.then(..)` / `.finally(..)` without catch still rejects like x.
+function unwrapChain(arg) {
+  let a = arg;
+  while (a?.type === "CallExpression" && a.callee.type === "MemberExpression" && ["then", "finally"].includes(a.callee.property.name)) a = a.callee.object;
+  return a;
+}
+
+function parseAll(root, files) {
   const asts = new Map();
   for (const f of files) {
-    const src = fs.readFileSync(path.join(root, f), "utf8");
-    const ast = espree.parse(src, { ...PARSE, loc: true });
-    // Parent links, used to climb from a call to where its promise goes.
+    const ast = espree.parse(fs.readFileSync(path.join(root, f), "utf8"), PARSE);
     walk(ast, (n, p) => {
       n.parent = p;
+      if (FN.has(n.type)) n.file = f;
     });
     asts.set(f, ast);
   }
+  return asts;
+}
 
-  // Named async functions across all files (modules import by the same name).
-  const fns = new Map(); // name -> [fnNode]
-  const nameOf = (fn) => fn.id?.name || (fn.parent?.type === "VariableDeclarator" && fn.parent.id.name) || (fn.parent?.type === "Property" && fn.parent.key?.name) || (fn.parent?.type === "MethodDefinition" && fn.parent.key?.name) || "";
-  for (const [file, ast] of asts) {
+// Named async functions across all files (modules import by the same name).
+function collectAsync(asts) {
+  const fns = new Map();
+  for (const ast of asts.values()) {
     walk(ast, (n) => {
-      if (FN.has(n.type)) n.file = file;
-      if (FN.has(n.type) && n.async) {
-        const name = nameOf(n);
-        if (name) fns.set(name, [...(fns.get(name) || []), n]);
-      }
+      const name = FN.has(n.type) && n.async ? nameOf(n) : "";
+      if (name) fns.set(name, [...(fns.get(name) || []), n]);
     });
+  }
+  return fns;
+}
+
+class Analysis {
+  constructor(asts) {
+    this.fns = collectAsync(asts);
+    this.rejects = new Map(); // fnNode -> reason
+    this.solve();
   }
 
   // A name defined in the calling file wins over same-named functions elsewhere.
-  const resolve = (name, file) => {
-    const all = fns.get(name) || [];
+  resolve(name, file) {
+    const all = this.fns.get(name) || [];
     const local = all.filter((fn) => fn.file === file);
     return local.length ? local : all;
-  };
-  const guarded = (node, fnNode) => {
-    // Inside a try block (with a catch) of the same function.
-    for (let p = node.parent, child = node; p && p !== fnNode; child = p, p = p.parent) {
-      if (FN.has(p.type)) return false;
-      if (p.type === "TryStatement" && p.block === child && p.handler) return true;
-    }
-    return false;
-  };
-  const handledChain = (call) => {
-    // x.catch(), or x.then(a, b)
-    const m = call.parent;
-    if (m?.type === "MemberExpression" && m.object === call && m.parent?.type === "CallExpression") {
-      const name = m.property.name;
-      if (name === "catch") return true;
-      if (name === "then" && m.parent.arguments.length >= 2) return true;
-      if (name === "then" || name === "finally") return handledChain(m.parent);
-    }
-    return false;
-  };
+  }
 
-  let rejects = new Map(); // fnNode -> reason
-  const reasonFor = (fnNode) => {
+  rejectingTarget(name, file) {
+    return this.resolve(name, file).find((fn) => this.rejects.has(fn));
+  }
+
+  awaitReason(n, fnNode) {
+    if (n.argument.type === "CallExpression" && handledChain(n.argument)) return "";
+    const arg = unwrapChain(n.argument);
+    const at = n.loc.start.line;
+    if (arg?.type === "ImportExpression") return `await import() at ${at}`;
+    if (arg?.type !== "CallExpression") return "";
+    const name = calleeName(arg);
+    return REJECTING_CALLS.has(name) || this.rejectingTarget(name, fnNode.file) ? `await ${name}() at ${at}` : "";
+  }
+
+  reasonFor(fnNode) {
     let reason = "";
     walk(fnNode.body, (n) => {
-      if (reason) return false;
-      if (n !== fnNode.body && FN.has(n.type)) return false; // nested functions are their own
-      if (n.type === "ThrowStatement" && !guarded(n, fnNode)) reason = `throw at ${n.loc.start.line}`;
-      if (n.type === "AwaitExpression" && !guarded(n, fnNode)) {
-        let arg = n.argument;
-        if (arg.type === "CallExpression" && handledChain(arg)) return;
-        // `await x.then(..)` / `.finally(..)` without catch still rejects.
-        while (arg?.type === "CallExpression" && arg.callee.type === "MemberExpression" && ["then", "finally"].includes(arg.callee.property.name)) arg = arg.callee.object;
-        if (arg?.type === "ImportExpression") reason = `await import() at ${n.loc.start.line}`;
-        else if (arg?.type === "CallExpression") {
-          const name = calleeName(arg);
-          if (REJECTING_CALLS.has(name)) reason = `await ${name}() at ${n.loc.start.line}`;
-          else if (resolve(name, fnNode.file).some((f) => rejects.has(f))) reason = `await ${name}() at ${n.loc.start.line}`;
-        }
-      }
+      if (reason || (n !== fnNode.body && FN.has(n.type))) return false; // nested functions are their own
+      if (guarded(n, fnNode)) return undefined;
+      if (n.type === "ThrowStatement") reason = `throw at ${n.loc.start.line}`;
+      else if (n.type === "AwaitExpression") reason = this.awaitReason(n, fnNode);
+      return undefined;
     });
     return reason;
-  };
+  }
+
   // Fixpoint: a function that awaits a rejecting function rejects too.
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const list of fns.values()) {
-      for (const fn of list) {
-        if (rejects.has(fn)) continue;
-        const r = reasonFor(fn);
+  solve() {
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const fn of [...this.fns.values()].flat()) {
+        const r = this.rejects.has(fn) ? "" : this.reasonFor(fn);
         if (r) {
-          rejects.set(fn, r);
+          this.rejects.set(fn, r);
           changed = true;
         }
       }
     }
   }
-  // Inline async callbacks are judged the same way.
-  const mayReject = (fn) => rejects.get(fn) || (fn.async ? reasonFor(fn) : "");
 
+  mayReject(fn) {
+    return this.rejects.get(fn) || (fn.async ? this.reasonFor(fn) : "");
+  }
+}
+
+function isIgnoredCallback(fn) {
+  const call = fn.parent;
+  if (!call || !["CallExpression", "NewExpression"].includes(call.type) || !call.arguments.includes(fn)) return false;
+  return IGNORING_SINKS.has(sinkName(call));
+}
+
+// Where does this call's promise end up? true when nobody can see a rejection.
+function isDropped(call) {
+  let top = call;
+  while (top.parent?.type === "MemberExpression" && top.parent.object === top && ["then", "finally"].includes(top.parent.property.name) && top.parent.parent?.type === "CallExpression") top = top.parent.parent;
+  let p = top.parent;
+  while (p && (PASS_THROUGH.has(p.type) || (p.type === "UnaryExpression" && p.operator === "void"))) p = p.parent;
+  return p?.type === "ExpressionStatement" || (p?.type === "ArrowFunctionExpression" && isIgnoredCallback(p));
+}
+
+function floatingFinding(n, file, analysis) {
+  if (n.type !== "CallExpression" || handledChain(n)) return null;
+  const name = calleeName(n);
+  const target = analysis.rejectingTarget(name, file);
+  if (!target || !isDropped(n)) return null;
+  return { file, line: n.loc.start.line, kind: "floating", text: `${name}() may reject (${analysis.rejects.get(target)})` };
+}
+
+function listenerFindings(n, file, analysis) {
+  if (!["CallExpression", "NewExpression"].includes(n.type) || !IGNORING_SINKS.has(sinkName(n))) return [];
+  const out = [];
+  for (const arg of n.arguments) {
+    let reason = "";
+    if (FN.has(arg.type) && arg.async) reason = analysis.mayReject(arg);
+    else if (arg.type === "Identifier") reason = analysis.rejects.get(analysis.rejectingTarget(arg.name, file)) || "";
+    if (reason) out.push({ file, line: arg.loc.start.line, kind: "listener", text: `${arg.type === "Identifier" ? arg.name : "async callback"} passed to ${sinkName(n)} may reject (${reason})` });
+  }
+  return out;
+}
+
+export function audit(root, files) {
+  const asts = parseAll(root, files);
+  const analysis = new Analysis(asts);
   const findings = [];
-  const add = (f, node, kind, text) => findings.push({ file: f, line: node.loc.start.line, kind, text });
-  for (const [f, ast] of asts) {
+  for (const [file, ast] of asts) {
     walk(ast, (n) => {
-      // floating: named async call whose promise is dropped
-      if (n.type === "CallExpression") {
-        const name = calleeName(n);
-        const targets = resolve(name, f).filter((fn) => rejects.has(fn));
-        if (targets.length && n.callee.type !== "Super") {
-          let top = n;
-          if (handledChain(n)) return;
-          // climb .then()/.finally() chains
-          while (top.parent?.type === "MemberExpression" && top.parent.object === top && ["then", "finally"].includes(top.parent.property.name) && top.parent.parent?.type === "CallExpression") top = top.parent.parent;
-          let p = top.parent;
-          while (p && (p.type === "LogicalExpression" || p.type === "ConditionalExpression" || p.type === "SequenceExpression" || (p.type === "UnaryExpression" && p.operator === "void"))) p = p.parent;
-          const dropped = p?.type === "ExpressionStatement" || (p?.type === "ArrowFunctionExpression" && p.body !== top.parent && isIgnoredCallback(p));
-          const arrowBody = p?.type === "ArrowFunctionExpression" && isIgnoredCallback(p);
-          if (dropped || arrowBody) add(f, n, "floating", `${name}() may reject (${rejects.get(targets[0])})`);
-        }
-      }
-      // listener: async function handed to something that ignores it
-      if (n.type === "CallExpression" && IGNORING_SINKS.has(calleeName(n)) || n.type === "NewExpression" && IGNORING_SINKS.has(n.callee.name)) {
-        for (const arg of n.arguments) {
-          if (FN.has(arg.type) && arg.async) {
-            const r = mayReject(arg);
-            if (r) add(f, arg, "listener", `async callback to ${calleeName(n) || n.callee.name} may reject (${r})`);
-          } else if (arg.type === "Identifier") {
-            const t = resolve(arg.name, f).find((fn) => rejects.has(fn));
-            if (t) add(f, arg, "listener", `${arg.name} passed to ${calleeName(n) || n.callee.name} may reject (${rejects.get(t)})`);
-          }
-        }
-      }
+      const floating = floatingFinding(n, file, analysis);
+      if (floating) findings.push(floating);
+      findings.push(...listenerFindings(n, file, analysis));
     });
   }
   return findings;
-
-  function isIgnoredCallback(arrow) {
-    const call = arrow.parent;
-    if (!call || (call.type !== "CallExpression" && call.type !== "NewExpression") || !call.arguments.includes(arrow)) return false;
-    const name = call.type === "NewExpression" ? call.callee.name : calleeName(call);
-    return IGNORING_SINKS.has(name);
-  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

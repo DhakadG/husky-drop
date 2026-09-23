@@ -36,8 +36,9 @@
     };
     try {
       Object.defineProperty(window, name, { configurable: true, get: () => safe });
-    } catch {
-      /* the browser refused; scripts keep the native object */
+    } catch (error) {
+      // The browser refused; scripts keep the native object.
+      console.warn("safeStorage: could not wrap", name, error);
     }
   }
 })();
