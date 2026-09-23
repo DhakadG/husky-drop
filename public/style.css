@@ -1964,6 +1964,14 @@ body.has-fx-cursor .mobile-select-bar * {
   cursor: none !important;
 }
 
+/* Only the fullscreen element's subtree is painted, so the follower (on
+   <body>) vanishes there; bring the system cursor back instead of leaving
+   the guest with no pointer at all. */
+body.has-fx-cursor :fullscreen,
+body.has-fx-cursor :fullscreen * {
+  cursor: revert !important;
+}
+
 .fx-cur-dot,
 .fx-cur-ring {
   position: fixed;
