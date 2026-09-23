@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The viewer keeps going past the loaded page
+
+The viewer only knew the files already paged into the gallery, so in a
+1,400-photo folder it read "200 / 200" and stopped at the 200th photo as if
+the folder ended. Within two photos of the end of a paged folder it now loads
+the next page through the gallery's own "Load next" path and extends the
+slides, so arrow keys and swipes carry on. It extends only when the gallery
+appended the page (see "Load next" appends tiles), so slide numbers never
+point at a different file.
+
 ## 2026-09-23 — "Newest first" and "Largest first" sort the whole folder
 
 Drive pages arrived in name order, 200 at a time, and the gallery only

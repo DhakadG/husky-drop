@@ -792,6 +792,13 @@ function appendPage(folder, button, page) {
   return true;
 }
 
+// The viewer calls this near the end of the loaded files: the same path as
+// the "Load next" button (appends when it can), so the grid stays in step.
+export function loadNextPage(folder) {
+  const button = [...document.querySelectorAll(".load-more-card")].find((b) => b._folder === folder);
+  return button && !button.disabled ? loadMore(folder, button) : null;
+}
+
 export async function prefetchMore(folder) {
   if (folder._prefetch) return folder._prefetch;
   if (folder._prefetchPromise) return folder._prefetchPromise;
