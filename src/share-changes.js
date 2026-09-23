@@ -131,7 +131,19 @@ export async function sweepOrphans(request, env) {
   const b = await request.json().catch(() => ({}));
   const live = new Set();
   const covers = new Set();
-  for (const share of await getAllShares(env)) {
+  const shares = await getAllShares(env);
+  // A share whose index is missing, partial or mid-walk has no complete
+  // files.json, so its cached media would all look orphaned and be deleted.
+  // Only active shares count: closed ones serve nobody, so their media may go.
+  const running = new Set((await loadJobs(env)).filter((j) => j.status === "running").map((j) => j.slug));
+  const unready = [];
+  for (const share of shares) {
+    if (share.mode === "redirect" || shareState(share) !== "active") continue;
+    const pointer = await env.KV.get(statsPointerKey(share.slug), "json");
+    if (!pointer?.complete || running.has(share.slug)) unready.push(share.slug);
+  }
+  if (unready.length) return json({ error: `not swept: ${unready.join(", ")} not fully indexed yet`, unready }, 409);
+  for (const share of shares) {
     for (const f of await loadFiles(env, share.slug)) live.add(`${f.id}/${f.r}`);
   }
   const previews = (await env.KV.get("previews:index", "json")) || {};

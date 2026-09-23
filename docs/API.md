@@ -414,7 +414,8 @@ Folder stats + thumbnail pre-warm per gallery share (design spec §2/§4/§8.3).
   answers `behind: true`, and the next check continues from there.
 - `POST /api/admin/media/orphans` `{cursor?, dryRun?}` - deletes R2 media
   objects no indexed share references (one bucket page per call; loop while
-  `cursor` is returned).
+  `cursor` is returned). Answers 409 `{error, unready}` while any active
+  gallery share has no complete index or an index job running.
 - `GET /api/admin/share-index/previews/pending?limit=&shards=&shard=` -
   files in indexed shares that want a WebP preview-equivalent (RAW / HEIC /
   TIFF, or decodable images ≥ 50 MB) and have none for their current
