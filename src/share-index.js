@@ -23,7 +23,7 @@ import { previewIndex } from "./previews.js";
 import { cleanText, json, sha256 } from "./util.js";
 import { mediaRev, mediaThumbs } from "./media-cache.js";
 import { appLog } from "./applog.js";
-import { dispatchSharePreviews } from "./share-previews.js";
+import { dispatchSharePreviews, wantsPreview } from "./share-previews.js";
 import { liveStub } from "./store.js";
 
 export const JOBS_KEY = "share-index:jobs";
@@ -212,7 +212,10 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
     ]);
     // KV pointer: once when the blob first exists, once when the walk ends.
     if (!pointer?.r2Key || complete || (walked && !pointer?.complete)) {
-      await env.KV.put(statsPointerKey(job.slug), JSON.stringify({ ...(pointer || {}), r2Key: foldersKey(job.slug), generatedAt, complete: walked, ...(walked && job.full && !pointer?.lastFullAt ? { lastFullAt: generatedAt } : {}), ...(complete && job.full ? { lastFullAt: generatedAt } : {}), ...(complete ? { needsReindex: false, changed: [] } : {}) }));
+      // `files` and `wants` ([id, rev] of files that want a WebP preview) let
+      // the Pipelines tab count pending previews without reading files.json.
+      const wants = state.files.filter((f) => wantsPreview({ name: f.n, mime: f.m, size: f.s })).map((f) => [f.id, f.r]);
+      await env.KV.put(statsPointerKey(job.slug), JSON.stringify({ ...(pointer || {}), r2Key: foldersKey(job.slug), generatedAt, complete: walked, files: state.files.length, wants, ...(walked && job.full && !pointer?.lastFullAt ? { lastFullAt: generatedAt } : {}), ...(complete && job.full ? { lastFullAt: generatedAt } : {}), ...(complete ? { needsReindex: false, changed: [] } : {}) }));
     }
     if (!complete) {
       scheduleNextChunk(env, ctx, job, request);

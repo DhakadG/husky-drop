@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Pipelines polls no longer read every share's file list
+
+The Pipelines tab polls every 10 s, and each poll read
+`stats/<slug>.files.json` from R2 for every active gallery share (often
+megabytes each) just to count files and pending WebP previews. The index job
+now also records `files` and `wants` (the `[id, rev]` of files that want a
+preview) in the stats pointer it already writes, and the poll counts from
+that. Pointers written before this change use the old path until the share's
+next index run.
+
 ## 2026-09-23 — Pipelines lists transcoder runs however busy CI is
 
 The Pipelines tab read the repository's last 20 Actions runs and kept the
