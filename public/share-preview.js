@@ -338,6 +338,10 @@ const POSTER_PARALLEL = 3;
 
 export function ensureVideoPoster(file, fig) {
   if (!/^video\//.test(file.mime) || file.thumb || file._sessionThumbFailed || file._posterBusy) return;
+  // Only from the 720p preview: without one, a poster meant buffering the
+  // original video (three at a time) just to draw a frame. Those tiles keep
+  // their chip and duration until hovered; Save-Data skips posters entirely.
+  if (!previewUrl(file) || navigator.connection?.saveData) return;
   file._posterBusy = true;
   posterQueue.push([file, fig]);
   pumpPosters();

@@ -4,6 +4,15 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Video tiles no longer buffer originals for a poster
+
+Video tiles without a Drive thumbnail pulled their own poster when they came
+into view. For a video with no 720p preview yet, that pointed a `<video>` at
+the original with `preload=auto`, three at a time, just to draw one frame,
+spending the guest's data and the Worker's Drive egress. Posters are now
+captured only from the 720p preview, and not at all with Save-Data on;
+other tiles keep their chip and duration until hovered.
+
 ## 2026-09-23 — The viewer does not fetch originals on its own over metered connections
 
 The viewer's full-resolution intent timer fetched the original of every photo
