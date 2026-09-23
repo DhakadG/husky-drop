@@ -24,6 +24,7 @@ import { cleanText, json, sha256 } from "./util.js";
 import { mediaRev, mediaThumbs } from "./media-cache.js";
 import { appLog } from "./applog.js";
 import { dispatchSharePreviews } from "./share-previews.js";
+import { liveStub } from "./store.js";
 
 export const JOBS_KEY = "share-index:jobs";
 const JOBS_KEPT = 20;
@@ -49,6 +50,27 @@ const filesKey = (slug) => `stats/${slug}.files.json`;
 const jobKey = (slug) => `stats/${slug}.job.json`;
 export const loadJobs = async (env) => ((await env.KV.get(JOBS_KEY, "json")) || {}).jobs || [];
 export const saveJobs = (env, jobs) => env.KV.put(JOBS_KEY, JSON.stringify({ jobs: jobs.slice(0, JOBS_KEPT) }));
+
+// Chunks of different shares run in parallel, and each wrote back the whole
+// list it had read at its start (KV has no compare-and-set, and reads may be
+// a minute stale): a job's "done" was overwritten with "running" and it
+// stayed running for days. Changes are now sent as ops - {add: job} or
+// {patch: {id, ...fields}} - and applied by the LiveTracker Durable Object
+// to a fresh read, one batch at a time.
+export async function applyJobOps(env, ops) {
+  const jobs = await loadJobs(env);
+  for (const op of ops) {
+    if (op.add && !jobs.some((j) => j.id === op.add.id)) jobs.unshift(op.add);
+    if (op.patch) Object.assign(jobs.find((j) => j.id === op.patch.id) || {}, op.patch);
+  }
+  await saveJobs(env, jobs);
+  return { ok: true };
+}
+async function jobOp(env, op) {
+  if (!env.LIVE_TRACKER) return applyJobOps(env, [op]);
+  const r = await liveStub(env).fetch("https://live.internal/share-index-jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(op) });
+  if (!r.ok) throw new Error(`job list update failed (${r.status})`);
+}
 export const activeJobFor = (jobs, slug) => jobs.find((j) => j.slug === slug && j.status === "running") || null;
 
 // ---- blobs ----
@@ -136,8 +158,7 @@ export async function planShareIndex(env, ctx, share, { trigger = "manual", full
     pageToken: "",
     warmAt: 0,
   });
-  jobs.unshift(job);
-  await saveJobs(env, jobs);
+  await jobOp(env, { add: job });
   appLog(env, ctx, { area: "share-index", message: `share ${share.slug}: ${isFull ? "full walk" : `targeted (${changed.length} changes)`} started (${trigger})` });
   return { job, started: true };
 }
@@ -152,7 +173,8 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
     job.status = status;
     job.finishedAt = Date.now();
     if (error) job.error = cleanText(error, 200);
-    await saveJobs(env, jobs);
+    const { id, finishedAt, progress, chunks } = job;
+    await jobOp(env, { patch: { id, status, finishedAt, ...(error ? { error: job.error } : {}), ...(progress ? { progress } : {}), ...(chunks ? { chunks } : {}) } });
     return job;
   };
   const share = await env.KV.get(`share:${job.slug}`, "json");

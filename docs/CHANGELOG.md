@@ -4,6 +4,20 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — A finished share-index job no longer reverts to "running"
+
+Found while checking #131 in production: job `si-mubu2kqi-6cne6q56` had
+been "running" since 2026-09-21, although its cursor said `phase: "done"`.
+It showed as indexing on the admin cards and blocked the orphan sweep.
+Chunks of different shares run in parallel, and each wrote back the whole
+`share-index:jobs` list it had read at its start. KV has no compare-and-set
+and its reads can be a minute stale, so a job's "done" was overwritten by
+another chunk's old copy. Job changes are now sent as ops (`{add}` /
+`{patch}`) to the LiveTracker Durable Object, which applies them to a fresh
+read one batch at a time, as it does for the preview reports (#126, #127). The
+stuck job closes itself on its next stall-resume chunk.
+`scripts/share-index-jobs-test.mjs` runs a finish in parallel with an add.
+
 ## 2026-09-23 — Dismissing a live upload session sticks
 
 "dismiss" on the Live tab deleted the session in the Durable Object, but the
