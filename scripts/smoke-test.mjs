@@ -788,13 +788,29 @@ async function main() {
   // error alert; a real crash stays an error.
   {
     const logged = [];
+    const mails = [];
     const log = console.log;
+    const realFetch = globalThis.fetch;
+    Object.assign(env, { RESEND_API_KEY: "re_test", NOTIFY_TO: "owner@example.com", NOTIFY_FROM: "drop@example.com" });
     console.log = (tag, body) => (tag === "applog" ? logged.push(JSON.parse(body)) : log(tag, body));
-    for (const message of ["Failed to fetch", "TypeError: boom"]) {
-      await worker.fetch(request("/api/client-error", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "unhandledrejection", message, url: "/s/album" }) }), env);
+    globalThis.fetch = async (input, init) => {
+      if (String(input).startsWith("https://api.resend.com/")) {
+        mails.push(JSON.parse(init.body));
+        return Response.json({ id: "mail-1" });
+      }
+      return realFetch(input, init);
+    };
+    for (const [i, message] of ["Failed to fetch", "TypeError: boom"].entries()) {
+      await worker.fetch(request("/api/client-error", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "unhandledrejection", message, url: `/s/album-${i}` }) }), env);
     }
     console.log = log;
+    globalThis.fetch = realFetch;
+    delete env.RESEND_API_KEY;
+    delete env.NOTIFY_TO;
+    delete env.NOTIFY_FROM;
     assert.deepEqual(logged.filter((e) => e.area === "client").map((e) => e.level), ["warn", "error"], "a network failure is a warning, a crash an error");
+    assert.equal(mails.length, 1, "only the crash sends an alert e-mail");
+    assert.match(mails[0].subject, /boom/);
   }
 
   // Events live in one rolling key, never one KV key per event.

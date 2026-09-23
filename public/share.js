@@ -247,11 +247,13 @@ async function verifyPinValue(candidate, silent = false) {
     body: JSON.stringify({ slug, pin: candidate }),
   }).catch(() => null);
   if (r?.ok) return true;
-  if (silent) return false;
+  // Offline is worth saying even for the silent stored-PIN check: the gate
+  // would otherwise appear with no reason. A wrong stored PIN stays silent.
   if (!r) {
     $("gate-err").textContent = "Can't reach the server. Check your connection and try again.";
     return false;
   }
+  if (silent) return false;
   const d = await r.json().catch(() => ({}));
   if (r.status === 401 && d.authRequired) {
     $("gate-err").textContent = "Please sign in with Google first.";
@@ -1320,7 +1322,14 @@ export function card(file) {
   fig.addEventListener("click", () => {
     if (selected.size) return toggleSelect(file, fig);
     // The viewer module loads on first use; on a dropped connection say so.
-    if (file._lbIndex != null) openViewer(file._lbIndex, fig).catch(() => toast("Could not open the viewer", "Check your connection and try again.", "err"));
+    if (file._lbIndex != null) {
+      openViewer(file._lbIndex, fig).catch((error) => {
+        const network = /dynamically imported module|Importing a module script failed|Failed to fetch|Load failed|NetworkError/i.test(String(error?.message || error));
+        toast("Could not open the viewer", network ? "Check your connection and try again." : "Please try again.", "err");
+        // Anything else is a bug: hand it to the page's crash reporter.
+        if (!network) globalThis.reportError?.(error);
+      });
+    }
     else downloadFile(file);
   });
   installTouchSelection(fig, file);
