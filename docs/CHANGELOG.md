@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The video coverage crawl is bounded and says what it skipped
+
+The coverage scan fanned out over every subfolder at every level at once,
+which ran into the Worker's subrequest cap and Drive's rate limits on big
+shares. A listing error just stopped that folder, so its videos silently
+dropped out of coverage and the pending list, and folders deeper than three
+levels were never scanned without anything saying so. The crawl now runs six
+listings at a time from a queue, marks folders it could not read, counts
+subfolders it skipped for depth, and the coverage panel lists both.
+
 ## 2026-09-23 — The index job no longer overwrites video runner reports
 
 In its warm phase, a share-index chunk read `previews:index`, added video

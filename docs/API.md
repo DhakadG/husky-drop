@@ -289,6 +289,10 @@ Used by `.github/workflows/transcode-previews.yml` (Bearer `ADMIN_TOKEN`).
   for every active share, failed files, last 20 runs, the queue, the active
   GitHub run (when `GITHUB_TOKEN` is set) and `nextRunAt`. The Drive walk is
   memoised per isolate for 60 s; `fresh=1` bypasses it. No KV writes.
+- `GET /api/admin/previews/coverage[?fresh=1]` — per-folder video coverage
+  from a Drive crawl (six listings at a time, three levels deep), plus
+  `unreadable` (folders whose listing failed) and `tooDeep` (subfolders past
+  three levels, not scanned).
 - `POST /api/admin/previews/run` `{limit?, folderIds?, fileIds?, retryFailed?}`
   — records the queue (served first by `pending`) and dispatches the
   workflow; 202 with `dispatched:false` + `reason` when it cannot.
