@@ -25,7 +25,7 @@
   <article class="panel legal-card">
     <p class="eyebrow">privacy policy</p>
     <h1>Privacy Policy</h1>
-    <p class="legal-date">Effective date: July 9, 2026</p>
+    <p class="legal-date">Effective date: September 23, 2026</p>
     <p>
       LostHusky Drop is a personal media transfer and sharing application used
       to collect files through private drop links, save them to Google Drive,
@@ -56,6 +56,34 @@
       available, stream downloads, and verify completed uploads.
     </p>
 
+    <h2>Device identification and analytics</h2>
+    <p>
+      To recognise returning devices and connect a device's earlier visits to
+      the Google account it later signs in with, the application sets two
+      cookies that last up to 400 days: <code>hd_did</code>, a random device
+      identifier, and <code>hd_fp</code>, a device identifier from
+      <strong>Fingerprint</strong> (fingerprint.com). Fingerprint derives that
+      identifier from browser and device characteristics; on a device's first
+      visit, and for signed-out visitors at most once a day, the page asks
+      Fingerprint's servers, sending those characteristics together with the
+      link being opened and, when known, the signed-in account.
+    </p>
+    <p>
+      Pages also load <strong>Microsoft Clarity</strong>, which records how
+      pages are used (clicks, scrolling and pointer movement) to help diagnose
+      problems, and <strong>Cloudflare Web Analytics</strong>, which measures
+      page views and load performance without cookies.
+    </p>
+    <p>
+      For the owner's People view, a nightly job may send visitor profiles
+      (names typed or from Google sign-in, e-mail addresses of signed-in
+      viewers, approximate places, device details such as operating system,
+      browser, screen and time zone, the links used, and visit times) to an AI
+      model provider (Google Gemini or Anthropic Claude) to suggest which
+      anonymous visits belong to the same person. The owner reviews every
+      suggestion; nothing is merged automatically.
+    </p>
+
     <h2>How we use information</h2>
     <ul>
       <li>To create and protect private upload and share links.</li>
@@ -81,6 +109,8 @@
       application runs on Cloudflare Workers and may store operational metadata
       in Cloudflare KV and Durable Objects. If email notifications are enabled,
       notification content may be sent through the configured email provider.
+      Fingerprint, Microsoft Clarity, Cloudflare Web Analytics and the AI model
+      provider described above also receive the data set out in that section.
       These services process data only as needed to provide the application.
     </p>
 
@@ -89,8 +119,10 @@
       Files remain in Google Drive until the owner deletes them or changes their
       Drive storage. Link metadata, activity logs, upload history, and live
       transfer state are retained as needed for the dashboard, security,
-      troubleshooting, and operational history. Short-lived download and ZIP
-      tickets expire automatically.
+      troubleshooting, and operational history. Activity events (the basis of
+      the People view) are deleted after 90 days; device and sign-in records
+      used to connect visits to accounts are kept until the owner removes them.
+      Short-lived download and ZIP tickets expire automatically.
     </p>
 
     <h2>Security</h2>
