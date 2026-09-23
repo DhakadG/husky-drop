@@ -4,6 +4,40 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Whole-file and whole-surface review pass (PR #107)
+
+Every review tool pointed at this repo reads a diff. Nothing read the code that
+is already here, which is where the interesting problems live - the lost-update
+race in the shard reports sat in `main` for weeks and no diff review would ever
+have looked at it.
+
+`.github/workflows/deep-review.yml` (manual dispatch) runs two passes:
+
+- **file** - all 133 source files, each read end to end, asked about
+  correctness, edge and empty states, resource cost, security, what is missing,
+  and dead weight.
+- **surface** - the 14 feature areas from `scripts/review/surfaces.json`
+  (each admin tab, the share gallery, the viewer, media delivery, indexing, the
+  drop page, the platform), server and client files together, asked whether the
+  surface is complete, connected, organised, honest, and sound across file
+  boundaries.
+
+The prompts carry `docs/CONTEXT.md`, the house rules and the file's import
+graph, plus an explicit list of what will be discarded - "consider adding
+tests", style opinions, and any suggestion to adopt a framework. Twelve
+findings maximum per target, each needing a location, a triggering scenario, a
+consequence and an applicable fix.
+
+Results land on an orphan `reviews` branch as `INDEX.md`, `TOP.md` (the fix-it
+list) and `PLAN.md` (the makeover backlog: missing features with where they
+belong, things that should link to each other, layout changes), plus one file
+per target. Targets are fingerprinted, so a re-run only pays for what changed.
+
+Measured with `--dry`: ~900k input tokens for the file pass, ~444k for the
+surface pass. `scripts/review-test.mjs` checks the plumbing against a fake API
+and fails if a module belongs to no surface. Needs one secret,
+`ANTHROPIC_API_KEY`. See [REVIEW.md](REVIEW.md).
+
 ## 2026-09-23 — Repo orientation: CONTEXT.md, RUNBOOK.md, docs archive (PR #106)
 
 Seven of the thirteen files in `docs/` described a version of this project that

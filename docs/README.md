@@ -10,6 +10,7 @@ mentions.
 | --- | --- |
 | [CONTEXT.md](CONTEXT.md) | What is where, how it works, how work ships here. Read once per session. |
 | [RUNBOOK.md](RUNBOOK.md) | How to operate the live service: health, re-index, dedupe, drain previews, sweep R2, chase a failed upload. |
+| [REVIEW.md](REVIEW.md) | The deep review pass: every file read end to end, every surface reviewed as a whole. How to run it, what it costs, how to work through the results. |
 | [API.md](API.md) | Every endpoint, with payloads. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The drop side in depth: KV schema, the Durable Object, batched completions, upload tuning. |
 | [CHANGELOG.md](CHANGELOG.md) | Newest first, with the reasoning. The fastest way to learn why something looks odd. |
