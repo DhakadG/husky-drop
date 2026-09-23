@@ -28,8 +28,6 @@ export async function refreshPeople({ force = false } = {}) {
       const card = e.target.closest("[data-person]");
       if (card) return openPerson(card.dataset.person);
       if (e.target.closest("#people-back")) return renderList();
-      if (e.target.closest("[data-goto-link]")) return showTab("links");
-      if (e.target.closest("[data-goto-share]")) return showTab("shares");
       const unlink = e.target.closest("[data-unlink]");
       if (unlink) return mergePerson(unlink.dataset.unlink, "");
       if (e.target.closest("#people-merge-go")) return mergePerson($("people-merge-go").dataset.key, $("people-merge-into").value);

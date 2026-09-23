@@ -4,6 +4,13 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — A person's links open the link itself
+
+On a People profile, "Drop links used" and "Shares viewed" only switched to
+the Drop links or Shares tab, so the admin had to find the card again. They
+now use the dashboard's existing actions: a drop link opens its detail view
+and a share opens its editor.
+
 ## 2026-09-23 — A failed drop-link save keeps the admin's edits
 
 `saveDetail` wrote "Save failed." and then re-rendered the whole detail view
