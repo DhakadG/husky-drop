@@ -596,7 +596,7 @@ export class LiveTracker {
             uploader: session.uploader,
             bytes: session.sent,
             count: session.done,
-            message: `${session.done} file${session.done === 1 ? "" : "s"} uploaded`,
+            message: `${session.done} file${session.done === 1 ? "" : "s"} uploaded${session.error ? `, ${session.error} failed or canceled` : ""}`,
             sessionId: session.id,
           },
           null,

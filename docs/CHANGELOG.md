@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Upload sessions with a skipped or failed file finish on the Live tab
+
+The drop page told the Durable Object a session was "done" only when every
+file had uploaded (`done + warning === count`). A session with a file skipped
+by preflight, canceled or failed never finished there: it never showed under
+"Finished this hour" and quietly dropped off the Live tab two minutes after
+the last frame, while the uploader's page said "Delivered". The page now
+reports "done" by the same rule as its own summary (nothing queued, checking
+or uploading), and the session-close event says how many files failed or
+were canceled.
+
 ## 2026-09-23 — Image-job undo says when files could not be restored
 
 When some originals of an archive job could not be moved back (permissions

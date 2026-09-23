@@ -62,7 +62,10 @@ export function sendLive(force) {
       error: totals.error + totals.canceled,
       speed: Math.round(st.speedBps),
       paused: st.queuePaused,
-      state: totals.count && totals.done + totals.warning === totals.count ? "done" : "uploading",
+      // Same rule as the page's own summary: finished once nothing is queued,
+      // checking or uploading. Requiring every file to succeed meant a session
+      // with a skipped or canceled file never reached "Finished this hour".
+      state: totals.count && !(totals.queued + totals.checking + totals.uploading) ? "done" : "uploading",
       files: sample,
     })
   );
