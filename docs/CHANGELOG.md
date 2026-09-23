@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Saving settings no longer pushes a link's expiry out
+
+The drop-link and share settings forms show the time left as whole days,
+rounded up, and every save sent that number back as `expiresDays`. Changing
+only the label on a link with 2 days 3 hours left reset it to 3 days from now,
+so any edit extended the link by up to a day. Both forms now send
+`expiresDays` only when the field was changed; the server already leaves the
+expiry alone when the field is absent.
 ## 2026-09-23 — A failed completion flush no longer loses upload counts
 
 `flushOne` wrote `recent:<slug>` before `stats:<slug>` and decided which files

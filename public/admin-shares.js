@@ -203,7 +203,7 @@ export function openShareEditor(slug) {
   $("se-slug").value = share.slug;
   $("se-title").textContent = share.label;
   $("se-label").value = share.label;
-  $("se-days").value = share.expiresAt ? Math.max(0, Math.ceil((share.expiresAt - Date.now()) / 86400_000)) : 0;
+  $("se-days").value = $("se-days").defaultValue = share.expiresAt ? Math.max(0, Math.ceil((share.expiresAt - Date.now()) / 86400_000)) : 0;
   $("se-mode").value = share.mode;
   $("se-pin").value = "";
   $("se-clear-pin").checked = false;
@@ -246,7 +246,9 @@ export async function saveShareEditor(event) {
   const pin = value("se-pin");
   const body = {
     label: value("se-label"), folders: [...shareEditSelectedFolders.keys()], mode: value("se-mode"),
-    expiresDays: Number(value("se-days")) || 0, allowZip: $("se-zip").checked, requireAuth: $("se-auth").checked,
+    // Only an edited expiry moves; the field rounds the time left up to whole days.
+    ...($("se-days").value !== $("se-days").defaultValue ? { expiresDays: Number(value("se-days")) || 0 } : {}),
+    allowZip: $("se-zip").checked, requireAuth: $("se-auth").checked,
     indexSchedule: value("se-index-schedule") || null,
     ...($("se-clear-pin").checked ? { pin: "" } : pin ? { pin } : {}),
     theme: { logoUrl: value("se-logo"), backgroundUrl: value("se-bg"), accentColor: value("se-accent"), backgroundColor: value("se-bgcolor"), welcome: value("se-welcome") },
