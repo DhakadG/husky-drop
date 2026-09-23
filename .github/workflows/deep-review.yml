@@ -24,6 +24,9 @@ name: Deep review
       shards:
         description: "parallel shards for the file pass"
         default: "8"
+      model:
+        description: "override the model (default: sonnet for files, opus for surfaces)"
+        default: ""
 
 permissions:
   contents: read
@@ -76,11 +79,13 @@ jobs:
           SHARDS: ${{ inputs.shards }}
           ONLY: ${{ inputs.only }}
           FORCE: ${{ inputs.force }}
+          MODEL: ${{ inputs.model }}
         run: |
           test -n "$ANTHROPIC_API_KEY" || { echo "::error::ANTHROPIC_API_KEY secret is not set"; exit 1; }
           set -- --mode file --shard "$SHARD" --shards "$SHARDS"
           [ -n "$ONLY" ] && set -- "$@" --only "$ONLY"
           [ "$FORCE" = "true" ] && set -- "$@" --force
+          [ -n "$MODEL" ] && set -- "$@" --model "$MODEL"
           node scripts/review/run.mjs "$@"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -106,11 +111,13 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ONLY: ${{ inputs.only }}
           FORCE: ${{ inputs.force }}
+          MODEL: ${{ inputs.model }}
         run: |
           test -n "$ANTHROPIC_API_KEY" || { echo "::error::ANTHROPIC_API_KEY secret is not set"; exit 1; }
           set -- --mode surface
           [ -n "$ONLY" ] && set -- "$@" --only "$ONLY"
           [ "$FORCE" = "true" ] && set -- "$@" --force
+          [ -n "$MODEL" ] && set -- "$@" --model "$MODEL"
           node scripts/review/run.mjs "$@"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
