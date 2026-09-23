@@ -1,0 +1,79 @@
+{
+  "target": "admin-drops",
+  "mode": "surface",
+  "verdict": "Creating and inspecting drop links is well covered - settings accordion, budgets, the per-session event log. The weak spot is the settings save: it re-renders the whole view the moment the request returns, so both the 'Saved'/'failed' message and any edits vanish, and every save quietly moves the expiry date. The detail page also knows far less than the app does (no per-link chart, no link to the share of this folder, history silently capped at 200).",
+  "findings": [
+    {
+      "severity": "medium",
+      "category": "correctness",
+      "where": "public/admin-detail.js:263-271",
+      "title": "Do not re-render the detail view on top of a failed save",
+      "scenario": "Admin edits five fields in Settings and clicks Save; the PATCH fails (network, 500) or succeeds.",
+      "consequence": "saveDetail() writes 'Save failed.' and then immediately calls refreshDetail(), whose renderDetail() replaces #detail-view including #detail-msg - the message disappears within a few hundred ms and, on failure, every edited field snaps back to the server value, so the admin's changes are lost without a visible error.",
+      "fix": "On !r.ok, show the server's error text (await r.json().error) and return without refreshDetail(). On success, call refreshDetail() first and set #detail-msg ('Saved.') after it resolves; use a success class instead of msg-err.",
+      "confidence": 0.85
+    },
+    {
+      "severity": "medium",
+      "category": "correctness",
+      "where": "public/admin-detail.js:44, 108, 234 + src/admin-api.js:171-174",
+      "title": "Only send expiresDays when the admin changed it",
+      "scenario": "A link expires in 2 days 3 hours; the admin opens Settings to change the label and saves.",
+      "consequence": "The form shows Math.ceil(remaining) = 3 and saveDetail always sends expiresDays, so patchLink sets expiresAt = now + 3 days: every unrelated save silently extends the link by up to a day, and a link can be kept alive indefinitely by editing it.",
+      "fix": "Remember the rendered d-days value and include expiresDays in the PATCH body only if the input differs from it (same pattern as the pin field).",
+      "confidence": 0.8
+    },
+    {
+      "severity": "low",
+      "category": "ux",
+      "where": "public/admin-detail.js:183-184 + src/store.js:211-227",
+      "title": "Say when upload history is truncated",
+      "scenario": "A link has received 1,204 files; recent:<slug> holds only the newest 200 (RECENT_CAP).",
+      "consequence": "The Files card says 1,204 while the history header says '200 files · 38 GB' with no hint that the list is capped; searching for an older file returns 'No files match the filter' although it exists.",
+      "fix": "When uploads.length < link.stats.files, render '200 most recent of 1,204 - sync from Drive for all' in #up-count and make the empty-filter message offer the Drive sync.",
+      "confidence": 0.8
+    },
+    {
+      "severity": "low",
+      "category": "ux",
+      "where": "public/admin-links.js:313-324, 332",
+      "title": "Surface failures from pause, archive and delete",
+      "scenario": "The admin session expired, or KV rejects the write, and the admin clicks Pause on a link being abused.",
+      "consequence": "The fetch result is ignored; refreshAll() redraws the card unchanged and the admin believes the link is paused when it is not.",
+      "fix": "Check r.ok in toggleLinkPause/toggleLinkArchive/deleteLink and flash the returned error on the clicked button (flash() already exists in admin.js).",
+      "confidence": 0.7
+    }
+  ],
+  "missing_features": [
+    {
+      "title": "Per-link 30-day chart on the detail page",
+      "why": "'When did people actually upload to this link?' has no answer on the page that is about this link.",
+      "where": "Link detail, under the stat cards",
+      "effort": "small",
+      "depends_on": "already available (/api/admin/timeseries?slug=)"
+    },
+    {
+      "title": "Share this drop's folder from the detail page",
+      "why": "The 'share this folder' shortcut only exists on the create-success screen; a week later the admin has to rebuild it by hand in the Shares tab.",
+      "where": "Link detail action row",
+      "effort": "small",
+      "depends_on": "already available (/api/admin/links/:slug/folder + create-share tab)"
+    },
+    {
+      "title": "Extend / set expiry as an explicit action",
+      "why": "Expiry is a 'days from now' number buried in the Access accordion; the common task is 'give them one more week'.",
+      "where": "Link detail header next to the status chip",
+      "effort": "small",
+      "depends_on": "already available (PATCH expiresDays)"
+    }
+  ],
+  "interlinks": [
+    { "from": "Link detail header", "to": "the share link(s) whose folderIds include this drop's folderId", "why": "shows at once whether the uploaders' files have been shared back" },
+    { "from": "Top uploaders row / Upload history uploader cell", "to": "People profile", "why": "one click from a name to everything that person did" },
+    { "from": "Upload-session card with problems", "to": "System log filtered to that session id", "why": "server-side errors for the same session are in the Logs tab" }
+  ],
+  "layout": [
+    "Move 'Upload sessions' (debug) below Settings - it is a troubleshooting tool, and on a healthy link it pushes the settings far down the page.",
+    "Show the budget bar inside the stat grid's 'Received' card instead of as a separate strip under it."
+  ]
+}

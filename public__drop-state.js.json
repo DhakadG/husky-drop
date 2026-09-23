@@ -1,0 +1,8 @@
+{
+  "target": "public/drop-state.js",
+  "mode": "file",
+  "verdict": "Drop page state and tuning constants with guarded sessionStorage access. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

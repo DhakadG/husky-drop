@@ -1,0 +1,8 @@
+{
+  "target": "scripts/review/queue.mjs",
+  "mode": "file",
+  "verdict": "Simple, correct board over the manifest. Its surface fingerprint differs from run.mjs's (filed under scripts/review/run.mjs); no defects in this file.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

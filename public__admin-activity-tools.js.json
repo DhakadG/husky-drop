@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-activity-tools.js",
+  "mode": "file",
+  "verdict": "Client-side filters, the table/people views and CSV export over loaded events; CSV cells are quoted correctly. Its limits come from what is loaded (see admin-activity-people); no defects found in this file.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

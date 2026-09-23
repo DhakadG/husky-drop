@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-images-plan.js",
+  "mode": "file",
+  "verdict": "Client estimator mirroring src/images.js skip rules and the in-browser trial encode. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

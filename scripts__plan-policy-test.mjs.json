@@ -1,0 +1,8 @@
+{
+  "target": "scripts/plan-policy-test.mjs",
+  "mode": "file",
+  "verdict": "Keeps plans untracked and specs tracked. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-state.js",
+  "mode": "file",
+  "verdict": "Live ES bindings with setters so every admin module sees reassignments. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

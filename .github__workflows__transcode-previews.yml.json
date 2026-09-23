@@ -1,0 +1,8 @@
+{
+  "target": ".github/workflows/transcode-previews.yml",
+  "mode": "file",
+  "verdict": "The plan job warms the Worker's Drive tree cache and repairs the preview index once, so the sharded runners can safely use cached=1. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

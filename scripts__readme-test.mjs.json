@@ -1,0 +1,8 @@
+{
+  "target": "scripts/readme-test.mjs",
+  "mode": "file",
+  "verdict": "Keeps the README's claims tied to the code. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

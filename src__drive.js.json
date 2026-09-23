@@ -1,0 +1,8 @@
+{
+  "target": "src/drive.js",
+  "mode": "file",
+  "verdict": "Every Drive call in one place, with a single-flight token refresh and memory/KV caching that tolerates a depleted KV budget. Permission revocation that ignores Drive's response and the 100-folder picker limit are filed under the platform surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

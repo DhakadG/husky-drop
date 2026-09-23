@@ -1,0 +1,8 @@
+{
+  "target": "public/drop-trekker.js",
+  "mode": "file",
+  "verdict": "Upload telemetry that excludes form values. Its per-load random session id, which splits one visit across two Upload-session cards, is filed under the drop-upload surface.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

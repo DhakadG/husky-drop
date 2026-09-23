@@ -1,0 +1,8 @@
+{
+  "target": "scripts/mobile-responsive-test.mjs",
+  "mode": "file",
+  "verdict": "Checks viewport meta on every page and the mobile rules the share viewer depends on, via source regexes. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

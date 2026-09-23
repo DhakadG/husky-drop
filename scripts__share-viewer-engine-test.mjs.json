@@ -1,0 +1,8 @@
+{
+  "target": "scripts/share-viewer-engine-test.mjs",
+  "mode": "file",
+  "verdict": "Behavioural tests of the DOM-free viewer engine (navigation races, rapid-surf timing, asset tiers, verification) with injected clocks and timers - the model the other UI tests should follow. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

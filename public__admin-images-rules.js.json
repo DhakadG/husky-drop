@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-images-rules.js",
+  "mode": "file",
+  "verdict": "Rule list and actions. The toggle re-posting stored options with confirm REPLACE (which erases the exclude regex) is filed (high) under the admin-media-jobs surface.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

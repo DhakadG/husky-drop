@@ -1,0 +1,8 @@
+{
+  "target": "public/share-preview.js",
+  "mode": "file",
+  "verdict": "The hover-preview state machine is solid (live Shift reading, one seek in flight, leases so tile and viewer share one video element). Poster capture buffering original videos with no Save-Data check is filed under the share-viewer surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

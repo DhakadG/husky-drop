@@ -1,0 +1,7 @@
+# Review — `scripts/share-viewer-test.mjs`
+
+_agent review (file) · 2026-09-23_
+
+> The account-switch cases at the top are real behavioural tests; most of the rest asserts that particular source strings still exist (regexes over the concatenated viewer modules, with `vs.` stripped so old patterns keep matching). That guards against accidental deletion of a fix but will pass if the behaviour changes while the text stays, and fail on harmless renames - worth knowing when it goes red or green, though no defect was found in it.
+
+No findings.

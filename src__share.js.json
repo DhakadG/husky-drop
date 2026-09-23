@@ -1,0 +1,8 @@
+{
+  "target": "src/share.js",
+  "mode": "file",
+  "verdict": "Share meta, listing, summary and redirect are gated in the right order (state, sign-in, PIN). The ungated /api/share/opened and /api/share/track recorders are filed under the share-gallery surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-shares.js",
+  "mode": "file",
+  "verdict": "Share cards, the editor and maintenance buttons. Expiry drift on save, silent toggle failures and the duplicated runner buttons are filed under the admin-shares surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-people-profile.js",
+  "mode": "file",
+  "verdict": "The profile view is escaped throughout and loads devices and timeline lazily. Its dead-end 'links used' buttons and merge/ban handling are filed under the admin-activity-people surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "public/share-select.js",
+  "mode": "file",
+  "verdict": "Touch drag-selection is well engineered (hold threshold, edge auto-scroll, click suppression). 'Select all' ignoring the active filter and unloaded pages is filed under the share-gallery surface.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

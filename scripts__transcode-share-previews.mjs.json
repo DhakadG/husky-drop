@@ -1,0 +1,8 @@
+{
+  "target": "scripts/transcode-share-previews.mjs",
+  "mode": "file",
+  "verdict": "Small, careful runner: gain-map HDR and undecodable files are recorded as decisions rather than retried nightly, PUTs retry alone after an R2 500, and reports carry the shard so each writes its own delta. The server-side single-key write of the Drive id (putSharePreview) is filed under share-delivery.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

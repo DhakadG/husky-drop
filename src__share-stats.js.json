@@ -1,0 +1,8 @@
+{
+  "target": "src/share-stats.js",
+  "mode": "file",
+  "verdict": "Stats read path gated by share state, sign-in and PIN, and the admin 'Process now' trigger. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

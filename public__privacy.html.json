@@ -1,0 +1,19 @@
+{
+  "target": "public/privacy.html",
+  "mode": "file",
+  "verdict": "Readable and specific about Drive, OAuth scopes and retention, but it no longer describes what the app actually does with visitors: device fingerprinting, session-recording analytics and sending visitor profiles to an AI model are all live and all absent.",
+  "findings": [
+    {
+      "severity": "medium",
+      "category": "security",
+      "lines": "Information we collect; Storage and processors",
+      "title": "List the processors and identifiers the app really uses",
+      "scenario": "Any guest opens a drop or share link.",
+      "consequence": "public/identity.js runs FingerprintJS Pro (a persistent device id plus VPN/proxy/tor verdicts from Fingerprint's servers) and sets hd_did/hd_fp cookies for 400 days; the Worker injects Microsoft Clarity session recording and Cloudflare Web Analytics into every page (wrangler.jsonc vars); and src/stitch.js sends visitor emails, names, places and device details to Gemini or Anthropic nightly. The policy names only Google Drive, Cloudflare storage and the email provider, and says data is processed 'only as needed to provide the application' - visitors and Google's OAuth review would read it as a complete list.",
+      "fix": "Add a 'Device identification and analytics' section naming Fingerprint, Microsoft Clarity and Cloudflare Web Analytics with what each collects and the 400-day cookies, and a line for the identity-matching model provider (or remove that feature); state how long People/session data is kept (90 days for activity, sessions table indefinitely).",
+      "confidence": 0.8
+    }
+  ],
+  "missing": [],
+  "questions": []
+}

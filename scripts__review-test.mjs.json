@@ -1,0 +1,8 @@
+{
+  "target": "scripts/review-test.mjs",
+  "mode": "file",
+  "verdict": "Guards the review plumbing well (surfaces name real files, every module belongs to a surface, shards partition targets, unchanged targets are skipped). It does not check that run.mjs, queue.mjs and mark.mjs compute the same surface fingerprint - the mismatch filed under scripts/review/run.mjs.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

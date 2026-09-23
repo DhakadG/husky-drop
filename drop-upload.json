@@ -1,0 +1,68 @@
+{
+  "target": "drop-upload",
+  "mode": "surface",
+  "verdict": "The upload engine is the strongest part of the app: direct-to-Drive chunked PUTs with adaptive chunk size and concurrency, IndexedDB resume, a stall watchdog, honest per-file states and Drive-verified completion. The weak link is the duplicate preflight, which only knows the newest 200 completions and only checks the first 500 files - exactly the large re-drop it exists for. Live status also never reports a session as finished when any file was skipped.",
+  "findings": [
+    {
+      "severity": "high",
+      "category": "correctness",
+      "where": "src/drop-api.js:427-442 + src/store.js:211-227 (recent:<slug> capped at RECENT_CAP 200) + public/drop.js:489-499",
+      "title": "Make preflight dedupe cover the whole drop and the whole batch",
+      "scenario": "An uploader's browser crashed after 700 of 1,500 photos; they reopen the link and drop the same folder again.",
+      "consequence": "Preflight compares only against recent:<slug>, which holds the newest 200 completions, and the server only answers for the first 500 files of the request; roughly 500 already-delivered photos are re-uploaded as duplicates in Drive (hours of upload, doubled storage), while the page says nothing was skipped. The 6 s client timeout on a 1,500-entry request can also fail open and skip dedupe entirely.",
+      "fix": "Keep a per-link completed-file index keyed by name|size(|lastModified) in the Durable Object's SQLite (completions already pass through CompletionQueue) and query it from /api/preflight; on the client send preflight in batches of 500 and apply each batch's results as they return.",
+      "confidence": 0.85
+    },
+    {
+      "severity": "medium",
+      "category": "correctness",
+      "where": "public/drop-live.js:238-242",
+      "title": "Report the session as done when nothing is left in flight, not only when every file uploaded",
+      "scenario": "An upload of 300 files where 4 were skipped by preflight (or one was canceled).",
+      "consequence": "sendLive sends state 'done' only when done + warning === count, so the Durable Object never records the finish: the session never appears in the admin's 'Finished this hour', and it silently disappears from the Live tab two minutes after the last frame - while the uploader's own page says 'Delivered 300 of 300'.",
+      "fix": "Use the same rule renderSummary uses: state 'done' when totals.count > 0 and queued + checking + uploading === 0 (send error/canceled counts alongside so the admin sees the outcome).",
+      "confidence": 0.8
+    },
+    {
+      "severity": "low",
+      "category": "security",
+      "where": "src/drop-api.js:378-396",
+      "title": "Gate /api/complete like /api/session",
+      "scenario": "Someone who knows a PIN-protected drop's slug (but not its PIN), or a paused link, POSTs /api/complete with a Drive file id and its size.",
+      "consequence": "logComplete checks neither the PIN nor the link state, and accepts any Drive file that has no dropLink appProperty at all, so the link's history and counters can be padded with files that never came through it.",
+      "fix": "Run gatePin and reject expired/paused links as createSession does, and require driveFile.appProperties.dropLink === linkId (not merely 'not different').",
+      "confidence": 0.65
+    },
+    {
+      "severity": "low",
+      "category": "correctness",
+      "where": "public/drop-queue.js:189-195",
+      "title": "Count dead-session restarts toward the retry limit",
+      "scenario": "Drive keeps answering a chunk PUT with 400 (e.g. a file that changed on disk mid-upload so its bytes no longer match the declared length).",
+      "consequence": "err.dead resets the file, mints a new session and `continue`s without incrementing retries, so the file loops forever creating Drive sessions and /api/session calls instead of reaching the error state the uploader could act on.",
+      "fix": "Increment item.retries (or a separate item.restarts, max 2) on the dead path and throw once exceeded.",
+      "confidence": 0.6
+    },
+    {
+      "severity": "low",
+      "category": "interlinking",
+      "where": "public/drop-trekker.js:404 vs public/drop-state.js:9-22",
+      "title": "Use one session id for telemetry and uploads",
+      "scenario": "An uploader signs in with Google (a full reload) and then uploads.",
+      "consequence": "dropTrekker mints a fresh random sessionId per page load while uploads use the sessionStorage-backed one; the admin's 'Upload sessions' log groups by the trekker id, so one visit splits into two cards and none of them matches the session id shown in Live, Activity or the digest email.",
+      "fix": "Have drop-trekker read the same hd_sid:<slug> sessionStorage value (or have drop-state set window.dropTrekker.sessionId) so every surface keys on one id.",
+      "confidence": 0.7
+    }
+  ],
+  "missing_features": [
+    {
+      "title": "'What did I already send?' list for returning uploaders",
+      "why": "Uploaders on a second visit cannot see what landed last time, so they re-drop everything 'to be safe'.",
+      "where": "Drop page, above the drop zone for a returning device",
+      "effort": "medium",
+      "depends_on": "completed-file index per link (see the preflight finding) filtered by device/session"
+    }
+  ],
+  "interlinks": [],
+  "layout": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "scripts/dev-fixture-server.mjs",
+  "mode": "file",
+  "verdict": "Local-only fixture server done carefully: binds 127.0.0.1, caps JSON bodies at 64 KB, rejects NUL and .. segments before resolving, and confirms every resolved path stays under its root. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

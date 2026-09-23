@@ -1,0 +1,938 @@
+{
+  "admin-overview": {
+    "fingerprint": "dac68156935407ae",
+    "at": 1790152819701,
+    "findings": 5,
+    "by": "agent"
+  },
+  "admin-live": {
+    "fingerprint": "df028ad4ec9558f0",
+    "at": 1790152875135,
+    "findings": 5,
+    "by": "agent"
+  },
+  "admin-drops": {
+    "fingerprint": "46f487df4688cec4",
+    "at": 1790152924043,
+    "findings": 4,
+    "by": "agent"
+  },
+  "admin-shares": {
+    "fingerprint": "19679e3f03b6e063",
+    "at": 1790152966222,
+    "findings": 5,
+    "by": "agent"
+  },
+  "admin-activity-people": {
+    "fingerprint": "1a1274b816b09536",
+    "at": 1790153036499,
+    "findings": 6,
+    "by": "agent"
+  },
+  "admin-pipelines": {
+    "fingerprint": "02e5d229f19e6a41",
+    "at": 1790153092553,
+    "findings": 5,
+    "by": "agent"
+  },
+  "admin-media-jobs": {
+    "fingerprint": "429a10e17ff3fb6c",
+    "at": 1790153178862,
+    "findings": 6,
+    "by": "agent"
+  },
+  "admin-logs": {
+    "fingerprint": "dbbea0042fec0057",
+    "at": 1790153204633,
+    "findings": 2,
+    "by": "agent"
+  },
+  "share-gallery": {
+    "fingerprint": "d5be3513dfb3712b",
+    "at": 1790153286356,
+    "findings": 6,
+    "by": "agent"
+  },
+  "share-viewer": {
+    "fingerprint": "5212de86999c44e7",
+    "at": 1790153362663,
+    "findings": 4,
+    "by": "agent"
+  },
+  "share-delivery": {
+    "fingerprint": "90648d322e74cc52",
+    "at": 1790153449042,
+    "findings": 6,
+    "by": "agent"
+  },
+  "share-index": {
+    "fingerprint": "330c3a9cf8cce088",
+    "at": 1790153492111,
+    "findings": 3,
+    "by": "agent"
+  },
+  "drop-upload": {
+    "fingerprint": "cae3cbf27e698522",
+    "at": 1790153656335,
+    "findings": 5,
+    "by": "agent"
+  },
+  "platform": {
+    "fingerprint": "2211ab6bd70c4e64",
+    "at": 1790153656423,
+    "findings": 5,
+    "by": "agent"
+  },
+  "public/style.css": {
+    "fingerprint": "c12f9f0d73f74d12",
+    "at": 1790153719227,
+    "findings": 2,
+    "by": "agent"
+  },
+  "scripts/smoke-test.mjs": {
+    "fingerprint": "3d7b0b597b1645f7",
+    "at": 1790153749819,
+    "findings": 2,
+    "by": "agent"
+  },
+  "public/share.js": {
+    "fingerprint": "e7b60bdfc9a42ea1",
+    "at": 1790153765443,
+    "findings": 1,
+    "by": "agent"
+  },
+  "public/admin.html": {
+    "fingerprint": "d890288f5f0f850b",
+    "at": 1790153795168,
+    "findings": 2,
+    "by": "agent"
+  },
+  "public/admin-images.js": {
+    "fingerprint": "dc0e2812d5a0aa43",
+    "at": 1790153805286,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-previews.js": {
+    "fingerprint": "d77231da7b3672c6",
+    "at": 1790153814853,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/dev-fixture-server-test.mjs": {
+    "fingerprint": "3beff914fa9c4175",
+    "at": 1790153828427,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/vendor-fp.js": {
+    "fingerprint": "427b9a2ee104a491",
+    "at": 1790153847430,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/share-viewer-test.mjs": {
+    "fingerprint": "f71dcd84bb373049",
+    "at": 1790153861059,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/previews.js": {
+    "fingerprint": "26b6690dfdbb2c72",
+    "at": 1790159205550,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/live.js": {
+    "fingerprint": "043d8fa5c584d37f",
+    "at": 1790153893190,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share-index.js": {
+    "fingerprint": "dd0b04187c9a66a8",
+    "at": 1790153900904,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin.js": {
+    "fingerprint": "45bb02d8280d0723",
+    "at": 1790153924808,
+    "findings": 1,
+    "by": "agent"
+  },
+  "src/worker.js": {
+    "fingerprint": "e1cc11b04945994a",
+    "at": 1790153938449,
+    "findings": 1,
+    "by": "agent"
+  },
+  "src/drop-api.js": {
+    "fingerprint": "c8586e65195151db",
+    "at": 1790153950725,
+    "findings": 1,
+    "by": "agent"
+  },
+  "scripts/dev-fixture-server.mjs": {
+    "fingerprint": "efe8fdfd220833be",
+    "at": 1790153972163,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/transcode-previews-test.mjs": {
+    "fingerprint": "235e0e8a26a6e093",
+    "at": 1790153972664,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/transcode-previews.mjs": {
+    "fingerprint": "71a3df4ab24554ca",
+    "at": 1790153990879,
+    "findings": 1,
+    "by": "agent"
+  },
+  "public/share-viewer-panels.js": {
+    "fingerprint": "91c8298a7cfa972e",
+    "at": 1790154002432,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-detail.js": {
+    "fingerprint": "244ec1ad6ffbeeed",
+    "at": 1790154002732,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop.js": {
+    "fingerprint": "07af2548243351ed",
+    "at": 1790154003028,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share-media.js": {
+    "fingerprint": "eadc9cca0f198e28",
+    "at": 1790154003560,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share-previews.js": {
+    "fingerprint": "267b1d03c573f075",
+    "at": 1790154037668,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/images-run.js": {
+    "fingerprint": "4c6dcff47d4caeda",
+    "at": 1790154037734,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/admin-api.js": {
+    "fingerprint": "68b02c2638572ddd",
+    "at": 1790154037800,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-links.js": {
+    "fingerprint": "8b16dd117cda98cd",
+    "at": 1790154037864,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share.js": {
+    "fingerprint": "8e7c34cbac1766e8",
+    "at": 1790154037928,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-preview.js": {
+    "fingerprint": "74128ff83b603883",
+    "at": 1790154037991,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop-queue.js": {
+    "fingerprint": "dc8dad0da406a58f",
+    "at": 1790154038059,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-viewer-video.js": {
+    "fingerprint": "102d7979a7c928d6",
+    "at": 1790154038123,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-viewer-assets.js": {
+    "fingerprint": "3fc64dbba3f35128",
+    "at": 1790154038259,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-viewer-engine.js": {
+    "fingerprint": "92d9d4f6f8849f69",
+    "at": 1790154038323,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-activity.js": {
+    "fingerprint": "fb5184aa3e77c955",
+    "at": 1790154038386,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/media-cache.js": {
+    "fingerprint": "e5cea94d9a6cfe67",
+    "at": 1790154038452,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-shares.js": {
+    "fingerprint": "f0cb0dbe70a8ace2",
+    "at": 1790154038516,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-viewer-info.js": {
+    "fingerprint": "0b37928aad1d8124",
+    "at": 1790154038580,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/images.js": {
+    "fingerprint": "8c9f38c0cccce084",
+    "at": 1790154038643,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-viewer.js": {
+    "fingerprint": "60390181ae5a3a4f",
+    "at": 1790154038706,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-pipelines.js": {
+    "fingerprint": "8be0b3c711007e5c",
+    "at": 1790154038773,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/live-analytics.js": {
+    "fingerprint": "11996fe418c6df39",
+    "at": 1790154038835,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share-zip.js": {
+    "fingerprint": "135a531b8cc36f21",
+    "at": 1790154038899,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop-render.js": {
+    "fingerprint": "2a5d47c2339ee737",
+    "at": 1790154038971,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share-admin.js": {
+    "fingerprint": "1358cecc27cbd443",
+    "at": 1790154039037,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/auth.js": {
+    "fingerprint": "979275d79f692181",
+    "at": 1790154039101,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/store.js": {
+    "fingerprint": "1bbc0e39a3f15791",
+    "at": 1790154059633,
+    "findings": 1,
+    "by": "agent"
+  },
+  "src/drive.js": {
+    "fingerprint": "5d8a3badcb38c8ad",
+    "at": 1790154059775,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/util.js": {
+    "fingerprint": "cadeeff5530f48e1",
+    "at": 1790154060069,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/share-viewer-engine-test.mjs": {
+    "fingerprint": "f2b875c5f0d3a28f",
+    "at": 1790159066777,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/kv-budget-test.mjs": {
+    "fingerprint": "df5e5ca32090133a",
+    "at": 1790159067084,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/ui-v3-test.mjs": {
+    "fingerprint": "d6ba71e7d8dbd2ed",
+    "at": 1790159067391,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/mobile-responsive-test.mjs": {
+    "fingerprint": "74125243708d5ea4",
+    "at": 1790159067673,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/review/run.mjs": {
+    "fingerprint": "0aa684bc17ab8226",
+    "at": 1790159090203,
+    "findings": 2,
+    "by": "agent"
+  },
+  "public/share-fx.js": {
+    "fingerprint": "15ae93f31d7e28b6",
+    "at": 1790159112772,
+    "findings": 1,
+    "by": "agent"
+  },
+  "public/share.html": {
+    "fingerprint": "9b57f48cb049db23",
+    "at": 1790159112853,
+    "findings": 1,
+    "by": "agent"
+  },
+  "public/admin-people-profile.js": {
+    "fingerprint": "043cfd6b7efa4546",
+    "at": 1790159151894,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/pipelines.js": {
+    "fingerprint": "02d736c2098ab7ed",
+    "at": 1790159151956,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/identity.js": {
+    "fingerprint": "27a8613545c6ac51",
+    "at": 1790159152023,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-activity-tools.js": {
+    "fingerprint": "f48f2850630c70b4",
+    "at": 1790159152085,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-people.js": {
+    "fingerprint": "56075734d5010aae",
+    "at": 1790159152151,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share-changes.js": {
+    "fingerprint": "42dd97b54f965003",
+    "at": 1790159152223,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-logs.js": {
+    "fingerprint": "6cbdf574c29daab0",
+    "at": 1790159152292,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/review/prompts.mjs": {
+    "fingerprint": "310a24a4da522bac",
+    "at": 1790159152364,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/people.js": {
+    "fingerprint": "7627b66fc23653dd",
+    "at": 1790159152434,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-viewer-strip.js": {
+    "fingerprint": "2d9587f584e96132",
+    "at": 1790159152496,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-live.js": {
+    "fingerprint": "20790038faedd5c3",
+    "at": 1790159152559,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-select.js": {
+    "fingerprint": "f3c72ad045195018",
+    "at": 1790159152623,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/images-rules.js": {
+    "fingerprint": "fd9b9952cf7e1ad7",
+    "at": 1790159152739,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/stitch.js": {
+    "fingerprint": "1ae88034d0c83771",
+    "at": 1790159152804,
+    "findings": 1,
+    "by": "agent"
+  },
+  "public/drop.html": {
+    "fingerprint": "d7edfe58e5963225",
+    "at": 1790159161787,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/review-test.mjs": {
+    "fingerprint": "1a417e88c76d8e79",
+    "at": 1790159162078,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/transcode-images.mjs": {
+    "fingerprint": "54786cfb5b8e0098",
+    "at": 1790159246685,
+    "findings": 2,
+    "by": "agent"
+  },
+  "public/share-video-session.js": {
+    "fingerprint": "625d43f7a2a7abf4",
+    "at": 1790159187966,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-trekker.js": {
+    "fingerprint": "735c8fe41cfb9d76",
+    "at": 1790159188249,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/transcode-share-previews.mjs": {
+    "fingerprint": "0da423481f9e412e",
+    "at": 1790159188537,
+    "findings": 0,
+    "by": "agent"
+  },
+  "wrangler.jsonc": {
+    "fingerprint": "5214236752f72501",
+    "at": 1790159226750,
+    "findings": 1,
+    "by": "agent"
+  },
+  ".github/workflows/deep-review.yml": {
+    "fingerprint": "34a5645b78acf818",
+    "at": 1790159226890,
+    "findings": 0,
+    "by": "agent"
+  },
+  ".github/workflows/transcode-share-previews.yml": {
+    "fingerprint": "1f6491a80adbefe6",
+    "at": 1790159227179,
+    "findings": 0,
+    "by": "agent"
+  },
+  ".github/workflows/transcode-previews.yml": {
+    "fingerprint": "2757a0233b4c4d4d",
+    "at": 1790159227478,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/review/render.mjs": {
+    "fingerprint": "a6df97cbb272bbb7",
+    "at": 1790159258788,
+    "findings": 1,
+    "by": "agent"
+  },
+  "scripts/lib/image-decode.mjs": {
+    "fingerprint": "a919725cf2e4b4a5",
+    "at": 1790159258930,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/privacy.html": {
+    "fingerprint": "b912ebab6677f07c",
+    "at": 1790159278990,
+    "findings": 1,
+    "by": "agent"
+  },
+  "public/index.html": {
+    "fingerprint": "27585b93042e46f4",
+    "at": 1790159279358,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/public.js": {
+    "fingerprint": "043744680674154b",
+    "at": 1790159279652,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/review/surfaces.json": {
+    "fingerprint": "0bc788fa6f330cc6",
+    "at": 1790159369533,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/innerhtml-audit-test.mjs": {
+    "fingerprint": "71f42056cb2748c3",
+    "at": 1790159369598,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/share-video-session-test.mjs": {
+    "fingerprint": "f86374696749b686",
+    "at": 1790159369661,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-images-plan.js": {
+    "fingerprint": "c19d10302dc7f5e9",
+    "at": 1790159369728,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share-token.js": {
+    "fingerprint": "0b403927fc3fb244",
+    "at": 1790159369908,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/share-selection-engine-test.mjs": {
+    "fingerprint": "b92ea3f8b68d0246",
+    "at": 1790159369972,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/review/queue.mjs": {
+    "fingerprint": "1b2f419dc918a2e0",
+    "at": 1790159370036,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/admin-workflow-test.mjs": {
+    "fingerprint": "4a93cfb9c70cda68",
+    "at": 1790159370099,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/terms.html": {
+    "fingerprint": "ae92c73cf79cefec",
+    "at": 1790159370163,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/transcode-share-thumbs.mjs": {
+    "fingerprint": "2e8442d86dd00a38",
+    "at": 1790159370424,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/live-completions.js": {
+    "fingerprint": "7d0b491c010b4ffe",
+    "at": 1790159370487,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/live-digest.js": {
+    "fingerprint": "05c02fd2ff018225",
+    "at": 1790159370554,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/docs-test.mjs": {
+    "fingerprint": "341b005fbefda02d",
+    "at": 1790159370619,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-images-rules.js": {
+    "fingerprint": "7394904b6776b764",
+    "at": 1790159370683,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/icon-audit-test.mjs": {
+    "fingerprint": "b4a86cddb6c72ae4",
+    "at": 1790159370747,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/exif.js": {
+    "fingerprint": "83d1be3e9b1f0db5",
+    "at": 1790159370810,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-gallery-layout.js": {
+    "fingerprint": "d9b3d8160de535ca",
+    "at": 1790159370877,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop-trekker.js": {
+    "fingerprint": "ad677d44d1e7206f",
+    "at": 1790159370938,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-state.js": {
+    "fingerprint": "d30317515aa5e7eb",
+    "at": 1790159371371,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/readme-test.mjs": {
+    "fingerprint": "acff893357e1ca57",
+    "at": 1790159371435,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/skeleton.js": {
+    "fingerprint": "3cf9b80f16c8ec90",
+    "at": 1790159371500,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-selection-engine.js": {
+    "fingerprint": "0d81888460a96f81",
+    "at": 1790159371563,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-download.js": {
+    "fingerprint": "aed98142bfd07176",
+    "at": 1790159371629,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/applog.js": {
+    "fingerprint": "f3ee6d408e1559a2",
+    "at": 1790159371697,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/live-diagnostics.js": {
+    "fingerprint": "d25d2045b8ac2657",
+    "at": 1790159371762,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/skeleton-test.mjs": {
+    "fingerprint": "62f73d04e520b1e1",
+    "at": 1790159371825,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop-state.js": {
+    "fingerprint": "6cdb842e9b9f8cea",
+    "at": 1790159371889,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-folders.js": {
+    "fingerprint": "8334430d35b4794b",
+    "at": 1790159371951,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop-live.js": {
+    "fingerprint": "32311e981b5ec8e7",
+    "at": 1790159372014,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-chart.js": {
+    "fingerprint": "065d2b8756bbe819",
+    "at": 1790159372079,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop-report.js": {
+    "fingerprint": "ec3f1426ce849005",
+    "at": 1790159372142,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/identity.js": {
+    "fingerprint": "2788a866f7a3bc08",
+    "at": 1790159372206,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/admin-state.js": {
+    "fingerprint": "a5fadbcc0ddf78a6",
+    "at": 1790159372268,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/build-icons.mjs": {
+    "fingerprint": "7e6f5c458e133da8",
+    "at": 1790159372332,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/get-refresh-token.mjs": {
+    "fingerprint": "1cf9571fe972e3b1",
+    "at": 1790159372397,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop-resume.js": {
+    "fingerprint": "52bf52de2352ff44",
+    "at": 1790159372459,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/share-gallery-layout-test.mjs": {
+    "fingerprint": "619da0fd02b59174",
+    "at": 1790159372524,
+    "findings": 0,
+    "by": "agent"
+  },
+  "eslint.config.js": {
+    "fingerprint": "c927ef5c13b498f5",
+    "at": 1790159372588,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/adaptive-concurrency.js": {
+    "fingerprint": "c428f7fd48b84cec",
+    "at": 1790159372652,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/review/mark.mjs": {
+    "fingerprint": "2075711745bc17e9",
+    "at": 1790159372712,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/plan-policy-test.mjs": {
+    "fingerprint": "cd161bfe9a6775dc",
+    "at": 1790159372773,
+    "findings": 0,
+    "by": "agent"
+  },
+  "wrangler.example.jsonc": {
+    "fingerprint": "0df2058b7f7e84e9",
+    "at": 1790159373015,
+    "findings": 0,
+    "by": "agent"
+  },
+  ".github/workflows/skylos.yml": {
+    "fingerprint": "25e7cef33d82474c",
+    "at": 1790159373079,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/share-stats.js": {
+    "fingerprint": "0e84728be044b5fa",
+    "at": 1790159373141,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/migrate-r2.mjs": {
+    "fingerprint": "c6f928ee4a8bf675",
+    "at": 1790159373204,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-cache.js": {
+    "fingerprint": "0c7b7628482e770f",
+    "at": 1790159373265,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-viewer-state.js": {
+    "fingerprint": "0697c28d4bacb3a2",
+    "at": 1790159373329,
+    "findings": 0,
+    "by": "agent"
+  },
+  "package.json": {
+    "fingerprint": "e37d081e8266d06c",
+    "at": 1790159373398,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/exif-test.mjs": {
+    "fingerprint": "5c1d6bec440f9ad4",
+    "at": 1790159373461,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-smart-header.js": {
+    "fingerprint": "ff7bc81ee2e58ed4",
+    "at": 1790159373525,
+    "findings": 0,
+    "by": "agent"
+  },
+  "scripts/share-smart-header-test.mjs": {
+    "fingerprint": "1c06daec653c02f2",
+    "at": 1790159373588,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-utils.js": {
+    "fingerprint": "5256caa83be1fd5c",
+    "at": 1790159373654,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/drop-utils.js": {
+    "fingerprint": "0e21d73229dc2830",
+    "at": 1790159373713,
+    "findings": 0,
+    "by": "agent"
+  },
+  ".github/workflows/ci.yml": {
+    "fingerprint": "2e387fd852aa7d0c",
+    "at": 1790159373776,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-access.js": {
+    "fingerprint": "b4bf8162bcc28c3a",
+    "at": 1790159373840,
+    "findings": 0,
+    "by": "agent"
+  },
+  "src/index.js": {
+    "fingerprint": "9c2afcfa5237ea11",
+    "at": 1790159373905,
+    "findings": 0,
+    "by": "agent"
+  },
+  "public/share-beacon.js": {
+    "fingerprint": "1c090422bddcfc57",
+    "at": 1790159373967,
+    "findings": 1,
+    "by": "agent"
+  },
+  ".github/workflows/pr-review.yml": {
+    "fingerprint": "554d26fe3c33dc96",
+    "at": 1790159374036,
+    "findings": 1,
+    "by": "agent"
+  },
+  ".github/workflows/transcode-images.yml": {
+    "fingerprint": "e92ac32a20de5a74",
+    "at": 1790159374204,
+    "findings": 1,
+    "by": "agent"
+  }
+}

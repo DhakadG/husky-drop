@@ -1,0 +1,8 @@
+{
+  "target": "public/share-viewer.js",
+  "mode": "file",
+  "verdict": "Opening, progressive image content and rotation; listeners are removed on destroy. The unguarded double-open and the viewer ending at the last loaded page are filed under the share-viewer surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

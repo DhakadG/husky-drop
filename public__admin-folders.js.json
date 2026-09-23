@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-folders.js",
+  "mode": "file",
+  "verdict": "Recent folders and the share-this-drop shortcut, storage access guarded. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

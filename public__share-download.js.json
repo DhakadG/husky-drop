@@ -1,0 +1,8 @@
+{
+  "target": "public/share-download.js",
+  "mode": "file",
+  "verdict": "Token refresh and a plain anchor download (no Save-As dialogs). No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

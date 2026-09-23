@@ -1,0 +1,8 @@
+{
+  "target": "src/share-token.js",
+  "mode": "file",
+  "verdict": "HMAC tokens with constant-time comparison, scope and slug binding, and a fail-loud key. That media signatures never expire and are not tied to current share contents is filed under the share-delivery surface.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

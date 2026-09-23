@@ -1,0 +1,8 @@
+{
+  "target": "scripts/exif-test.mjs",
+  "mode": "file",
+  "verdict": "Covers the Drive/RAW EXIF merge. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

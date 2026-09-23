@@ -1,0 +1,8 @@
+{
+  "target": "scripts/share-gallery-layout-test.mjs",
+  "mode": "file",
+  "verdict": "Covers justified rows, hover-zoom origin and hover-card placement. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

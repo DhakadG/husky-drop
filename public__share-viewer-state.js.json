@@ -1,0 +1,8 @@
+{
+  "target": "public/share-viewer-state.js",
+  "mode": "file",
+  "verdict": "Viewer state object with guarded motion-preference parsing. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

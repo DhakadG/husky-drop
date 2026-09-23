@@ -1,0 +1,8 @@
+{
+  "target": "public/adaptive-concurrency.js",
+  "mode": "file",
+  "verdict": "Small AIMD-style controller: halve on errors, grow on sustained throughput, shrink on a clear drop. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

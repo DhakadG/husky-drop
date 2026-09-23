@@ -1,0 +1,8 @@
+{
+  "target": "scripts/skeleton-test.mjs",
+  "mode": "file",
+  "verdict": "Covers the skeleton grammar and the no-flash rule. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

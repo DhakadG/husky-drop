@@ -1,0 +1,8 @@
+{
+  "target": "public/terms.html",
+  "mode": "file",
+  "verdict": "Plain, accurate terms for a personal service. No defects found; the processor disclosures belong in the privacy policy (see public/privacy.html).",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

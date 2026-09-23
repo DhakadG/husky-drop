@@ -1,0 +1,8 @@
+{
+  "target": "src/live-diagnostics.js",
+  "mode": "file",
+  "verdict": "Thin DO router for logs, people, sessions, bans and suggestions, with errors turned into 500s. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

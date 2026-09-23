@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-pipelines.js",
+  "mode": "file",
+  "verdict": "A read-mostly view with activity-aware polling. The data problems it displays (stuck change cursor, CI runs hiding transcoder runs) are filed under the admin-pipelines surface; nothing else was found in this file.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

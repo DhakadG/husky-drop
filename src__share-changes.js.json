@@ -1,0 +1,8 @@
+{
+  "target": "src/share-changes.js",
+  "mode": "file",
+  "verdict": "Change feed, scheduling and orphan sweeps. The cursor that never advances past five pages is filed (high) under admin-pipelines and the sweep trusting incomplete indexes under the same surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

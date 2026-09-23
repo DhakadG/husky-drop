@@ -1,0 +1,8 @@
+{
+  "target": "public/share-access.js",
+  "mode": "file",
+  "verdict": "Account switch that only navigates after a confirmed logout, with tests. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

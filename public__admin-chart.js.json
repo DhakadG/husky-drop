@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-chart.js",
+  "mode": "file",
+  "verdict": "Zero-filled 30-day SVG chart with escaped labels. That the series it draws mixes share traffic into drop metrics is a server-side issue filed under admin-overview.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

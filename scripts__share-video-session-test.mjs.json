@@ -1,0 +1,8 @@
+{
+  "target": "scripts/share-video-session-test.mjs",
+  "mode": "file",
+  "verdict": "Behavioural tests of the video session and warm lease with fake media elements (36 assertions). No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "public/share-smart-header.js",
+  "mode": "file",
+  "verdict": "Tested hide-on-scroll state machine. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

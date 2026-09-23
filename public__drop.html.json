@@ -1,0 +1,8 @@
+{
+  "target": "public/drop.html",
+  "mode": "file",
+  "verdict": "Clean drop markup: one gate card for every pre-upload state, labelled inputs, a skeleton-free loading state that matches the gate. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

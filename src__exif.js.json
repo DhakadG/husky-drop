@@ -1,0 +1,8 @@
+{
+  "target": "src/exif.js",
+  "mode": "file",
+  "verdict": "Small, well-guarded merge of Drive and embedded RAW metadata. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

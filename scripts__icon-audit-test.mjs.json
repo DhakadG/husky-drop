@@ -1,0 +1,8 @@
+{
+  "target": "scripts/icon-audit-test.mjs",
+  "mode": "file",
+  "verdict": "Guards the single icon catalog and the generated sprite. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

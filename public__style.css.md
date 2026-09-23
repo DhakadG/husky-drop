@@ -1,0 +1,31 @@
+# Review — `public/style.css`
+
+_agent review (file) · 2026-09-23_
+
+> A large (9.2k lines, 244 KB) but disciplined stylesheet: focus rings exist for inputs and panels, reduced-motion is honoured globally, and the vendor-cascade ordering is documented. Its only real defects are two range sliders that remove every focus indicator, plus roughly 50 class selectors left over from retired layouts that no page or script references any more.
+
+## Findings
+
+### LOW · Give the image-archive and gallery-density sliders a visible keyboard focus
+
+**Where:** 8001-8006, 6492-6495 · **Category:** ux · **Confidence:** 0.75
+
+**When:** A keyboard user tabs to the Quality or Processing-speed slider in the Image archive tab, or the gallery density slider on a share page.
+
+**Result:** The base `input` rule sets outline:none and relies on the :focus box-shadow; `.ia-range:focus` and `.tile-size-control input[type=range]:focus` then set box-shadow:none, so the focused slider looks exactly like an unfocused one and arrow keys change a setting the user cannot see is selected.
+
+**Fix:** Add `.ia-range:focus-visible::-webkit-slider-thumb, .ia-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 4px rgba(47,107,255,.25), ... }` as `.size-control` already does at 6595-6599, and the same for the tile-size range.
+
+### LOW · Delete selectors for layouts no page renders any more
+
+**Where:** 320-360, 782-800, 1711-1770, 5168 and others · **Category:** dead-code · **Confidence:** 0.7
+
+**When:** Any page load: the whole 244 KB stylesheet is render-blocking on the drop, share and admin pages alike.
+
+**Result:** About 50 classes (home-hero, home-console, console-grid, drop-hero, grid-main, live-top, upload-list, settings-grid, resume-banner-v3, transfer-head-v3, ia-browser, ia-crumbs, ia-sample-*, ia-plan-actions, device-row, slot-foot, coverage-loading-bar, ...) appear in no public/*.html or *.js file; they are downloaded and parsed on every page and make it harder to tell which rules are live when editing.
+
+**Fix:** Remove the blocks for those classes (PhotoSwipe's generated pswp__* classes are live and must stay); add the unused-class scan used for this review to scripts/ui-v3-test.mjs so new orphans fail the build.
+
+## Missing
+
+- Page-scoped stylesheets (drop/share/admin) so a guest opening a drop link does not download the admin dashboard's CSS.

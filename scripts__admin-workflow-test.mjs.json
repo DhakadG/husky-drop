@@ -1,0 +1,8 @@
+{
+  "target": "scripts/admin-workflow-test.mjs",
+  "mode": "file",
+  "verdict": "Pins admin detail/workflow wiring with source assertions. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "public/identity.js",
+  "mode": "file",
+  "verdict": "Fingerprint Pro with an OSS fallback, metered calls limited to once a day per signed-out device. No defects found in the code; what it collects is missing from the privacy policy (see public/privacy.html).",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

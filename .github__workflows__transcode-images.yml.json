@@ -1,0 +1,19 @@
+{
+  "target": ".github/workflows/transcode-images.yml",
+  "mode": "file",
+  "verdict": "Dispatch-only runner for one planned job.",
+  "findings": [
+    {
+      "severity": "low",
+      "category": "correctness",
+      "lines": "26-27",
+      "title": "Install pillow-heif like the share-previews workflow does",
+      "scenario": "An image-archive job over iPhone HEIC photos.",
+      "consequence": "This workflow installs only Ubuntu's libheif, which lacks the HEVC decoder ('Unsupported codec'); image-decode.mjs then falls back to pillow-heif, which is not installed here, so every such HEIC fails while the same files decode fine in transcode-share-previews.yml.",
+      "fix": "Add libheif-plugin-libde265 and `python3 -m pip install --break-system-packages pillow pillow-heif`, mirroring transcode-share-previews.yml.",
+      "confidence": 0.7
+    }
+  ],
+  "missing": [],
+  "questions": []
+}

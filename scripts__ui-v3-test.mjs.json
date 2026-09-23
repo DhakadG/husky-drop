@@ -1,0 +1,8 @@
+{
+  "target": "scripts/ui-v3-test.mjs",
+  "mode": "file",
+  "verdict": "Source-regex assertions that pin design-plan decisions (gradients, brand mark, registered routes) in place; useful as a tripwire against accidental deletion, not as behavioural coverage. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

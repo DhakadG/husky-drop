@@ -1,0 +1,8 @@
+{
+  "target": "public/drop-report.js",
+  "mode": "file",
+  "verdict": "Capped automatic error reports with breadcrumbs and a state snapshot. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

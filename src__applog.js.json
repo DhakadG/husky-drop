@@ -1,0 +1,8 @@
+{
+  "target": "src/applog.js",
+  "mode": "file",
+  "verdict": "Capped DO log with fire-and-forget writes. No defects found; the missing areas in the filter are a UI issue filed under admin-logs.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

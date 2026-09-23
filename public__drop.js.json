@@ -1,0 +1,8 @@
+{
+  "target": "public/drop.js",
+  "mode": "file",
+  "verdict": "Gate, pickers and folder-tree collection are well handled (empty and duplicate files skipped, natural sort, IndexedDB resume records matched per file). The preflight batch-size and 200-completion limit are filed under the drop-upload surface; nothing else was found in this file.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

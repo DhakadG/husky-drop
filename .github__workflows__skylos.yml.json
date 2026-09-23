@@ -1,0 +1,8 @@
+{
+  "target": ".github/workflows/skylos.yml",
+  "mode": "file",
+  "verdict": "Diff-scoped static analysis with pinned actions and a pinned tool version. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

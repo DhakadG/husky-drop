@@ -1,0 +1,8 @@
+{
+  "target": "scripts/review/prompts.mjs",
+  "mode": "file",
+  "verdict": "The rubric is specific, bans generic advice explicitly and asks for scenario, consequence and fix per finding - it did its job in this pass. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

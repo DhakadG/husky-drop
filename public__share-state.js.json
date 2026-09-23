@@ -1,0 +1,8 @@
+{
+  "target": "public/share-state.js",
+  "mode": "file",
+  "verdict": "Shared share-page state. Unguarded storage reads at module load are filed under public/share.js.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

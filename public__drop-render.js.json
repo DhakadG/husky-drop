@@ -1,0 +1,8 @@
+{
+  "target": "public/drop-render.js",
+  "mode": "file",
+  "verdict": "Rows are reconciled per item, the error taxonomy is translated into actionable copy, and skipped files count as landed so the bar can reach 100%. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

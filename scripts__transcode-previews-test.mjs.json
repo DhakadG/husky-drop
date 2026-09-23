@@ -1,0 +1,8 @@
+{
+  "target": "scripts/transcode-previews-test.mjs",
+  "mode": "file",
+  "verdict": "Exercises the LiveTracker transcoder paths (multi-shard hello, stale runners, progress coalescing) against in-memory DO mocks with 113 assertions; the mocks return no SQL, so analytics paths are not covered here, but that is smoke-test territory. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

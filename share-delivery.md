@@ -1,0 +1,73 @@
+# Review — `share-delivery`
+
+_agent review (surface) · 2026-09-23_
+
+> The byte paths are well built - an honest cache ladder, careful Range/304 handling, verified full-resolution headers, a correct streaming ZIP64. The weak points are trust boundaries: /api/share/dl?inline=1 serves whatever MIME type Drive reports on the app's own origin with no CSP (HTML/SVG from a drop upload becomes script on the admin's domain), media signatures never expire and are not tied to what the share still contains, and putSharePreview still read-modify-writes the base preview index from parallel runners.
+
+## Findings
+
+### HIGH · Never render uploaded HTML/SVG inline on the app origin
+
+**Where:** src/share-media.js:257-275, 357-371 + src/worker.js:127 (API responses get no SECURITY_HEADERS) · **Category:** security · **Confidence:** 0.8
+
+**When:** Someone uploads evil.svg (or .html) through a drop link; the admin shares that folder (the 'share this drop' flow does this in one click); the uploader, as a guest of the share, gets a dl token and sends the admin /api/share/dl/<token>?inline=1.
+
+**Result:** shareDownload serves the file with content-type image/svg+xml or text/html, content-disposition inline and no content-security-policy, so the script runs on dropbox.losthusky.qzz.io with the admin's session cookie in scope and can call every /api/admin/* endpoint (create links, change PINs, read people data).
+
+**Fix:** In shareMediaHeaders, when inline, add 'content-security-policy: sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'' and only honour inline for image/(jpeg|png|webp|gif|avif|heic), video/*, audio/* and application/pdf; everything else (text/html, image/svg+xml, xml, js) gets attachment + application/octet-stream. Add a smoke test that an SVG with ?inline=1 comes back as an attachment or sandboxed.
+
+### MEDIUM · Apply the public-download safety block to inline requests too
+
+**Where:** src/share-media.js:261-264 · **Category:** security · **Confidence:** 0.8
+
+**When:** A share contains setup.exe or archive.zip, which the safety list blocks; a guest requests the same dl token with ?inline=1.
+
+**Result:** The block is skipped for inline, and a browser that cannot render the type simply downloads it - the 'blocks executables and archives' policy is bypassed by adding one query parameter.
+
+**Fix:** Check safety.blocked before the inline branch; inline never needs to serve a blocked type (the viewer only opens images and videos).
+
+### MEDIUM · Record the preview's Drive id in the shard delta, not the shared base index
+
+**Where:** src/share-previews.js:183-187 · **Category:** correctness · **Confidence:** 0.8
+
+**When:** A preview run with 8 shards; each runner PUTs finished WebPs concurrently.
+
+**Result:** putSharePreview reads the merged index and writes the whole base key; concurrent PUTs overwrite each other, so some files lose their `d` Drive id. Those previews 404 ('preview not made yet') until the migration path drops the entry and a later run re-makes them, and each lost write leaves an orphaned WebP in _share_previews. KV's one-write-per-second-per-key limit also turns bursts into 500s that the runner retries, adding more duplicates.
+
+**Fix:** Write { d, r, s } into a per-file or per-shard delta key (e.g. share-previews:delta:put-<fileId> with the same 3-day TTL) and let sharePreviewIndex union it, exactly like reportSharePreviews; trash the previous `d` only when compacting.
+
+### MEDIUM · Tie media and download refresh to what the share contains now
+
+**Where:** src/share-token.js:121-134 + src/share-media.js:23-35 and 78-95 · **Category:** security · **Confidence:** 0.75
+
+**When:** The owner shares a folder by mistake, then removes it from the share (or changes the PIN to cut one guest off). A guest who loaded the gallery earlier still holds the thumbnail URLs and expired dl tokens.
+
+**Result:** mediaSig has no expiry and shareMedia checks neither the PIN nor that the file is still under a shared folder, so thumb-hi, the full preview-webp and the whole 720p video keep loading; refreshShareDownload re-mints a fresh dl token for any old token (allowExpired) after only a PIN check, so removed originals stay downloadable. Only rotating SHARE_SIGNING_KEY revokes access.
+
+**Fix:** Include a per-share epoch in mediaSig and dl tokens (share.tokenEpoch, bumped on folder removal or PIN change) and reject tokens with an old epoch; in refreshShareDownload check the file id against the share-index rows (knownIds) before re-minting; run gatePin in shareMedia for PIN shares.
+
+### MEDIUM · Build zip tickets without one sequential Drive call per file
+
+**Where:** src/share-zip.js:37-58 and 83-107 · **Category:** cost · **Confidence:** 0.65
+
+**When:** A guest selects 400 photos and clicks 'Download zip'.
+
+**Result:** createShareZipTicket awaits driveFileMeta (uncached) for each file in series - 400 Drive round trips before the ticket returns, often 20-40 s - and the download then opens one more Drive stream per file; near the 1,000-file cap the two together exceed the Worker's subrequest limit and the zip fails or arrives truncated with no message.
+
+**Fix:** Take name, size, mime and rev from the share-index file rows (loadFiles) for the ticket, falling back to driveFileMetaCached in parallel batches of ~20 only for ids not in the index; cap a single zip at a size that fits the subrequest budget and tell the guest to split larger selections.
+
+### LOW · Mark inline originals private, not public
+
+**Where:** src/share-media.js:361 · **Category:** security · **Confidence:** 0.6
+
+**When:** A guest views a photo inline through a shared proxy or on a shared computer; the owner later pauses the share.
+
+**Result:** Inline responses are sent with 'public, max-age=86400', so intermediaries and the browser may keep serving a gated original for a day after access was revoked.
+
+**Fix:** Use 'private, max-age=86400' for inline responses; the edge copy is written separately with its own headers and is unaffected.
+
+## Missing features
+
+| Feature | Why | Where | Effort | Needs |
+| --- | --- | --- | --- | --- |
+| Zip progress and partial-failure report | When one Drive stream fails mid-zip the download just stops; the guest cannot tell which files are missing. | share-zip.js stream + share page toast | medium | write a MISSING.txt entry for failed files instead of aborting |

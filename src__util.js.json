@@ -1,0 +1,8 @@
+{
+  "target": "src/util.js",
+  "mode": "file",
+  "verdict": "Pure helpers and normalizers with no network or KV: every user string is length-capped and control-stripped, colours and URLs are allow-listed, PINs use PBKDF2 with a constant-time compare. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

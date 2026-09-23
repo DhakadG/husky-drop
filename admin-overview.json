@@ -1,0 +1,89 @@
+{
+  "target": "admin-overview",
+  "mode": "surface",
+  "verdict": "A tidy landing tab that renders fast and degrades quietly, but it only describes the drop side: the share half of the product (opens, downloads, bytes served) is invisible here even though the overview payload already carries it. Worse, the 30-day chart silently mixes share downloads into 'Data received' and share opens into 'Link opens', so the chart and the stat cards above it disagree.",
+  "findings": [
+    {
+      "severity": "high",
+      "category": "correctness",
+      "where": "src/live-analytics.js:222 (bumpDay(`share:${slug}`)) + src/live-analytics.js:260-270 (timeseries sums every slug) + public/admin-chart.js:16",
+      "title": "Stop counting share downloads as 'Data received' in the chart",
+      "scenario": "A guest downloads a 4 GB ZIP from a share link; bumpShareStat records {bytes: 4 GB, opens, downloads} into day_stats under slug 'share:<slug>', and timeseries() sums all slugs with no filter.",
+      "consequence": "The 'Data received' bar for that day shows 4 GB that nobody uploaded, and 'Link opens' counts gallery visits; the stat cards directly above (drop-only totals from KV) show different numbers, so the admin cannot trust either.",
+      "fix": "In timeseries(), return two groups: drop metrics (opens, sessions, files, bytes) from rows WHERE slug NOT LIKE 'share:%', and share metrics (shareOpens, downloads, servedBytes) from rows WHERE slug LIKE 'share:%'. Apply the same split to the pendingDays fold-in. Point the chart's 'Downloads' chip at the share series and add a 'Share opens' chip.",
+      "confidence": 0.85
+    },
+    {
+      "severity": "medium",
+      "category": "correctness",
+      "where": "public/admin.js:253-263 and 320-324",
+      "title": "Make unlock() idempotent so re-sign-in does not double every poller",
+      "scenario": "The admin session cookie expires while the dashboard is open; refreshAll() gets 401 and shows the token screen; the admin signs in again and tryToken() calls unlock() a second time.",
+      "consequence": "A second set of setInterval timers starts: overview polled every 7.5 s effectively, tickLive re-renders twice a second, the chart refetches twice; each further re-login adds another set until the page is reloaded.",
+      "fix": "Keep module-level `let unlocked = false`; in unlock() do the show/hide and routeFromUrl every time but only start the three setIntervals (and connectLive) when !unlocked, then set unlocked = true.",
+      "confidence": 0.8
+    },
+    {
+      "severity": "medium",
+      "category": "cost",
+      "where": "public/admin.js:260 and 317-336",
+      "title": "Pause the 15-second overview poll when the page is hidden",
+      "scenario": "The admin leaves /admin open in a background tab overnight.",
+      "consequence": "Every 15 s the Worker reads every link:*, stats:*, share:*, sstats:* key plus share-index state and three Durable Object queries - several thousand KV reads per hour per forgotten tab, for a view nobody is looking at; the live WebSocket already pushes the only fast-changing part.",
+      "fix": "In refreshAll() return early when document.hidden, and add a visibilitychange listener that calls refreshAll() when the tab becomes visible again.",
+      "confidence": 0.75
+    },
+    {
+      "severity": "medium",
+      "category": "missing-feature",
+      "where": "public/admin.js:453-488 (renderStats)",
+      "title": "Show the share side on the landing tab",
+      "scenario": "The admin opens /admin to see how a gallery sent to a client yesterday is doing.",
+      "consequence": "Nothing on Overview mentions shares at all; they must open the Shares tab and scan every card. overview.shares already carries opens, downloads, bytes and viewers per share.",
+      "fix": "Add stat cards 'Gallery opens', 'Downloads' and 'Data served' summed from overview.shares[].stats in renderStats(); no server change needed.",
+      "confidence": 0.8
+    },
+    {
+      "severity": "low",
+      "category": "interlinking",
+      "where": "public/admin.js:464-487 (stat cards)",
+      "title": "Make the headline stat cards navigate",
+      "scenario": "The admin sees 'Files received 1,204' and wants to see what arrived.",
+      "consequence": "The cards are inert divs; the admin has to find the right tab by hand.",
+      "fix": "Render each card as a button with data-goto-tab (links -> 'links', opens/sessions/files/received -> 'activity' with the matching activity filter, drive free -> 'links'), reusing the existing handleAdminAction goto branch.",
+      "confidence": 0.7
+    }
+  ],
+  "missing_features": [
+    {
+      "title": "Share totals on Overview",
+      "why": "Half the product is share links; the landing page says nothing about whether anyone opened or downloaded a gallery.",
+      "where": "Overview stat grid",
+      "effort": "small",
+      "depends_on": "already available (overview.shares[].stats)"
+    },
+    {
+      "title": "Click a chart bar to see that day's activity",
+      "why": "A spike on the chart raises 'who was that?' and the only answer is scrolling the Activity tab by date.",
+      "where": "Overview 30-day chart",
+      "effort": "small",
+      "depends_on": "/api/admin/events?before=<day+1>&days=1 already exists"
+    },
+    {
+      "title": "Drive usage as a proportion, not just 'space left'",
+      "why": "'Drive space left 1.2 TB' says nothing about how close to full the account is; overview.quota already has limit and usage.",
+      "where": "Overview 'Drive space left' card",
+      "effort": "small",
+      "depends_on": "already available (overview.quota.limit/usage)"
+    }
+  ],
+  "interlinks": [
+    { "from": "Overview 'Drop links' stat card", "to": "Drop links tab", "why": "the number is a list the admin will want to open" },
+    { "from": "Overview 'Files received' / 'Data received' cards", "to": "Activity tab filtered to uploads", "why": "saves finding the filter by hand" },
+    { "from": "Overview chart bar", "to": "Activity tab scoped to that day", "why": "explains a spike in one click" }
+  ],
+  "layout": [
+    "Put 'Live now' above the 30-day chart when liveActive is non-empty - an upload in progress is the most time-sensitive thing on the page and currently sits below the fold on a laptop.",
+    "Split the stat grid into two labelled rows, 'Received' (drop links) and 'Shared' (share links), so the chart chips can follow the same split."
+  ]
+}

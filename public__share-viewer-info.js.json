@@ -1,0 +1,8 @@
+{
+  "target": "public/share-viewer-info.js",
+  "mode": "file",
+  "verdict": "Caption, chrome metrics and the EXIF panel are escaped throughout and guard against stale responses with a request sequence. Showing GPS to every guest is recorded as a missing owner setting under the share-viewer surface; no defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

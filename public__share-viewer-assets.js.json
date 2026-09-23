@@ -1,0 +1,8 @@
+{
+  "target": "public/share-viewer-assets.js",
+  "mode": "file",
+  "verdict": "Tiered asset loading with verified full-resolution promotion, a bounded full-size cache and abortable neighbour warming. The automatic full-original fetch after a dwell with no data-saver check is filed under the share-viewer surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

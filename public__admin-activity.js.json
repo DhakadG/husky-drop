@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-activity.js",
+  "mode": "file",
+  "verdict": "Day/person grouping and earlier-day paging are clear. The unreachable part of today's events and the client-side person keys that ignore server aliases are filed under the admin-activity-people surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

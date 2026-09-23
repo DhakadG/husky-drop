@@ -1,0 +1,8 @@
+{
+  "target": "public/share-video-session.js",
+  "mode": "file",
+  "verdict": "A DOM-light, tested video session and warm-lease pair: load epochs abort stale sources, user and system pauses are told apart, and a lease releases the shared source only when no owner is left. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

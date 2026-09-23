@@ -1,0 +1,8 @@
+{
+  "target": "public/share-cache.js",
+  "mode": "file",
+  "verdict": "Best-effort Cache API layer for listings that degrades silently. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

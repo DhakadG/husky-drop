@@ -1,0 +1,8 @@
+{
+  "target": "scripts/migrate-r2.mjs",
+  "mode": "file",
+  "verdict": "One-time, idempotent migration driver. Its header still says it evicts video-720, which the sweep now deliberately keeps; otherwise no defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

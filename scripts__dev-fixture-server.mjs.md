@@ -1,0 +1,7 @@
+# Review — `scripts/dev-fixture-server.mjs`
+
+_agent review (file) · 2026-09-23_
+
+> Local-only fixture server done carefully: binds 127.0.0.1, caps JSON bodies at 64 KB, rejects NUL and .. segments before resolving, and confirms every resolved path stays under its root. No defects found.
+
+No findings.

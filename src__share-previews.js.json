@@ -1,0 +1,8 @@
+{
+  "target": "src/share-previews.js",
+  "mode": "file",
+  "verdict": "Correctly moved runner reports to one KV key per shard after the lost-write incident, and keeps full previews in Drive rather than R2. The one remaining single-key writer - putSharePreview recording the Drive id in the base index - is filed under the share-delivery surface; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

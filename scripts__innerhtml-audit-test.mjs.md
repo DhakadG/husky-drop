@@ -1,0 +1,7 @@
+# Review — `scripts/innerhtml-audit-test.mjs`
+
+_agent review (file) · 2026-09-23_
+
+> A focused static audit: every template interpolation of a user-text-shaped name must be escaped or hand-reviewed with a reason. It found nothing new in this pass - the XSS found here is a response-header problem (inline file bytes), which a template audit cannot see.
+
+No findings.

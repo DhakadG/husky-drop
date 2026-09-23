@@ -1,0 +1,8 @@
+{
+  "target": "public/drop-live.js",
+  "mode": "file",
+  "verdict": "Live socket, wake lock and lockout countdown. Reporting 'done' only when every file uploaded (never when some were skipped) is filed under the drop-upload surface.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

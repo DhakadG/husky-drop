@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-people.js",
+  "mode": "file",
+  "verdict": "People list, suggestions and bans with escaped output. The ignored slug on 'links used' and unchecked merge results are filed under the admin-activity-people surface.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "scripts/lib/image-decode.mjs",
+  "mode": "file",
+  "verdict": "One shared decode path for RAW and HEIC with sensible fallbacks (libraw, embedded preview, darktable; libheif, pillow-heif), metadata copied back with orientation cleared, and a bounded gain-map sniff. No defects found here; the archive runner not calling hasGainMap is filed under scripts/transcode-images.mjs.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

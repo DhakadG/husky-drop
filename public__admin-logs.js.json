@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-logs.js",
+  "mode": "file",
+  "verdict": "Selection, copy and read-state are well done for a log view. The hard-coded area list and unguarded concurrent refreshes are filed under the admin-logs surface.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

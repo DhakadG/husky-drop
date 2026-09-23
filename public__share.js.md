@@ -1,0 +1,17 @@
+# Review — `public/share.js`
+
+_agent review (file) · 2026-09-23_
+
+> The behavioural defects in this file - sort/filter/select-all acting only on loaded pages, navigation dropped while a listing loads, and render() rebuilding every tile per page - are filed under the share-gallery surface review and are not repeated here. Beyond those, the file is careful (stable fids, token repair, escaped names); it is 1.3k lines, well past the house limit, and the one remaining file-local defect is unguarded storage access at module load.
+
+## Findings
+
+### LOW · Guard localStorage/sessionStorage reads at module load
+
+**Where:** 60, 780, 820 (+ share-state.js:14,18) · **Category:** correctness · **Confidence:** 0.65
+
+**When:** A guest opens a share with site data blocked (Chrome 'block all cookies', some embedded webviews, Safari lockdown modes), where touching localStorage throws a SecurityError.
+
+**Result:** tileScale, hoverZoomPref and filterMode are read at module top level (and share-state.js reads sessionStorage/localStorage the same way), so the module throws during import and the guest sees the loading skeleton forever with no error - the whole gallery is dead, not just the saved preferences.
+
+**Fix:** Read preferences through a tiny safeGet(key, fallback) that wraps storage access in try/catch (drop-state.js already does this for its session id), and wrap the setItem calls the same way.

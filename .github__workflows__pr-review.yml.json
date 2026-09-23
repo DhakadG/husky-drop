@@ -1,0 +1,19 @@
+{
+  "target": ".github/workflows/pr-review.yml",
+  "mode": "file",
+  "verdict": "A no-op until the API key exists, and the key only reaches the review step.",
+  "findings": [
+    {
+      "severity": "medium",
+      "category": "security",
+      "lines": "30",
+      "title": "Pin the third-party opencode action to a commit",
+      "scenario": "Any same-repository pull request once ANTHROPIC_API_KEY is set.",
+      "consequence": "anomalyco/opencode/github@latest is a mutable tag of a third-party action that runs with ANTHROPIC_API_KEY, a pull-requests:write token and id-token:write; whoever controls that tag controls what runs with those secrets. Every other workflow here pins SHAs.",
+      "fix": "Pin to a reviewed commit SHA with a version comment, as deep-review.yml and ci.yml do, and let Dependabot propose updates.",
+      "confidence": 0.7
+    }
+  ],
+  "missing": [],
+  "questions": []
+}

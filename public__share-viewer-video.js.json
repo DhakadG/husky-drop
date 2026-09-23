@@ -1,0 +1,8 @@
+{
+  "target": "public/share-viewer-video.js",
+  "mode": "file",
+  "verdict": "The video slide is thoroughly cleaned up on destroy, refreshes expired sources once without losing position, and falls back to download on codec errors. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "public/drop-utils.js",
+  "mode": "file",
+  "verdict": "Toasts set with textContent and small helpers. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

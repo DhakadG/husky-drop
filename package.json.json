@@ -1,0 +1,8 @@
+{
+  "target": "package.json",
+  "mode": "file",
+  "verdict": "No runtime dependencies beyond exifr; npm test runs lint and every test script. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

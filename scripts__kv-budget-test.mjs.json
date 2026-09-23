@@ -1,0 +1,8 @@
+{
+  "target": "scripts/kv-budget-test.mjs",
+  "mode": "file",
+  "verdict": "Runs real handlers against a KV that throws on every write, proving the hot paths (share tracking, listing, PIN checks, token cache) degrade instead of failing when the daily write budget is gone. No defects found; it does not yet cover the wrong-PIN counters noted under the platform surface, which write on every failure.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

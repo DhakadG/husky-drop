@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-live.js",
+  "mode": "file",
+  "verdict": "Live cards are escaped and reconciled per session. The once-a-second innerHTML rewrite and the hidden stopped sessions are filed under the admin-live surface.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

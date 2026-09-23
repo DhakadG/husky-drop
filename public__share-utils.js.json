@@ -1,0 +1,8 @@
+{
+  "target": "public/share-utils.js",
+  "mode": "file",
+  "verdict": "Toasts set with textContent, duration formatting. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

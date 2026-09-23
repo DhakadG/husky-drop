@@ -1,0 +1,8 @@
+{
+  "target": ".github/workflows/ci.yml",
+  "mode": "file",
+  "verdict": "Lint and every test on each PR and on main, with pinned actions. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "src/images.js",
+  "mode": "file",
+  "verdict": "Scanning and planning work from Drive metadata only, with conservative skip rules (sidecars, recent edits, existing mirrors). The rule-toggle regex loss is filed under admin-media-jobs; nothing else was found in this file.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

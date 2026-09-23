@@ -1,0 +1,8 @@
+{
+  "target": ".github/workflows/transcode-share-previews.yml",
+  "mode": "file",
+  "verdict": "Plans shards, then fans out preview and thumbnail runners with a single admin-token secret; all Drive access goes through the Worker. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

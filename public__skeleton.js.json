@@ -1,0 +1,8 @@
+{
+  "target": "public/skeleton.js",
+  "mode": "file",
+  "verdict": "The single loading-state vocabulary with a delayed show that never flashes on fast answers and a restore that does not wipe newer content. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "wrangler.example.jsonc",
+  "mode": "file",
+  "verdict": "Mirrors wrangler.jsonc with placeholders; it carries the same stats/ lifecycle rule filed under wrangler.jsonc.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "public/share-trekker.js",
+  "mode": "file",
+  "verdict": "Batched share telemetry with a beacon on pagehide; it excludes form values and file contents. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

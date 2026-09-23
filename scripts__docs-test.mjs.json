@@ -1,0 +1,8 @@
+{
+  "target": "scripts/docs-test.mjs",
+  "mode": "file",
+  "verdict": "Keeps CONTEXT.md's shape and every path it names honest. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": ".github/workflows/deep-review.yml",
+  "mode": "file",
+  "verdict": "Carefully written workflow: dispatch inputs reach the shell only as quoted environment values, actions are pinned to SHAs, contents:write is granted only to the collect job, and previous results seed the manifest. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

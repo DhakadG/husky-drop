@@ -1,0 +1,8 @@
+{
+  "target": "public/admin-links.js",
+  "mode": "file",
+  "verdict": "Drop link cards, the create flow and the shared Drive picker are well behaved (sequence-guarded picker loads, skeleton after 180 ms, escaped names). Silent failures from pause/archive/delete are filed under admin-drops; nothing else was found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

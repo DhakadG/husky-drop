@@ -1,0 +1,8 @@
+{
+  "target": "src/index.js",
+  "mode": "file",
+  "verdict": "Four-line compatibility shim. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "src/auth.js",
+  "mode": "file",
+  "verdict": "Secrets fail loud, OAuth state is signed and short-lived, tokeninfo checks aud and email_verified, and the admin allow-list is a single verified address. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "scripts/build-icons.mjs",
+  "mode": "file",
+  "verdict": "Generates the sprite from the same catalog the runtime validates against. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

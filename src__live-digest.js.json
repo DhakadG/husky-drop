@@ -1,0 +1,8 @@
+{
+  "target": "src/live-digest.js",
+  "mode": "file",
+  "verdict": "Server-decided session digests with a settle window, an idle fallback, idempotency keys and bounded retries. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

@@ -1,0 +1,8 @@
+{
+  "target": "scripts/review/mark.mjs",
+  "mode": "file",
+  "verdict": "Records the fingerprint the queue expects and warns when the review file is missing. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}

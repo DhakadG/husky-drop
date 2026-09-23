@@ -1,0 +1,7 @@
+# Review — `src/previews.js`
+
+_agent review (file) · 2026-09-23_
+
+> Well-commented and defensive about duplicate work (superseded previews are trashed, repeated reports counted once, and the workflow's plan step warms the tree and repairs the index before sharded runners use cached=1). Its structural weakness - one previews:index key written by every parallel runner report - and the unbounded Drive crawl are filed under the admin-media-jobs surface; nothing else was found.
+
+No findings.

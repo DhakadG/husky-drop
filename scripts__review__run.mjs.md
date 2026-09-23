@@ -1,0 +1,31 @@
+# Review — `scripts/review/run.mjs`
+
+_agent review (file) · 2026-09-23_
+
+> A compact, readable runner with sharding, content-hash skipping and forgiving JSON parsing. Two bookkeeping bugs undercut the 'only pay for what changed' promise: surface fingerprints are computed differently from queue.mjs/mark.mjs, and an unparseable answer is recorded as reviewed.
+
+## Findings
+
+### MEDIUM · Fingerprint surfaces the same way queue.mjs and mark.mjs do
+
+**Where:** 211-216, 229 · **Category:** cost · **Confidence:** 0.85
+
+**When:** An agent pass marks all 14 surfaces done, then someone dispatches deep-review.yml (or the reverse).
+
+**Result:** run.mjs hashes the numbered, header-prefixed bodies while queue.mjs and mark.mjs hash the raw files joined with newlines, so the two never agree: the API run re-reviews every surface (the most expensive Opus calls) and afterwards queue.mjs reports every surface as stale.
+
+**Fix:** Compute the surface fingerprint as sha(parts.map(read).join('\n')) before numbering, exactly as queue.mjs does - ideally one shared helper exported from a small module both scripts import; review-test.mjs can assert the three agree.
+
+### LOW · Do not mark a target reviewed when the answer could not be parsed
+
+**Where:** 126-135, 244-251 · **Category:** correctness · **Confidence:** 0.75
+
+**When:** The model returns truncated JSON (max_tokens 8000 reached on a large surface) or prose.
+
+**Result:** parseJson returns the 'unparseable model output' placeholder and the manifest still records the target's fingerprint, so later runs skip it as unchanged and the file silently has no review until someone passes --force.
+
+**Fix:** Only write manifest[target.key] when result.raw is absent; log the unparsed targets at the end so the workflow summary shows them.
+
+## Questions
+
+- The default models are 'claude-opus-5' and 'claude-sonnet-5'; if 'claude-opus-5' is not a valid model id for the account, every surface call fails with a 4xx and ends the shard - worth confirming against the API's model list.

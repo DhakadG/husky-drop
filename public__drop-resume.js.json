@@ -1,0 +1,8 @@
+{
+  "target": "public/drop-resume.js",
+  "mode": "file",
+  "verdict": "IndexedDB resume records keyed by link, name, size and lastModified, aged out after six days. No defects found.",
+  "findings": [],
+  "missing": [],
+  "questions": []
+}
