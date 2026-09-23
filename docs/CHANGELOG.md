@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Archive mode no longer hides originals when an upload fails
+
+In archive mode `putImageResult` moved the original into `_archive/` first and
+uploaded its replacement second. A Drive 5xx or a size mismatch after the move
+left the folder - and any share gallery on it - without the photo, and the
+runner's retry then failed permanently because the original was no longer
+where the job expected it. The replacement is now stored and size-verified in
+the original's folder first; only then does the original move (a failed move
+trashes the new copy), and a retry finds the original wherever it already is.
+`scripts/image-archive-order-test.mjs` asserts the order with a failing upload.
+
 ## 2026-09-23 — The image archive keeps gain-map HDR photos as they are
 
 The share preview runner already skipped Apple Adaptive HDR / Ultra HDR JPEGs

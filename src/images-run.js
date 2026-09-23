@@ -187,12 +187,30 @@ async function putImageResultInner(request, env, jobId, fileId) {
   if (job.options.mode === "replace") {
     created = await multipart(env, tok, `https://www.googleapis.com/upload/drive/v3/files/${file.id}?uploadType=multipart&fields=id,size,imageMediaMetadata(width,height)&supportsAllDrives=true`, "PATCH", { name, mimeType: mime, ...props }, body, mime);
   } else {
-    if (job.options.mode === "archive") await moveFile(env, tok, file.id, file.folderId, await mirrorPath(env, "_archive", file.path));
-    else parent = await mirrorPath(env, "_compressed", file.path);
+    // Archive stores and verifies the new file in the original's folder
+    // before the original moves: moving first left the folder (and any share
+    // gallery) without the photo whenever the upload or the size check failed.
+    if (job.options.mode !== "archive") parent = await mirrorPath(env, "_compressed", file.path);
     created = await multipart(env, tok, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,size,imageMediaMetadata(width,height)&supportsAllDrives=true", "POST", { name, mimeType: mime, parents: [parent], ...props }, body, mime);
   }
   const size = Number(created.size) || 0;
-  if (size !== body.byteLength) return json({ error: `Drive stored ${size} bytes, expected ${body.byteLength}` }, 502);
+  if (size !== body.byteLength) {
+    if (job.options.mode !== "replace") await driveTrashFile(env, created.id).catch(() => {});
+    return json({ error: `Drive stored ${size} bytes, expected ${body.byteLength}` }, 502);
+  }
+  if (job.options.mode === "archive") {
+    const archive = await mirrorPath(env, "_archive", file.path);
+    // A retried PUT may find the original already archived by an earlier attempt.
+    const current = (await archiveFolderOf(env, tok, file.id)) || file.folderId;
+    if (current !== archive) {
+      try {
+        await moveFile(env, tok, file.id, current, archive);
+      } catch (error) {
+        await driveTrashFile(env, created.id).catch(() => {});
+        throw error;
+      }
+    }
+  }
   return json({ ok: true, id: created.id, size, w: created.imageMediaMetadata?.width || 0, h: created.imageMediaMetadata?.height || 0, parent });
 }
 
