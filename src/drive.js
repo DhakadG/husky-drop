@@ -133,20 +133,29 @@ export async function driveFindFolder(env, name, parentId) {
 export async function driveListFolders(env, parentId) {
   const parent = String(parentId || "root").replace(/[^a-zA-Z0-9_-]/g, "") || "root";
   const tok = await accessToken(env);
-  const url =
-    "https://www.googleapis.com/drive/v3/files?" +
-    new URLSearchParams({
-      q: `mimeType='application/vnd.google-apps.folder' and trashed=false and '${driveQueryEscape(parent)}' in parents`,
-      fields: "files(id,name)",
-      pageSize: "100",
-      orderBy: "name",
-      supportsAllDrives: "true",
-      includeItemsFromAllDrives: "true",
-    });
-  const r = await fetch(url, { headers: { authorization: `Bearer ${tok}` } });
-  if (!r.ok) throw new Error("Drive folder list failed: " + (await r.text()).slice(0, 300));
-  const d = await r.json();
-  return (d.files || []).map((f) => ({ id: f.id, name: f.name }));
+  const out = [];
+  let pageToken = "";
+  // ponytail: 5 pages x 1000 folders; past that, paste the folder ID.
+  for (let page = 0; page < 5; page++) {
+    const url =
+      "https://www.googleapis.com/drive/v3/files?" +
+      new URLSearchParams({
+        q: `mimeType='application/vnd.google-apps.folder' and trashed=false and '${driveQueryEscape(parent)}' in parents`,
+        fields: "nextPageToken,files(id,name)",
+        pageSize: "1000",
+        orderBy: "name",
+        supportsAllDrives: "true",
+        includeItemsFromAllDrives: "true",
+        ...(pageToken ? { pageToken } : {}),
+      });
+    const r = await fetch(url, { headers: { authorization: `Bearer ${tok}` } });
+    if (!r.ok) throw new Error("Drive folder list failed: " + (await r.text()).slice(0, 300));
+    const d = await r.json();
+    for (const f of d.files || []) out.push({ id: f.id, name: f.name });
+    pageToken = d.nextPageToken || "";
+    if (!pageToken) break;
+  }
+  return out;
 }
 
 // A navigable folder listing with a bounded ancestor chain for the admin picker.
