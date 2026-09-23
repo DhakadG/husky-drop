@@ -382,6 +382,11 @@ async function loadSummary() {
 }
 
 let navigating = false;
+// Latest request wins: a navigation asked for while one is loading marks that
+// one stale (it skips its crumb, history and paint) and runs when it settles.
+// Dropping it left the URL on the parent after Back while the child painted.
+let navSeq = 0;
+let navPending = null;
 
 // Fetches a listing for the given fid, using (and repairing) the cache.
 // When a cached signed token has expired, the parent listing is re-fetched
@@ -429,16 +434,24 @@ async function resolveListing(entry) {
 export async function navigate(entry, { push = true, fromHistory = false, quiet = false } = {}) {
   cancelTouchSelection();
   setGalleryToolsOpen(false);
-  if (navigating) return;
+  if (navigating) {
+    navSeq += 1;
+    navPending?.resolve();
+    return new Promise((resolve) => {
+      navPending = { entry, opts: { push, fromHistory, quiet }, resolve };
+    });
+  }
   const fid = entry.fid || "";
   if (push && crumbs.length && crumbs[crumbs.length - 1].fid === fid) return;
   navigating = true;
+  const mySeq = ++navSeq;
   const host = $("folders");
   // Cached listings paint immediately; only a fetch slow enough to notice
   // gets a skeleton.
   const done = delayedSkeleton(host, (entry.fid ? skelFolders(3) : "") + skelTiles(12));
   try {
     const d = await resolveListing(entry);
+    if (mySeq !== navSeq) return;
     if (push) {
       const dupAt = crumbs.findIndex((c) => c.fid === fid);
       if (dupAt >= 0) crumbs.splice(dupAt + 1);
@@ -471,6 +484,11 @@ export async function navigate(entry, { push = true, fromHistory = false, quiet 
     done();
     navigating = false;
     host.removeAttribute("aria-busy");
+    if (navPending) {
+      const next = navPending;
+      navPending = null;
+      navigate(next.entry, next.opts).then(next.resolve, next.resolve);
+    }
   }
 }
 

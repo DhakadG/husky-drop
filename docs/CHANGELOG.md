@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Gallery navigation keeps the latest request
+
+`navigate()` returned at once while a folder was still loading. After a
+Back press the URL already showed the parent while the child then painted,
+and a second click did nothing, so guests clicked again and often opened the
+wrong folder. The newest request now marks the in-flight one stale (it skips
+its crumbs, history entry and paint) and runs as soon as that one settles.
+
 ## 2026-09-23 — Zip tickets no longer make one Drive call per file
 
 `createShareZipTicket` awaited an uncached `driveFileMeta` for every selected
