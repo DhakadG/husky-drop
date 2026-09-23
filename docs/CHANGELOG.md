@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The index job no longer overwrites video runner reports
+
+In its warm phase, a share-index chunk read `previews:index`, added video
+durations it had looked up, and wrote the whole key back at the end of the
+chunk. Any runner report that arrived in between (new previews, failure
+counts, run totals) was lost, the same last-writer-wins problem #126 fixed
+for the reports themselves. The chunk now sends only the durations, as a
+patch through the Durable Object queue the reports use; an entry whose
+preview was replaced meanwhile is left alone.
+
 ## 2026-09-23 — Pipelines polls no longer read every share's file list
 
 The Pipelines tab polls every 10 s, and each poll read

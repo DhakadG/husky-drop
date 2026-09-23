@@ -440,7 +440,26 @@ export async function applyPreviewReports(env, ctx, bodies) {
   return { ok: true, indexed: Object.keys(index.files).length };
 }
 
+// Durations the share-index job read from preview files. They arrive through
+// the same serialized queue as the runner reports, so neither overwrites the
+// other; an entry replaced meanwhile (different preview id) is left alone.
+export async function patchPreviewDurations(env, durations) {
+  if (!Object.keys(durations).length) return;
+  const body = { durations };
+  if (!env.LIVE_TRACKER) return applyPreviewReports(env, null, [body]);
+  await liveStub(env).fetch("https://live.internal/preview-report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+}
+
 function applyPreviewReport(env, ctx, index, b) {
+  if (b.durations) {
+    for (const [id, d] of Object.entries(b.durations)) {
+      const entry = index.files[id];
+      if (!entry || entry.id !== d.previewId) continue;
+      entry.ms = entry.ms || d.ms;
+      if (!entry.w && d.w) Object.assign(entry, { w: d.w, h: d.h });
+    }
+    return;
+  }
   const now = Date.now();
   const superseded = [];
   for (const d of b.done || []) {
