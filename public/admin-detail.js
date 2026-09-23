@@ -24,9 +24,12 @@ import { deleteLink, linkActionButton, openFolderPicker, dropEditFolder, setDrop
 export async function refreshDetail(slug, switchTab, fresh = false, nav = {}) {
   setCurrentDetailSlug(slug);
   const url = `/api/admin/link/${encodeURIComponent(slug)}${fresh ? "?fresh=1" : ""}`;
-  const r = await fetch(url);
-  if (!r.ok) return;
-  const d = await r.json();
+  // Called from many places without a catch: a dropped connection leaves
+  // the view as it was instead of an unhandled rejection.
+  const r = await fetch(url).catch(() => null);
+  if (!r?.ok) return;
+  const d = await r.json().catch(() => null);
+  if (!d) return;
   renderDetail(d);
   const tab = $("detail-tab");
   tab.classList.remove("hidden");

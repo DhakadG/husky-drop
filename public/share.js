@@ -93,7 +93,9 @@ const moreObserver =
     ? new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
-            if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder);
+            // Speculative: a failure here only means the click fetches again
+            // (and shows "Could not load" if it fails too).
+            if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder).catch(() => {});
           }
         },
         { rootMargin: "700px" },
@@ -126,7 +128,9 @@ async function init() {
   if (r.status === 404) return showShareGone();
   if (r.status === 410) return showShareGone("expired", "This share has closed.", "Ask whoever sent it for a fresh link.");
   if (!r.ok) return showShareGone("hiccup", "Something went wrong on our side.", "Reload in a moment.");
-  setMeta(await r.json());
+  const loaded = await r.json().catch(() => null);
+  if (!loaded) return showShareGone("hiccup", "Something went wrong on our side.", "Reload in a moment.");
+  setMeta(loaded);
   const returnHash = sessionStorage.getItem(`lhdb_sreturn_${slug}`);
   if (returnHash) {
     sessionStorage.removeItem(`lhdb_sreturn_${slug}`);
@@ -241,8 +245,14 @@ async function verifyPinValue(candidate, silent = false) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ slug, pin: candidate }),
-  });
-  if (r.ok) return true;
+  }).catch(() => null);
+  if (r?.ok) return true;
+  // Offline is worth saying even for the silent stored-PIN check: the gate
+  // would otherwise appear with no reason. A wrong stored PIN stays silent.
+  if (!r) {
+    $("gate-err").textContent = "Can't reach the server. Check your connection and try again.";
+    return false;
+  }
   if (silent) return false;
   const d = await r.json().catch(() => ({}));
   if (r.status === 401 && d.authRequired) {
@@ -268,9 +278,9 @@ async function doRedirect() {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ slug, pin }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.urls?.length) {
+  }).catch(() => null);
+  const d = r ? await r.json().catch(() => ({})) : { error: "Can't reach the server. Check your connection and reload." };
+  if (!r?.ok || !d.urls?.length) {
     $("redirect-label").textContent = d.error || "Could not open this share.";
     return;
   }
@@ -298,9 +308,13 @@ async function showGallery() {
   const sortEl = $("sort");
   sortEl.value = sortMode;
   sortEl.addEventListener("change", () => {
+    const before = listOrder();
     setSortMode(sortEl.value);
     localStorage.setItem("lhdb_sort", sortMode);
-    render();
+    // A paged folder is reloaded in the new order; a fully loaded one is
+    // simply re-sorted in place.
+    if (before !== listOrder() && (current?.folders || []).some((f) => f.nextPageToken) && crumbs.length) navigate(crumbs[crumbs.length - 1], { push: false, fromHistory: true });
+    else render();
   });
   installTileSizeControl();
   installDownloadFormatControl();
@@ -341,8 +355,11 @@ async function restorePath(fids) {
 
 // ---- Navigation core (stable fid, dedupe, browser history) ----
 
+// Sorts Drive can apply to the whole folder (see LIST_ORDER on the Worker).
+const listOrder = () => (["new", "old", "size"].includes(sortMode) ? sortMode : "");
+
 async function fetchListing(token) {
-  const body = { slug, pin };
+  const body = { slug, pin, ...(listOrder() ? { order: listOrder() } : {}) };
   if (token) body.folderToken = token;
   const r = await fetch("/api/share/list", {
     method: "POST",
@@ -399,19 +416,21 @@ function keepListing(fid, d, token) {
 }
 
 async function resolveListing(entry) {
-  const cached = listingCache.get(entry.fid);
+  // A listing in another order is a different listing.
+  const key = listOrder() ? `${entry.fid}~${listOrder()}` : entry.fid;
+  const cached = listingCache.get(key);
   if (cached && Date.now() - cached.at < LISTING_TTL_MS) return cached.d;
   // L0: a listing this browser fetched a moment ago (its signed tokens are
   // minted for 15 min, so a 5 min old copy is still fully usable).
-  const stored = await cachedJson("listing", `${slug}/${entry.fid}`, LISTING_TTL_MS);
+  const stored = await cachedJson("listing", `${slug}/${key}`, LISTING_TTL_MS);
   if (stored?.data?.d) {
-    listingCache.set(entry.fid, { d: stored.data.d, token: stored.data.token, at: stored.at });
+    listingCache.set(key, { d: stored.data.d, token: stored.data.token, at: stored.at });
     if (stored.data.token) entry.token = stored.data.token;
     return stored.data.d;
   }
   try {
     const d = await fetchListing(entry.token);
-    keepListing(entry.fid, d, entry.token);
+    keepListing(key, d, entry.token);
     return d;
   } catch (err) {
     if (err.status !== 403 || !entry.fid) throw err;
@@ -582,6 +601,12 @@ export function render(revealOnlyIds = null) {
   renderCrumbs();
   renderMeta();
   const host = $("folders");
+  // The observers hold their targets; detached tiles stayed referenced.
+  for (const el of host.querySelectorAll(".g-card, .load-more-card")) {
+    cardObserver?.unobserve(el);
+    hotObserver?.unobserve(el);
+    moreObserver?.unobserve(el);
+  }
   host.innerHTML = "";
   visibleFiles.clear();
   setLightboxItems([]);
@@ -618,6 +643,7 @@ export function render(revealOnlyIds = null) {
     const grid = document.createElement("div");
     grid.className = "justified";
     grid._files = files;
+    folder._grid = grid;
     files.forEach((file, i) => {
       file._renderIndex = i;
       const el = card(file);
@@ -729,13 +755,58 @@ async function loadMore(folder, button) {
       if (!folder.subfolders.some((s) => s.fid === sub.fid)) folder.subfolders.push(sub);
     }
     folder.nextPageToken = page.nextPageToken;
-    render(newIds);
+    if (!appendPage(folder, button, page)) render(newIds);
   } catch {
     button.disabled = false;
     updateLoadMoreCopy(button, folder, "error");
   } finally {
     pending.remove();
   }
+}
+
+// "Load next" used to rebuild every tile of the folder (1,000 by page five)
+// and jump the scroll position. When the new page only extends what is on
+// screen - one folder in view (lightbox order), no new subfolders, and the
+// sort puts the new files after the loaded ones - its tiles are appended.
+function appendPage(folder, button, page) {
+  const grid = folder._grid;
+  if (!grid?.isConnected || (current?.folders || []).length !== 1 || (page.subfolders || []).length) return false;
+  const all = sortFiles(folder.files);
+  const old = grid._files || [];
+  if (all.length < old.length || old.some((f, i) => all[i] !== f)) return false;
+  const reveal = [];
+  for (const file of all.slice(old.length)) {
+    file._renderIndex = grid.children.length;
+    const el = card(file);
+    file._el = el;
+    visibleFiles.set(file.id, file);
+    grid.appendChild(el);
+    reveal.push(el);
+    if (isViewable(file)) {
+      file._lbIndex = lightboxItems.length;
+      lightboxItems.push(file);
+    }
+  }
+  grid._files = all;
+  if (!folder.nextPageToken) {
+    moreObserver?.unobserve(button);
+    button.remove();
+  } else {
+    button.disabled = false;
+    updateLoadMoreCopy(button, folder);
+  }
+  renderMeta();
+  updateSelInfo();
+  scheduleLayout();
+  fx.reveal(reveal);
+  return true;
+}
+
+// The viewer calls this near the end of the loaded files: the same path as
+// the "Load next" button (appends when it can), so the grid stays in step.
+export function loadNextPage(folder) {
+  const button = [...document.querySelectorAll(".load-more-card")].find((b) => b._folder === folder);
+  return button && !button.disabled ? loadMore(folder, button) : null;
 }
 
 export async function prefetchMore(folder) {
@@ -755,7 +826,7 @@ export async function prefetchMore(folder) {
 
 async function fetchMorePage(folder) {
   const here = crumbs[crumbs.length - 1];
-  const body = { slug, pin, pageToken: folder.nextPageToken };
+  const body = { slug, pin, pageToken: folder.nextPageToken, ...(listOrder() ? { order: listOrder() } : {}) };
   if (here.token) body.folderToken = here.token;
   else body.folderIndex = folder.index;
   const r = await fetch("/api/share/list", {
@@ -1250,7 +1321,15 @@ export function card(file) {
   });
   fig.addEventListener("click", () => {
     if (selected.size) return toggleSelect(file, fig);
-    if (file._lbIndex != null) openViewer(file._lbIndex, fig);
+    // The viewer module loads on first use; on a dropped connection say so.
+    if (file._lbIndex != null) {
+      openViewer(file._lbIndex, fig).catch((error) => {
+        const network = /dynamically imported module|Importing a module script failed|Failed to fetch|Load failed|NetworkError/i.test(String(error?.message || error));
+        toast("Could not open the viewer", network ? "Check your connection and try again." : "Please try again.", "err");
+        // Anything else is a bug: hand it to the page's crash reporter.
+        if (!network) globalThis.reportError?.(error);
+      });
+    }
     else downloadFile(file);
   });
   installTouchSelection(fig, file);

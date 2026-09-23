@@ -141,8 +141,8 @@ async function moveFile(env, tok, fileId, fromId, toId) {
 }
 // A retried PUT must not leave two copies behind: drop anything already
 // tagged as made from this original.
-async function trashPriorCopies(env, tok, originalId) {
-  const params = new URLSearchParams({ q: `appProperties has { key='archivedFrom' and value='${originalId}' } and trashed=false`, fields: "files(id)", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
+async function trashPriorCopies(env, tok, originalId, jobId) {
+  const params = new URLSearchParams({ q: `appProperties has { key='archivedFrom' and value='${originalId}' } and appProperties has { key='archiveJob' and value='${jobId}' } and trashed=false`, fields: "files(id)", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
   const r = await fetch("https://www.googleapis.com/drive/v3/files?" + params, { headers: { authorization: `Bearer ${tok}` } });
   if (!r.ok) return;
   for (const f of (await r.json()).files || []) await driveTrashFile(env, f.id).catch(() => {});
@@ -181,7 +181,14 @@ async function putImageResultInner(request, env, jobId, fileId) {
   const tok = await accessToken(env);
   const name = withExt(file.name, format);
   const props = { appProperties: { archivedFrom: file.id, archiveJob: job.id } };
-  if (request.headers.get("x-retry") && job.options.mode !== "replace") await trashPriorCopies(env, tok, file.id);
+  // Idempotent per job, whatever the runner remembers: a replaced original
+  // is stamped with this job (a second pass would re-encode the lossy copy),
+  // and an earlier copy made by this job is dropped before the new one.
+  if (job.options.mode === "replace") {
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?fields=appProperties&supportsAllDrives=true`, { headers: { authorization: `Bearer ${tok}` } });
+    const stamp = r.ok ? (await r.json().catch(() => ({}))).appProperties?.archiveJob : "";
+    if (stamp === job.id) return json({ ok: false, skipped: "already replaced by this job" });
+  } else await trashPriorCopies(env, tok, file.id, job.id);
   let created;
   let parent = file.folderId;
   if (job.options.mode === "replace") {
@@ -225,9 +232,13 @@ export async function reportImageBatch(request, env, ctx, jobId) {
   job.runIds ||= [];
   const runId = cleanText(String(b.runId || ""), 30);
   if (runId && !job.runIds.includes(runId) && job.runIds.length < 10) job.runIds.push(runId);
+  // A batch the runner re-sends (its first response was lost, or it rides
+  // along with the stop report) must not count twice.
+  const seen = new Map(job.items.map((i) => [i.id, i]));
   for (const d of b.done || []) {
     const f = known.get(d.id);
-    if (!f) continue;
+    if (!f || seen.get(d.id)?.ok) continue;
+    seen.set(d.id, { ok: true });
     job.items.push({ id: d.id, ok: true, newId: d.newId, size: Number(d.size) || 0, ms: Number(d.ms) || 0, via: cleanText(d.via || "", 12) || undefined, q: Number(d.q) || undefined, mode: job.options.mode });
     job.progress.done += 1;
     job.progress.bytesIn += f.size;
@@ -235,8 +246,9 @@ export async function reportImageBatch(request, env, ctx, jobId) {
     if (d.parent && job.outputs.length < 40 && !job.outputs.includes(d.parent)) job.outputs.push(cleanText(d.parent, 120));
   }
   for (const s of b.skipped || []) {
-    if (!known.has(s.id)) continue;
-    const soft = /not smaller|unsupported|gain-map/i.test(s.error || "");
+    if (!known.has(s.id) || seen.has(s.id)) continue;
+    seen.set(s.id, { ok: false });
+    const soft = /not smaller|unsupported|gain-map|already/i.test(s.error || "");
     job.items.push({ id: s.id, ok: false, soft, error: cleanText(s.error || "failed", 160) });
     job.progress[soft ? "skipped" : "failed"] += 1;
     if (!soft) appLog(env, ctx, { level: "warn", area: "images", message: `job ${job.id}: ${known.get(s.id)?.name || s.id} failed`, detail: s.error });

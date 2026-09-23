@@ -15,6 +15,9 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 >   drop's completed uploads (name + size, + lastModified when recorded). At
 >   most 500 files per call (the client batches); matched against every
 >   verified completion in the Durable Object's index, plus the recent KV rows.
+> - `POST /api/share/list` accepts `order`: `new` | `old` | `size`, which lists
+>   the folder from Drive in that order (send it with every `pageToken` of the
+>   same listing); default is by name.
 > - `GET /api/share/meta/:slug` - public share-link metadata (no folder IDs).
 > - `POST /api/share/verify` `{slug, pin}` - share PIN gate (same lockouts).
 > - `POST /api/share/opened` `{slug}` - share open counter (DO-batched).

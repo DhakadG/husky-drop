@@ -4,6 +4,104 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Review follow-ups (CodeRabbit on #136, #153, #161)
+
+- Image jobs are idempotent per job on the store side, not only in the
+  runner's memory: a replace-mode PUT for a file this job already replaced is
+  a soft skip ("already replaced by this job"), and copy/archive trash an
+  earlier copy made by this job before storing a new one (previously only on
+  `x-retry`, and across every job). A batch re-sent after a lost response no
+  longer adds items or progress twice.
+- The fullscreen cursor rule uses `auto`: `revert` could inherit `none` from
+  `.pswp` when a video wrapper inside the viewer went fullscreen.
+- A stored share PIN checked while offline now says the server is out of
+  reach instead of showing a bare PIN gate.
+- Opening the viewer calls a failure a connection problem only when the
+  module download failed; anything else goes to the crash reporter.
+- The smoke test now sees the alert e-mails: none for "Failed to fetch", one
+  for a real crash.
+
+## 2026-09-23 — An audit keeps unhandled rejections and storage crashes out of the pages
+
+Following the "Failed to fetch" alert, `scripts/promise-audit.mjs` parses
+every browser script (espree, already installed with ESLint) and works out
+which async functions can reject: an `await` of fetch, `json()`,
+`import()` or another rejecting function, or a `throw`, outside try/catch.
+It reports every place such a promise is dropped: a statement call,
+`a && f()`, `void f()`, a `.then`/`.finally` chain without `.catch`, or an
+async callback given to an event listener, observer or timer.
+
+It found 26 more: the admin log, detail, people, sign-in, share create/edit,
+link delete and folder-add fetches (a dropped connection left buttons
+disabled or views half-drawn), `r.json()` on the drop and share landing
+pages, the viewer's asset promotion chains, and a dynamic import in the
+Activity tools. Each now handles the failure where it happens, with a
+message where the user needs one. `promise-audit-test.mjs` fails if a new
+one appears, and checks that the audit still flags a planted example.
+
+Separately, `localStorage`/`sessionStorage` throw when a browser blocks
+site data (and `setItem` throws on a full quota). Several modules read them
+at load, which would stop the page before it rendered. A shim at the top of
+`public/public.js` (loaded before every page's own scripts) now puts
+never-throwing wrappers in their place: the real store while it works,
+memory for the page view when it does not. The test runs the shim against a
+blocked and a full store and checks each page's script order.
+
+## 2026-09-23 — A dropped connection is no longer a "client error" alert
+
+A guest on mobile data in Jaipur triggered an alert e-mail:
+`unhandledrejection Failed to fetch` from `fetchMorePage`. The gallery
+prefetches the next page when "Load next" scrolls into view, and nothing
+handled a failed request, so a network blip became an unhandled rejection.
+That call now swallows the failure (the click fetches again and shows "Could
+not load. Try again" if it fails too). A sweep of the guest pages for
+promises nobody awaited or caught found three more that threw on a network
+drop with no message: the share PIN check, redirect-mode shares and opening
+the viewer (its module loads on first use). Each now tells the guest to
+check their connection. As a safety net, the client-error endpoint logs a
+pure network failure ("Failed to fetch", "Load failed", "NetworkError...")
+as a warning without an alert e-mail; real crashes still mail.
+
+## 2026-09-23 — The viewer keeps going past the loaded page
+
+The viewer only knew the files already paged into the gallery, so in a
+1,400-photo folder it read "200 / 200" and stopped at the 200th photo as if
+the folder ended. Within two photos of the end of a paged folder it now loads
+the next page through the gallery's own "Load next" path and extends the
+slides, so arrow keys and swipes carry on. It extends only when the gallery
+appended the page (see "Load next" appends tiles), so slide numbers never
+point at a different file.
+
+## 2026-09-23 — "Newest first" and "Largest first" sort the whole folder
+
+Drive pages arrived in name order, 200 at a time, and the gallery only
+re-sorted what was loaded, so "Newest first" on a 1,400-photo folder showed
+the newest of the alphabetically first 200. `/api/share/list` now takes
+`order` (`new`, `old`, `size`) and asks Drive for the folder in that order
+(modified time or size, folders first); the gallery sends it with every page
+and reloads a paged folder when the sort changes. Listings are cached per
+order.
+
+## 2026-09-23 — "Load next" appends tiles instead of rebuilding the gallery
+
+Every page of a big folder called `render()`, which emptied the gallery and
+recreated every tile, image and listener (1,000 tiles by page five), made the
+scroll position jump, and left the removed tiles observed by three
+IntersectionObservers. A page that only extends what is on screen (one folder
+in view, no new subfolders, and the sort puts the new files after the loaded
+ones) now has its tiles appended; any other case still re-renders, and a
+re-render first stops observing the tiles it removes.
+
+## 2026-09-23 — The identity-matching model no longer sees e-mails or device ids
+
+The nightly stitch sent every known account's e-mail address and every
+visit's device or fingerprint id to Gemini or Anthropic, along with names,
+places and device details. The prompt now uses opaque ids (accounts `A1..`,
+visits `U1..`) mapped back on the Worker, so no e-mail address (Google OAuth
+user data) or persistent identifier leaves; what matching needs (names,
+places, device traits, links, times) stays. Disclosure of the provider is in
+the privacy policy PR. `scripts/stitch-test.mjs` checks the prompt.
+
 ## 2026-09-23 — The privacy policy names every processor and identifier
 
 The policy listed Google Drive, Cloudflare storage and the e-mail provider,

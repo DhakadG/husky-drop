@@ -470,7 +470,11 @@ export async function logClientError(request, env) {
     crumbs: Array.isArray(b.crumbs) ? b.crumbs.slice(-25).map((c) => cleanText(String(c), 160)) : [],
     client: extractClientInfo(request),
   };
-  appLog(env, null, { level: "error", area: "client", message: `${b.url ? cleanText(b.url, 80) : "page"}: ${message}`, detail });
+  // "Failed to fetch" and its Safari/Firefox spellings are the guest's
+  // connection dropping, not a bug: kept in the log as a warning, no e-mail.
+  const networkOnly = /^(TypeError: )?(Failed to fetch|NetworkError when attempting to fetch resource\.?|Load failed|The network connection was lost\.?|network error)$/i.test(cleanText(b.message || "", 160).trim());
+  appLog(env, null, { level: networkOnly ? "warn" : "error", area: "client", message: `${b.url ? cleanText(b.url, 80) : "page"}: ${message}`, detail });
+  if (networkOnly) return json({ ok: true });
   // One e-mail per page per 15 minutes so a crash loop cannot flood the inbox.
   const mail = await rateLimitRemote(env, `cerr-mail:${slug || cleanText(b.url || "", 60)}`, 1, 15 * 60);
   if (mail.allowed) {

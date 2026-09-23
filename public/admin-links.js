@@ -329,7 +329,11 @@ export async function deleteLink(slug, label) {
     message: "Drive files stay put. The public drop link stops working immediately.",
     confirmLabel: "Delete drop link",
   }))) return;
-  await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, { method: "DELETE" });
+  const r = await fetch(`/api/admin/links/${encodeURIComponent(slug)}`, { method: "DELETE" }).catch(() => null);
+  if (!r?.ok) {
+    await confirmAction({ title: "Could not delete", message: r ? `The server answered ${r.status}; the link is unchanged.` : "Can't reach the server - check your connection and try again.", confirmLabel: "OK" });
+    return;
+  }
   if (currentDetailSlug === slug) {
     setCurrentDetailSlug("");
     $("detail-tab").classList.add("hidden");

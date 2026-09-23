@@ -1969,7 +1969,9 @@ body.has-fx-cursor .mobile-select-bar * {
    the guest with no pointer at all. */
 body.has-fx-cursor :fullscreen,
 body.has-fx-cursor :fullscreen * {
-  cursor: revert !important;
+  /* auto, not revert: cursor is inherited, and revert would pick up the
+     none set on .pswp when a video wrapper inside it goes fullscreen. */
+  cursor: auto !important;
 }
 
 .fx-cur-dot,

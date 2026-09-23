@@ -271,6 +271,11 @@ async function folderFid(env, folderId) {
   return (await sha256(`fid:${folderId}:${env.SHARE_SIGNING_KEY || env.ADMIN_TOKEN || "dev"}`)).slice(0, 16);
 }
 
+// "Newest first" / "Largest first" must mean the whole folder, not the loaded
+// 200: the page itself comes from Drive in that order. A page token only
+// continues the order it was made with, so the client sends it every time.
+const LIST_ORDER = { new: "folder,modifiedTime desc", old: "folder,modifiedTime", size: "folder,quotaBytesUsed desc" };
+
 export async function listShareFiles(request, env, ctx) {
   const b = await request.json().catch(() => ({}));
   const { share, error } = await loadActiveShare(env, cleanText(b.slug || "", 60));
@@ -293,7 +298,7 @@ export async function listShareFiles(request, env, ctx) {
   const [previews, imagePreviews] = await Promise.all([previewIndex(env), sharePreviewIndex(env)]);
   const folders = [];
   for (const [i, folderId] of targets) {
-    const page = await driveListFolder(env, folderId, single ? cleanText(b.pageToken || "", 500) : "");
+    const page = await driveListFolder(env, folderId, single ? cleanText(b.pageToken || "", 500) : "", { orderBy: LIST_ORDER[b.order] });
     const files = [];
     const subfolders = [];
     for (const f of page.files || []) {

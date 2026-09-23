@@ -1,9 +1,9 @@
 import { createRapidSurfController, createViewerAssetEngine } from "./share-viewer-engine.js";
-import { VIEWER_MOTION_KEY, lightboxItems } from "./share-state.js";
+import { VIEWER_MOTION_KEY, current, lightboxItems } from "./share-state.js";
 import { trackEvent } from "./share-beacon.js";
 import { stopHoverPreview, videoWarmLease } from "./share-preview.js";
 import { cancelTouchSelection } from "./share-select.js";
-import { setGalleryToolsOpen, thumbUrl } from "./share.js";
+import { loadNextPage, setGalleryToolsOpen, thumbUrl } from "./share.js";
 
 // PhotoSwipe viewer + Swiper thumbstrip.
 import { vs, viewerChrome } from "./share-viewer-state.js";
@@ -60,6 +60,29 @@ export function saveViewerMotion() {
 export function loadPswp() {
   if (!vs.pswpModulePromise) vs.pswpModulePromise = import("/vendor/photoswipe.esm.min.js").then((m) => m.default);
   return vs.pswpModulePromise;
+}
+
+// Near the end of a paged folder the viewer loads the next page instead of
+// stopping at "200 / 200" as if the folder ended. It only extends when the
+// gallery appended (every loaded index unchanged), since slide index and
+// lightboxItems index must stay the same file.
+let growing = false;
+async function growViewer() {
+  const folders = current?.folders || [];
+  if (growing || !vs.pswp || folders.length !== 1 || !folders[0].nextPageToken) return;
+  if (vs.pswp.currIndex < vs.pswp.getNumItems() - 3) return;
+  growing = true;
+  try {
+    await loadNextPage(folders[0]);
+    const ds = vs.pswp?.options.dataSource;
+    if (!Array.isArray(ds) || !ds.every((item, i) => item.file === lightboxItems[i])) return;
+    for (let i = ds.length; i < lightboxItems.length; i++) ds.push(pswpItem(lightboxItems[i]));
+    vs.pswp.ui?.update?.();
+  } catch {
+    // Paging is best-effort here; the gallery's own button still works.
+  } finally {
+    growing = false;
+  }
 }
 
 export function pswpItem(file) {
@@ -155,6 +178,7 @@ export async function openViewer(index, sourceEl) {
     // cleared - seen in the client error log as "currIndex of null".
     if (!vs.pswp) return;
     noteRapidNavigation("slide-change");
+    growViewer();
     const current = lightboxItems[vs.pswp.currIndex];
     syncAssetLadderVisibility(current);
     closeViewerPanels({ except: vs.viewerRefreshPanelException || (vs.fileInfoPinned ? "file-info" : "") });
@@ -164,7 +188,7 @@ export async function openViewer(index, sourceEl) {
     refreshFileInfo(current);
     if (/^image\//.test(current?.mime || "")) {
       // The viewer may close while the asset is still loading.
-      void vs.viewerAssets.activate(current).then(() => vs.pswp && warmViewerNeighbors(vs.pswp.currIndex));
+      vs.viewerAssets.activate(current).then(() => vs.pswp && warmViewerNeighbors(vs.pswp.currIndex)).catch(() => {});
     }
     if (vs.suppressNextViewerTransition) vs.suppressNextViewerTransition = false;
     else applyViewerTransition();
@@ -253,7 +277,7 @@ export async function openViewer(index, sourceEl) {
   updateCaption(file);
   bindRapidPointer(vs.pswp.element?.querySelector(".pswp__button--arrow--prev"), "previous");
   bindRapidPointer(vs.pswp.element?.querySelector(".pswp__button--arrow--next"), "next");
-  if (/^image\//.test(file.mime)) void vs.viewerAssets.activate(file).then(() => warmViewerNeighbors(index));
+  if (/^image\//.test(file.mime)) vs.viewerAssets.activate(file).then(() => warmViewerNeighbors(index)).catch(() => {});
 }
 
 export function registerProgressiveImageContent(instance) {

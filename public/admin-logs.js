@@ -159,9 +159,9 @@ export async function refreshLogs({ more = false } = {}) {
     body.innerHTML = skelRows(8, 44);
   }
   const params = new URLSearchParams({ limit: "200", area: $("logs-area").value, level: $("logs-level").value, before: String(oldest || 0) });
-  const r = await fetch(`/api/admin/logs?${params}`);
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) return (body.innerHTML = `<p class="muted">${icon("circle-alert", "ico-sm")} ${esc(d.error || "log unavailable")}</p>`);
+  const r = await fetch(`/api/admin/logs?${params}`).catch(() => null);
+  const d = r ? await r.json().catch(() => ({})) : { error: "Can't reach the server - check your connection and try again." };
+  if (!r?.ok) return (body.innerHTML = `<p class="muted">${icon("circle-alert", "ico-sm")} ${esc(d.error || "log unavailable")}</p>`);
   const page = d.rows || [];
   if (page.length) oldest = page[page.length - 1].id;
   rows = more ? rows.concat(page) : page;

@@ -256,9 +256,9 @@ async function addFolderFromInput() {
   const raw = $("ia-folder-input").value.trim();
   const id = raw.match(/folders\/([A-Za-z0-9_-]{10,})/)?.[1] || raw.match(/^[A-Za-z0-9_-]{10,}$/)?.[0];
   if (!id) return flash($("ia-folder-add"), "not a Drive folder link");
-  const r = await fetch(`/api/admin/drive/folders?parent=${encodeURIComponent(id)}`);
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) return flash($("ia-folder-add"), d.error || "folder not found");
+  const r = await fetch(`/api/admin/drive/folders?parent=${encodeURIComponent(id)}`).catch(() => null);
+  const d = r ? await r.json().catch(() => ({})) : { error: "can't reach the server" };
+  if (!r?.ok) return flash($("ia-folder-add"), d.error || "folder not found");
   $("ia-folder-input").value = "";
   addRoot(id, d.breadcrumbs?.at(-1)?.name || id);
 }
