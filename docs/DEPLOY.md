@@ -49,7 +49,7 @@ Never commit secrets. The following are git-ignored and must stay local:
 - `.wrangler/`, `node_modules/`
 - OAuth refresh tokens, Cloudflare API tokens, notification sender/recipient
 
-If you are on a fresh machine, see `docs/GITHUB.md` for the first-push commands.
+If you are on a fresh machine, see `docs/archive/GITHUB.md` for the first-push commands.
 
 ---
 

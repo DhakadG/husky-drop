@@ -226,7 +226,7 @@ Icons come from one Lucide sprite. Add a name to `UI_ICON_NAMES` in
 use it as `<svg class="ico"><use href="/icons.svg#name"/></svg>` or
 `uiIcon("name")`. The test suite fails on any inline glyph that bypasses it.
 
-For local API calls, create an ignored `.dev.vars` file containing the same required secrets. The full guided checklist is in [Setup required](docs/SETUP-REQUIRED.md).
+For local API calls, create an ignored `.dev.vars` file containing the same required secrets. The secrets and bindings are listed in [Deploy workflow](docs/DEPLOY.md).
 
 ## Configuration
 
@@ -265,36 +265,43 @@ For local API calls, create an ignored `.dev.vars` file containing the same requ
 
 ```text
 husky-drop/
-├── src/
-│   ├── worker.js         # router, page serving, admin auth, live sockets
-│   ├── drop-api.js       # public drop endpoints: sessions, progress, completions
-│   ├── admin-api.js      # admin drop-link CRUD, overview, cleanup
-│   ├── auth.js           # Google sign-in and admin session cookies
-│   ├── drive.js          # Drive OAuth, folders, quota, file metadata
-│   ├── live.js           # Durable Object: sessions, hibernatable WebSockets
-│   ├── live-diagnostics.js # DO routes for People profiles and the system log
-│   ├── people.js         # visitor identity: device cookie + Google account stitching
-│   ├── identity.js       # device sessions (fingerprint + client details), bans
-│   ├── stitch.js         # nightly Claude pass: suggest which unsigned visits are which account
-│   ├── live-analytics.js # DO SQLite: rollups, telemetry, activity, share stats
-│   ├── live-digest.js    # per-session finished-upload email
-│   ├── live-completions.js # batched KV flush of Drive-verified completions
-│   ├── share.js          # public share endpoints: meta, listing, tracking
-│   ├── share-admin.js    # share CRUD + Drive permission revocation
+├── CLAUDE.md             # ground rules; points at docs/CONTEXT.md
+├── src/                  # the Worker
+│   ├── worker.js         # the router: every route, page serving, admin auth, cron
+│   ├── util.js           # constants, normalizers, escaping. No network, no KV
+│   ├── store.js          # KV state: counters, events, lockouts, notifications
+│   ├── drive.js          # every Google Drive call
+│   ├── auth.js           # Google sign-in for viewers; admin sessions
+│   ├── applog.js         # the app log the admin Logs tab reads
+│   ├── drop-api.js       # drop endpoints: preflight, sessions, progress, completion
+│   ├── admin-api.js      # admin drop-link CRUD, overview, activity, Drive browsing
+│   ├── live.js           # LiveTracker Durable Object: sessions, WebSockets, alarms
+│   ├── live-analytics.js # DO SQLite: rollups, telemetry, activity feed
+│   ├── live-completions.js, live-diagnostics.js, live-digest.js
+│   ├── identity.js, people.js, stitch.js   # visitors, profiles, account stitching
+│   ├── share.js          # share endpoints: meta, listing, summary, tracking
+│   ├── share-admin.js    # share CRUD and Drive permission revocation
 │   ├── share-token.js    # signed download tokens, download safety list
-│   ├── share-media.js    # thumbnails, Range downloads, on-demand EXIF
-│   ├── previews.js       # 720p video previews (GitHub Actions transcoder API)
-│   ├── images.js         # image archive: scan, estimates, plan
-│   ├── images-run.js     # image archive: job control, queue, runner API, Drive writes, undo
-│   ├── images-rules.js   # recurring rules (cron) + copy/archive outcome switch
-│   ├── applog.js         # system log in the LiveTracker DO (SQLite), admin endpoint
-│   ├── share-zip.js      # streaming ZIP64 "download all"
-│   ├── store.js          # KV events, counters, lockouts, notifications
-│   └── util.js           # normalizers, security helpers, constants
-├── public/             # home, admin, drop, share, legal pages and assets
-├── scripts/            # OAuth helper and automated test suites
-├── test/dev-fixtures/  # synthetic local-only test media
-├── docs/               # architecture, API, security, setup, deployment
+│   ├── share-media.js    # thumbnails, Range downloads, warm-on-browse
+│   ├── media-cache.js    # the ladder: edge cache → R2 → Drive
+│   ├── share-zip.js      # streamed ZIP64 "download all"
+│   ├── share-index.js    # chunked Drive walk, folder stats, file rows, dedupe
+│   ├── share-changes.js  # Drive change feed, scheduling, R2 orphan sweeps
+│   ├── share-stats.js    # the endpoints that read the index
+│   ├── share-previews.js # RAW/HEIC → WebP previews and WebP thumbnails
+│   ├── previews.js       # 720p video previews
+│   ├── images*.js        # image-archive re-encode jobs and recurring rules
+│   ├── pipelines.js      # the admin Pipelines tab, one view over all of it
+│   └── exif.js           # EXIF for the viewer's file-info panel
+├── public/               # pages and browser modules: no bundler, no framework
+│   ├── public.js         # shared globals: esc, reconcile, fmtBytes, uiIcon
+│   ├── skeleton.js       # the one loading-skeleton vocabulary
+│   ├── drop*.js          # the upload engine
+│   ├── share*.js         # gallery, viewer, selection, telemetry
+│   └── admin*.js         # one module per dashboard tab
+├── scripts/              # tests (plain node + assert), runners, tools
+├── .github/workflows/    # CI, PR review, and the transcoders
+├── docs/                 # CONTEXT, RUNBOOK, API, ARCHITECTURE, CHANGELOG, archive
 ├── wrangler.example.jsonc
 └── package.json
 ```
@@ -337,13 +344,15 @@ npm run deploy
 
 | Document | Use it for |
 | --- | --- |
-| [Setup required](docs/SETUP-REQUIRED.md) | First deployment and post-upgrade checklist. |
-| [Deploy workflow](docs/DEPLOY.md) | Safe GitHub → Cloudflare release order. |
+| [Context](docs/CONTEXT.md) | **Start here.** What lives where, how a request flows, the conventions, and the traps already hit. |
+| [Runbook](docs/RUNBOOK.md) | Operating the live service: health checks, re-indexing, dedupe, previews, R2 sweeps. |
+| [Deploy workflow](docs/DEPLOY.md) | Secrets, bindings, and the GitHub → Cloudflare release order. |
 | [Architecture](docs/ARCHITECTURE.md) | Data path, Durable Object state, batching, recovery, and performance. |
 | [Security](docs/SECURITY.md) | Threat model, lockouts, authentication, budgets, and non-goals. |
 | [API reference](docs/API.md) | Public and admin HTTP/WebSocket endpoints. |
 | [Email notifications](docs/EMAIL.md) | Optional Resend setup and delivery behavior. |
-| [GitHub setup](docs/GITHUB.md) | Files to commit and files that must remain local. |
+| [Changelog](docs/CHANGELOG.md) | Every change, newest first, with the reasoning behind it. |
+| [Archive](docs/archive/README.md) | Documents that were true once, kept for provenance. |
 
 ## Known limits
 

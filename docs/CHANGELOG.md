@@ -2,7 +2,36 @@
 
 Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
-[STATUS.md](STATUS.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
+[archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## 2026-09-23 — Repo orientation: CONTEXT.md, RUNBOOK.md, docs archive (PR #106)
+
+Seven of the thirteen files in `docs/` described a version of this project that
+no longer exists, and there was nothing that told you where anything was. Every
+session started by reading the tree.
+
+- **`docs/CONTEXT.md`** — the file to read at the start of a session. What the
+  product is, the bindings, a file-by-file map of `src/`, `public/`,
+  `scripts/` and the workflows, how the four main flows actually work (upload,
+  browse, the media ladder, background jobs), the KV and R2 key inventory, the
+  conventions that are load-bearing, the traps already paid for (KV has no
+  compare-and-set, `waitUntil` caps at 30 s, a Worker cannot fetch its own
+  hostname, Drive only returns the fields you ask for, …), the ship-it SOP and
+  how to probe production.
+- **`docs/RUNBOOK.md`** — operating the live service: health in one curl,
+  re-index a share, resume a stalled job, dedupe a folder, drain the preview
+  backlog, sweep R2, chase a failed upload, rotate a secret.
+- **`CLAUDE.md`** at the repo root — the ground rules, pointing at CONTEXT.md.
+- **`docs/README.md`** — an index of what each document answers.
+- **`docs/archive/`** — `PLAN.md`, `GITHUB.md`, `SETUP-REQUIRED.md`,
+  `STATUS.md`, the lightGallery comparison, the UI 3.0 redesign package and
+  the transfer.zip audit, each with a line in the archive README saying what it
+  was and what replaced it. Nothing was deleted; the folder with a space in its
+  name was renamed because paths with spaces break scripts.
+- **`scripts/docs-test.mjs`** — docs rot quietly, so this fails the build when
+  a link stops resolving, when CONTEXT.md loses a section, or when it names a
+  file that no longer exists (86 paths checked today). README's project map was
+  already six modules out of date; it is current again.
 
 ## 2026-09-23 — The RAW preview backlog was a lost-update race (PR #104)
 
