@@ -320,7 +320,7 @@ export function createViewerAssetEngine(options = {}) {
     emit(record);
     if (record.intentStep >= INTENT_STEPS) {
       stopIntent();
-      if (options.canLoadFull?.(file) !== false) void ensure(file, "full");
+      if (options.canLoadFull?.(file) !== false) ensure(file, "full").catch(() => {});
       return;
     }
     intentTimer = schedule(() => tickIntent(file), INTENT_STEP_MS);
