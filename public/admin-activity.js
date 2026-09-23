@@ -25,6 +25,7 @@ export function identityMapOf(events) {
   return ids;
 }
 export function personKeyOf(e, ids) {
+  if (e.k) return e.k; // resolved by the tracker with the People tab's aliases
   const email = String(e.e || (e.d && ids.get(e.d)) || "").trim().toLowerCase();
   if (email) return `email:${email}`;
   if (e.d) return `device:${e.d}`;

@@ -64,7 +64,16 @@ const deviceCard = (s) => {
 export async function openPerson(key) {
   const p = peopleState.people.find((x) => x.key === key);
   const host = $("people-body");
-  if (!p) return;
+  if (!p) {
+    // No profile of its own (e.g. outside the 90-day window): search for it
+    // instead of leaving the admin on an unchanged list.
+    const search = $("people-search");
+    if (search) {
+      search.value = key.split(":").slice(1).join(":");
+      search.dispatchEvent(new Event("input"));
+    }
+    return;
+  }
   const name = displayName(p);
   host.innerHTML = `<button class="mini" id="people-back" type="button">${icon("arrow-left", "ico-sm")} all people</button>
     <article class="person-profile rise" data-key="${escAttr(key)}">

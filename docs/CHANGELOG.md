@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Activity finds the same person the People tab shows
+
+The Activity tab built person keys in the browser (`device:<id>`,
+`name:<typed>`) without the People tab's merges and aliases. After a device
+was merged into an e-mail, the "profile" button on its cards found nobody and
+did nothing, and one person was counted as several. The tracker now attaches
+the resolved key (`k`, from the same `personKey` the People tab uses) to
+every event it returns, and the Activity tab prefers it. A key with no
+profile fills the People search instead of doing nothing.
+
 ## 2026-09-23 — A person's links open the link itself
 
 On a People profile, "Drop links used" and "Shares viewed" only switched to
