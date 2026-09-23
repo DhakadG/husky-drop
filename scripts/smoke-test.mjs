@@ -146,7 +146,7 @@ function publicJsonRequest(path, body, method = "POST") {
 async function withMockedGoogleDrive(fn) {
   const originalFetch = globalThis.fetch;
   const originalCaches = globalThis.caches;
-  const calls = { listPageSizes: [], mediaRanges: [], thumbnailUrls: [], thumbnailAuth: [], trashed: [] };
+  const calls = { listPageSizes: [], listOrders: [], mediaRanges: [], thumbnailUrls: [], thumbnailAuth: [], trashed: [] };
   let uploadSeq = 1;
   const files = {
     "drive-folder": {
@@ -368,6 +368,7 @@ async function withMockedGoogleDrive(fn) {
         return new Response(JSON.stringify({ files: [] }), { headers: { "content-type": "application/json" } });
       }
       calls.listPageSizes.push(url.searchParams.get("pageSize"));
+      calls.listOrders.push(url.searchParams.get("orderBy"));
       const pageToken = url.searchParams.get("pageToken") || "";
       // A folder one level down from the share root, so the recursive
       // summary walk has something real to descend into.
@@ -1285,6 +1286,12 @@ async function main() {
     assert.ok((await driveEnv.KV.list({ prefix: "share-previews:delta:" })).keys.length > 0, "deltas survive compaction and expire on their own");
     assert.ok(compacted.files["file-raw"].d || compacted.files["file-raw"].r, "the Drive id recorded at upload is not clobbered by the run report");
     const secondPage = await (await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderIndex: 0, pageToken: listed.folders[0].nextPageToken }), driveEnv)).json();
+    // "Newest first" lists the whole folder from Drive in that order; an
+    // unknown order falls back to name order rather than reaching Drive.
+    await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderIndex: 0, order: "new" }), driveEnv);
+    assert.equal(calls.listOrders.at(-1), "folder,modifiedTime desc", "order=new asks Drive for newest first");
+    await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderIndex: 0, order: "name desc; drop" }), driveEnv);
+    assert.equal(calls.listOrders.at(-1), "folder,name", "only known orders reach Drive");
     res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderToken: secondPage.folders[0].subfolders[0].ls }), driveEnv);
     const nestedListing = await res.json();
     const rawFile = nestedListing.folders[0].files.find((f) => f.name === "E Raw.ARW");
