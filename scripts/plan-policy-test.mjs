@@ -33,8 +33,8 @@ const trackedPlans = git(["ls-files", "--", "docs/plans", "docs/superpowers/plan
 assert.equal(trackedPlans, "", "implementation-plan roots must be absent from the Git index");
 
 for (const durable of [
-  "docs/PLAN.md",
-  "docs/Personal Dropbox UI Redesign/redesign-package/PLAN.md",
+  "docs/archive/PLAN.md",
+  "docs/archive/ui-redesign-2026-07/redesign-package/PLAN.md",
   "docs/superpowers/specs/2026-07-10-redesign-icon-fidelity-design.md",
   "docs/superpowers/specs/2026-07-11-readme-redesign-design.md",
   "docs/superpowers/specs/2026-07-12-drive-sharing-observability-design.md",

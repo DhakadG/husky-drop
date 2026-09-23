@@ -382,7 +382,7 @@ assert.match(viewerEngine, /RAPID_SETTLE_MS\s*=\s*260/);
 assert.match(shareCss, /url\("\/logo-mark\.svg"\)/);
 assert.match(pkg, /share-viewer-test\.mjs/);
 
-const comparison = await read("docs/LIGHTBOX-FEATURE-COMPARISON.md");
+const comparison = await read("docs/archive/LIGHTBOX-FEATURE-COMPARISON.md");
 assert.match(comparison, /lightGallery/i);
 assert.match(comparison, /EXIF/);
 assert.match(comparison, /Fullscreen/);
