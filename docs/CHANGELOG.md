@@ -4,6 +4,13 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The Overview shows the share side too
+
+The landing tab's stat cards covered drop links only, so checking how a
+gallery sent yesterday was doing meant opening the Shares tab and scanning
+every card. Overview now adds "Gallery opens", "Downloads" and "Data served",
+summed from the per-share stats the overview response already carried.
+
 ## 2026-09-23 — Activity finds the same person the People tab shows
 
 The Activity tab built person keys in the browser (`device:<id>`,

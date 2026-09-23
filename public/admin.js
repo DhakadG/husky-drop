@@ -456,6 +456,9 @@ const STAT_ICONS = {
   files: ["rgba(47,107,255,0.12)", "#2f6bff", "files"],
   received: ["", "", "download"],
   "drive free": ["rgba(31,178,122,0.14)", "#1fb27a", "hard-drive"],
+  "gallery opens": ["rgba(21,192,201,0.14)", "#0e9aa7", "images"],
+  downloads: ["rgba(123,107,255,0.14)", "#7b6bff", "download"],
+  served: ["", "", "share-2"],
 };
 
 export function renderStats() {
@@ -469,6 +472,12 @@ export function renderStats() {
     ["received", fmtBytes(t.bytes || 0), "Data received"],
   ];
   if (q && q.free != null) cards.push(["drive free", fmtBytes(q.free), "Drive space left"]);
+  // The share side, summed from the per-share stats the overview already sends.
+  const shares = overview?.shares || [];
+  if (shares.length) {
+    const sum = (k) => shares.reduce((n, s) => n + (Number(s.stats?.[k]) || 0), 0);
+    cards.push(["gallery opens", sum("opens").toLocaleString(), "Gallery opens"], ["downloads", sum("downloads").toLocaleString(), "Downloads"], ["served", fmtBytes(sum("bytes")), "Data served"]);
+  }
   reconcile(
     $("stats"),
     cards,
