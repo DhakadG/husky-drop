@@ -260,9 +260,25 @@ async function currentGlobalLock(env, slug) {
   return { key, state, retryAfter: 0 };
 }
 
+// Counting every wrong PIN in KV spent two writes per attempt of attacker
+// traffic, enough to exhaust the daily write budget app-wide. With the
+// Durable Object bound, its in-memory buckets count the attempts and KV is
+// written only when a lockout starts. The level / generation leads the key
+// so the 120-char bucket key can never truncate it away.
+async function pinFailureTripped(env, key, max, windowSec) {
+  return !(await rateLimitRemote(env, key, max, windowSec)).allowed;
+}
+
 async function recordGlobalPinFailure(env, link, request) {
   const { key, state } = await currentGlobalLock(env, link.slug);
   const now = Date.now();
+  if (env.LIVE_TRACKER) {
+    const gen = state.gen || 0;
+    if (!(await pinFailureTripped(env, `pg${gen}:${link.slug}`, 60, 3600))) return 0;
+    await logEvent(env, { type: "global-lock", slug: link.slug, label: link.label, message: "Global PIN damping started" }, request);
+    await env.KV.put(key, JSON.stringify({ gen: gen + 1, lockedUntil: now + 600_000 }), { expirationTtl: 2 * 3600 });
+    return 600;
+  }
   const windowStart = now - (state.windowStart || 0) > 3600_000 ? now : state.windowStart || now;
   const attempts = windowStart === now ? 1 : (state.attempts || 0) + 1;
   const next = { attempts, windowStart, lockedUntil: 0 };
@@ -284,8 +300,15 @@ async function recordGlobalPinFailure(env, link, request) {
 
 async function recordPinFailure(env, slug, request) {
   const { key, state } = await currentLock(env, slug, request);
-  const attempts = (state.attempts || 0) + 1;
   const level = state.level || 0;
+  if (env.LIVE_TRACKER) {
+    if (!(await pinFailureTripped(env, `p${level}:${key.slice(3)}`, LOCK_ATTEMPTS - 1, 24 * 3600))) return 0;
+    const retryAfter = Math.min(LOCK_MAX_SECONDS, LOCK_BASE_SECONDS * 2 ** level);
+    await logEvent(env, { type: "lock", slug, message: "PIN lockout started" }, request);
+    await env.KV.put(key, JSON.stringify({ attempts: 0, level: level + 1, lockedUntil: Date.now() + retryAfter * 1000 }), { expirationTtl: 24 * 3600 });
+    return retryAfter;
+  }
+  const attempts = (state.attempts || 0) + 1;
   const next = { attempts, level, lockedUntil: 0 };
   let retryAfter = 0;
   if (attempts >= LOCK_ATTEMPTS) {
