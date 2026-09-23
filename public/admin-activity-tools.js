@@ -16,8 +16,16 @@ const TYPE_GROUPS = {
   errors: ["clienterror", "autopause", "lock", "global-lock", "drop-upload_error"],
 };
 
+export function eventKey(event) {
+  return `${event.at}:${event.t}:${event.s}:${event.u}:${event.f}`;
+}
+
+// Loaded days now include today, which overlaps the overview's newest events.
 export function allEvents() {
-  return [...(overview?.events || []), ...activityOlder].sort((a, b) => (b.at || 0) - (a.at || 0));
+  const seen = new Set();
+  return [...(overview?.events || []), ...activityOlder]
+    .filter((e) => !seen.has(eventKey(e)) && seen.add(eventKey(e)))
+    .sort((a, b) => (b.at || 0) - (a.at || 0));
 }
 export function eventPasses(e, ids, filter, query) {
   const t = e.t || "";

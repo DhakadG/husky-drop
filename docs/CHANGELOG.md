@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The Activity tab can load all of today
+
+The overview carries only the newest 60 events, and "Load earlier" asked for
+`before=<today>`, which excludes today. On a busy day the morning's events
+were therefore never loaded, into the tab, the CSV export or the
+people-from-activity view, and each 15 s refresh pushed more out. The paging
+cursor now starts at tomorrow, so the first "Load earlier" includes today,
+and the merged list drops events that the overview and the loaded days both
+contain.
+
 ## 2026-09-23 — "Select all" in a gallery selects what is on screen
 
 `selectAll` added every loaded file of every folder listing, ignoring the

@@ -19,7 +19,9 @@ export const openSettings = new Set();
 export let activityFilter = "all";
 export let activityQuery = "";
 export let activityOlder = [];
-export let activityOldestDay = new Date().toISOString().slice(0, 10);
+// `before` is exclusive, so starting at tomorrow makes the first "Load earlier"
+// include today: the overview only carries the newest 60 events.
+export let activityOldestDay = new Date(Date.now() + 86400_000).toISOString().slice(0, 10);
 export let activityLoading = false;
 export const openActivitySessions = new Set();
 export let currentQrUrl = "";
