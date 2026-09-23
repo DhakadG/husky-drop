@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -130,6 +130,27 @@ assert.ok(!top.split("## Everything else")[0].includes("nit"), "low findings are
 assert.match(plan, /Retry button/, "PLAN.md carries missing features");
 assert.match(plan, /share card \| the Pipelines row/, "PLAN.md carries missing links");
 assert.match(plan, /put running work first/, "PLAN.md carries layout changes");
+
+// ---- the agent path: queue and mark ----
+// A session without an API key does the reviewing itself, so the queue has to
+// know what is left, and only count a target done when a review actually
+// exists for it at its current content.
+const queue = (extra) => execFileSync(process.execPath, ["scripts/review/queue.mjs", "--out", out, ...extra], { cwd: root, encoding: "utf8" });
+assert.match(queue([]), /review queue \(all\): 1\/\d+ done/, "the queue counts the file reviewed above as done");
+assert.match(queue(["--next", "1"]), /^surface	/, "surfaces are handed out before files");
+
+const marked = spawnSync(process.execPath, ["scripts/review/mark.mjs", "public/skeleton.js", "--out", out, "--findings", "3"], { cwd: root, encoding: "utf8" });
+assert.match(marked.stderr, /! no review written yet/, "marking without a review warns");
+assert.match(marked.stdout, /marked file public\/skeleton\.js/, "and still records the fingerprint");
+assert.ok(!queue([]).includes("[x] public/skeleton.js"), "and does not count as done, because no review exists");
+
+fs.writeFileSync(path.join(out, "public__skeleton.js.json"), JSON.stringify({ target: "public/skeleton.js", mode: "file", findings: [] }));
+assert.match(queue([]), /\[x\] public\/skeleton\.js/, "with both a review and a mark, it is done");
+
+const stale = JSON.parse(fs.readFileSync(path.join(out, "manifest.json"), "utf8"));
+stale["public/skeleton.js"].fingerprint = "0000000000000000";
+fs.writeFileSync(path.join(out, "manifest.json"), JSON.stringify(stale, null, 2));
+assert.match(queue(["--stale"]), /public\/skeleton\.js/, "a changed file goes back on the board as stale");
 
 assert.equal(calls, 1, "exactly one model call for one changed file");
 server.close();

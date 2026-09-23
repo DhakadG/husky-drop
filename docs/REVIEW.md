@@ -40,6 +40,49 @@ node scripts/review/run.mjs --mode file --dry            # prompts and token cou
 node scripts/review/render.mjs --out review-out
 ```
 
+## Without an API key: let the agent do the reviewing
+
+The runner needs an Anthropic API key. A Claude Code session does not - it can
+read the files and write the same JSON itself. That is the path to use if you
+have a subscription rather than API credit.
+
+The work is 154 targets and a session will compact several times before it
+finishes, so the state lives on disk:
+
+```bash
+node scripts/review/queue.mjs              # the board: done / stale / to do
+node scripts/review/queue.mjs --next 3     # the next few targets
+node scripts/review/queue.mjs --stale      # reviewed, but the file changed since
+```
+
+For each target the session reads the file (or, for a surface, all of its
+files), applies the rubric in `scripts/review/prompts.mjs` - the same rules the
+API path uses - and writes two files into `review-out/`:
+
+- `<target with / replaced by __>.json` in the schema the prompts specify,
+  plus `"target"` and `"mode"` keys;
+- the matching `.md`, or just run `render.mjs` at the end, which regenerates
+  every summary.
+
+Then record the fingerprint so the queue knows it is done:
+
+```bash
+node scripts/review/mark.mjs src/share-index.js --findings 4
+```
+
+`review-out/` is gitignored. When a pass is finished, publish it the same way
+the workflow does:
+
+```bash
+node scripts/review/render.mjs --out review-out
+git switch --orphan reviews && cp review-out/* . && git add -A
+git commit -m "review: local pass" && git push -f origin reviews
+```
+
+Surfaces first, then files biggest first - that is the order `queue.mjs` hands
+them out, because the large modules carry the most risk and deserve the
+freshest attention.
+
 ## What comes back
 
 Results land on the **`reviews`** branch (an orphan branch — it never touches

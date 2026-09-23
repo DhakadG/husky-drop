@@ -147,7 +147,7 @@ no watch mode, and `npm test` runs all of them in sequence after ESLint.
 | `review-test.mjs` | the deep-review tooling: surfaces name real files, sharding covers each file once, unchanged targets are skipped |
 | `dev-fixture-server.mjs` (+ its test) | a local server with fake media so the share page can run with no Drive credentials |
 | `build-icons.mjs`, `get-refresh-token.mjs`, `migrate-r2.mjs` | tools, not tests |
-| `review/run.mjs`, `review/render.mjs`, `review/prompts.mjs`, `review/surfaces.json` | the whole-file and whole-surface review pass ([REVIEW.md](REVIEW.md)) |
+| `review/run.mjs`, `review/queue.mjs`, `review/mark.mjs`, `review/render.mjs`, `review/prompts.mjs`, `review/surfaces.json` | the whole-file and whole-surface review pass ([REVIEW.md](REVIEW.md)) |
 | `transcode-share-previews.mjs`, `transcode-share-thumbs.mjs`, `transcode-images.mjs`, `transcode-previews.mjs`, `lib/image-decode.mjs` | what the GitHub runners execute |
 
 ### `.github/workflows/`

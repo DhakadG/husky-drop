@@ -33,6 +33,12 @@ list) and `PLAN.md` (the makeover backlog: missing features with where they
 belong, things that should link to each other, layout changes), plus one file
 per target. Targets are fingerprinted, so a re-run only pays for what changed.
 
+The same rubric also runs without an API key: `scripts/review/queue.mjs` hands
+out the 154 targets (surfaces first, then files biggest first), a session does
+the reading and writes the same JSON into `review-out/`, and
+`scripts/review/mark.mjs` records the fingerprint so the queue survives a
+compaction and notices when a reviewed file changes later.
+
 Measured with `--dry`: ~900k input tokens for the file pass, ~444k for the
 surface pass. `scripts/review-test.mjs` checks the plumbing against a fake API
 and fails if a module belongs to no surface. Needs one secret,
