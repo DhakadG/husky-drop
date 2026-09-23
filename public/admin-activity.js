@@ -13,7 +13,7 @@ import {
 } from "./admin-state.js";
 import { setEmpty } from "./admin.js";
 import { initialsOf } from "./admin-live.js";
-import { allEvents, eventPasses, renderActivityPeople, renderActivitySummary, renderActivityTable, stashForExport, tools, wireActivityTools } from "./admin-activity-tools.js";
+import { allEvents, eventKey, eventPasses, renderActivityPeople, renderActivitySummary, renderActivityTable, stashForExport, tools, wireActivityTools } from "./admin-activity-tools.js";
 
 // Activity feed: grouping by day/session, filters, earlier-day paging.
 // Identity: a device that signed in at any point owns all its events, so the
@@ -215,9 +215,6 @@ export function updateCompactEventRow(row, event) {
   row.innerHTML = `<span class="activity-type-icon">${icon(eventTypeIcon(event.t))}</span><span><b>${esc(activityTypeLabel(event.t))}</b><small>${esc(actor)}${event.l || event.s ? ` · ${esc(event.l || event.s)}` : ""}</small></span><time>${new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>`;
 }
 
-function eventKey(event) {
-  return `${event.at}:${event.t}:${event.s}:${event.u}:${event.f}`;
-}
 
 export function eventTypeIcon(type) {
   if (type === "start") return "play";
