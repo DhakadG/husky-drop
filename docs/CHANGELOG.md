@@ -4,6 +4,18 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The Overview chart no longer counts share downloads as uploads
+
+Share traffic is rolled up in `day_stats` under `share:<slug>` with the same
+columns as drop links, and `timeseries()` summed every slug. A guest
+downloading a 4 GB ZIP added 4 GB to "Data received", and gallery visits
+inflated "Link opens" - so the chart disagreed with the drop-only stat cards
+above it. The series now keeps the two apart: drop links feed
+opens/sessions/files/bytes, shares feed `shareOpens`, `downloads` and
+`servedBytes`, and the chart gains a "Gallery opens" chip.
+`scripts/timeseries-test.mjs` checks this against real SQLite (node:sqlite)
+and the still-pending in-memory deltas.
+
 ## 2026-09-23 — Archive mode no longer hides originals when an upload fails
 
 In archive mode `putImageResult` moved the original into `_archive/` first and

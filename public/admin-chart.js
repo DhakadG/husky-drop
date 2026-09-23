@@ -16,6 +16,8 @@ export function renderChart() {
     points.push({ day, v: Number(row[seriesMetric]) || 0 });
   }
   const total = points.reduce((t, p) => t + p.v, 0);
+  const isBytes = seriesMetric === "bytes" || seriesMetric === "servedBytes";
+  const noun = { shareOpens: "gallery opens", servedBytes: "served" }[seriesMetric] || seriesMetric;
   const w = 900;
   const h = 150;
   const pad = 2;
@@ -27,15 +29,15 @@ export function renderChart() {
   points.forEach((p, i) => {
     const x = pad + i * step;
     const bh = Math.max(p.v > 0 ? 3 : 1.5, ((h - 6) * p.v) / max);
-    const label = seriesMetric === "bytes" ? fmtBytes(p.v) : p.v;
+    const label = isBytes ? fmtBytes(p.v) : p.v;
     const cls = !p.v ? "zero" : p.v === maxV ? "peak" : "";
     bars += `<rect class="${cls}" x="${x.toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="2"><title>${esc(p.day)}: ${esc(String(label))}</title></rect>`;
   });
-  const totalLabel = seriesMetric === "bytes" ? fmtBytes(total) : total;
+  const totalLabel = isBytes ? fmtBytes(total) : total;
   const peak = points.reduce((a, b) => (b.v > a.v ? b : a), points[0]);
-  const peakLabel = seriesMetric === "bytes" ? fmtBytes(peak.v) : peak.v;
+  const peakLabel = isBytes ? fmtBytes(peak.v) : peak.v;
   const busiest = total && peak.v ? ` · busiest day ${peak.day.slice(5)} (${peakLabel})` : "";
-  const note = total ? `${totalLabel} ${seriesMetric} in the last 30 days${busiest}` : `No ${seriesMetric} in the last 30 days yet - the chart fills in as activity happens.`;
+  const note = total ? `${totalLabel} ${noun} in the last 30 days${busiest}` : `No ${noun} in the last 30 days yet - the chart fills in as activity happens.`;
   const labels = [points[0], points[10], points[20], points[29]].map((p) => `<span>${esc(p.day.slice(5))}</span>`).join("");
   host.innerHTML = `
     <div class="chart-note muted">${esc(note)}</div>

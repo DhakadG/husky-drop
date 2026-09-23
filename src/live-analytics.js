@@ -53,6 +53,20 @@ const SCHEMA = [
 ];
 
 const emptyDay = () => ({ opens: 0, sessions: 0, files: 0, bytes: 0, downloads: 0 });
+// Share traffic is rolled up under "share:<slug>" with the same columns. The
+// chart must not add a guest's downloads to "Data received" or gallery visits
+// to "Link opens", so the series keeps drop and share activity apart.
+const SHARE_PREFIX = "share:";
+const emptySeries = () => ({ opens: 0, sessions: 0, files: 0, bytes: 0, downloads: 0, shareOpens: 0, servedBytes: 0 });
+function addToSeries(cur, slug, d) {
+  if (slug.startsWith(SHARE_PREFIX)) {
+    cur.shareOpens += Number(d.opens) || 0;
+    cur.downloads += Number(d.downloads) || 0;
+    cur.servedBytes += Number(d.bytes) || 0;
+  } else {
+    for (const k of ["opens", "sessions", "files", "bytes"]) cur[k] += Number(d[k]) || 0;
+  }
+}
 const emptyShare = () => ({ opens: 0, downloads: 0, bytes: 0, views: 0, viewers: {} });
 
 export class Analytics {
@@ -262,12 +276,16 @@ export class Analytics {
     const byDay = new Map();
     if (this.ready) {
       try {
-        const query = `SELECT day, SUM(opens) AS opens, SUM(sessions) AS sessions,
+        const query = `SELECT day, slug LIKE 'share:%' AS share, SUM(opens) AS opens, SUM(sessions) AS sessions,
             SUM(files) AS files, SUM(bytes) AS bytes, SUM(downloads) AS downloads
           FROM day_stats WHERE day >= ?${slugFilter ? " AND slug = ?" : ""}
-          GROUP BY day ORDER BY day`;
+          GROUP BY day, share ORDER BY day`;
         const cursor = slugFilter ? this.sql.exec(query, since, slugFilter) : this.sql.exec(query, since);
-        for (const row of cursor.toArray()) byDay.set(row.day, row);
+        for (const row of cursor.toArray()) {
+          const cur = byDay.get(row.day) || { day: row.day, ...emptySeries() };
+          addToSeries(cur, row.share ? SHARE_PREFIX : "", row);
+          byDay.set(row.day, cur);
+        }
       } catch (err) {
         console.error("timeseries failed", err.message);
       }
@@ -279,8 +297,8 @@ export class Analytics {
       const slug = key.slice(0, sep);
       const day = key.slice(sep + 1);
       if (day < since || (slugFilter && slug !== slugFilter)) continue;
-      const cur = byDay.get(day) || { day, ...emptyDay() };
-      for (const k of Object.keys(d)) cur[k] = (Number(cur[k]) || 0) + (d[k] || 0);
+      const cur = byDay.get(day) || { day, ...emptySeries() };
+      addToSeries(cur, slug, d);
       byDay.set(day, cur);
     }
     return [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : 1));
