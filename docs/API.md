@@ -33,7 +33,8 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 >   edge cache → R2 `MEDIA_BUCKET` → Drive. `rev` is the file's Drive md5
 >   (or modified time), so the URL is stable for the life of the bytes and is
 >   served `immutable` for 30 days; `sig` is an HMAC over slug+file with no
->   expiry. The share's state and the viewer's sign-in are re-checked on every
+>   expiry, scoped to the share's `tokenEpoch`: removing a folder or changing
+>   the PIN bumps it and retires every URL handed out before. The share's state and the viewer's sign-in are re-checked on every
 >   request before any cache tier is consulted. Listings hand these out in
 >   `thumbs` / `preview`; `/api/share/thumb/:token/:tier` remains for
 >   listings cached before the switch.

@@ -190,6 +190,10 @@ export async function patchShare(request, env, slug, ctx) {
     }
   }
   const destinationChanged = nextMode !== share.mode || nextFolderIds.join(",") !== (share.folderIds || []).join(",");
+  // Retire media URLs already handed out when a folder is taken away or the
+  // PIN changes (see sigScope); guests who still qualify get fresh ones on
+  // their next listing.
+  if ((share.folderIds || []).some((id) => !nextFolderIds.includes(id)) || "pin" in b) share.tokenEpoch = (share.tokenEpoch || 0) + 1;
   if (destinationChanged && share.mode === "redirect") await revokeSharePermissions(env, share);
   share.mode = nextMode;
   share.folderIds = nextFolderIds;

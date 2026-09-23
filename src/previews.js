@@ -12,7 +12,7 @@
 
 import { accessToken, driveCreateFolder, driveFindFolder, driveListFolder, driveTrashFile } from "./drive.js";
 import { json, shareState, cleanText } from "./util.js";
-import { mediaSig } from "./share-token.js";
+import { mediaSig, sigScope } from "./share-token.js";
 import { MEDIA_TTL, TIER_VARIANT, mediaUrl } from "./media-cache.js";
 import { appLog } from "./applog.js";
 import { liveStub, sendNotify } from "./store.js";
@@ -53,14 +53,15 @@ const saveIndex = (env, index) => env.KV.put(INDEX_KEY, JSON.stringify(index));
 
 // Listing fields for one file: `preview` (4h token) when ready, else the
 // state so share pages can say "optimising soon" / "failed".
-export async function previewFields(env, slug, file, index) {
+export async function previewFields(env, share, file, index) {
   if (!isVideo(file)) return {};
+  const slug = share.slug;
   const entry = index.files[file.id];
   if (entry) {
     // Served through the media cache ladder (media-cache.js): the URL is
     // keyed by the original's id and the preview file's id, so a regenerated
     // preview gets a fresh URL and the old one simply ages out.
-    const sig = await mediaSig(env, slug, file.id);
+    const sig = await mediaSig(env, sigScope(share), file.id);
     const rev = entry.id.replace(/[^a-z0-9]/gi, "").slice(0, 16);
     const url = (fileId, variant, r, s) => mediaUrl(slug, fileId, variant, r, s);
     const fields = { preview: url(file.id, "video-720", rev, sig), previewExpiresAt: Date.now() + MEDIA_TTL * 1000, previewState: "ready" };
@@ -76,7 +77,7 @@ export async function previewFields(env, slug, file, index) {
       fields.aspect = entry.w / entry.h;
     }
     if (!file.thumbnailLink) {
-      const previewSig = await mediaSig(env, slug, entry.id);
+      const previewSig = await mediaSig(env, sigScope(share), entry.id);
       fields.thumbs = Object.fromEntries(Object.entries(TIER_VARIANT).map(([tier, variant]) => [tier, url(entry.id, variant, rev, previewSig)]));
       fields.thumb = fields.thumbs.base;
       fields.thumbsExpireAt = Date.now() + MEDIA_TTL * 1000;

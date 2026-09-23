@@ -17,7 +17,7 @@
 import { accessToken, driveFileMetaCached, driveThumbnail } from "./drive.js";
 import { previewIndex } from "./previews.js";
 import { json } from "./util.js";
-import { mediaSig } from "./share-token.js";
+import { mediaSig, sigScope } from "./share-token.js";
 
 export const MEDIA_TTL = 30 * 86400; // seconds
 const EDGE_KEY = "https://media.internal.share/v1";
@@ -40,8 +40,9 @@ export const mediaVariantTier = (variant) => VARIANTS[variant] || "";
 // bytes, same URL - for every viewer, for 30 days.
 export const mediaUrl = (slug, fileId, variant, rev, sig) => `/api/share/media/${encodeURIComponent(slug)}/${encodeURIComponent(fileId)}/${variant}/${rev}/${sig}`;
 
-export async function mediaThumbs(env, slug, file) {
-  const sig = await mediaSig(env, slug, file.id);
+export async function mediaThumbs(env, share, file) {
+  const slug = share.slug;
+  const sig = await mediaSig(env, sigScope(share), file.id);
   const rev = mediaRev(file);
   return {
     thumbs: Object.fromEntries(Object.entries(TIER_VARIANT).map(([tier, variant]) => [tier, mediaUrl(slug, file.id, variant, rev, sig)])),

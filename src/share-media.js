@@ -14,7 +14,8 @@ import { mergeExifMetadata, parseRawExif, shouldParseRawExif } from "./exif.js";
 import { bumpShareStats, gatePin, liveStub, mergeEventsKV } from "./store.js";
 import { getViewer } from "./auth.js";
 import { loadActiveShare, requireViewer } from "./share.js";
-import { signShareTokenWithExpiry, verifyShareToken, verifyMediaSig, downloadTokenFrom, publicDownloadSafety } from "./share-token.js";
+import { signShareTokenWithExpiry, verifyShareToken, verifyMediaSig, downloadTokenFrom, publicDownloadSafety, sigScope } from "./share-token.js";
+import { knownIds } from "./share-index.js";
 import { mediaThumbs, mediaVariantTier, parseMediaRange as parseLadderRange, serveMedia } from "./media-cache.js";
 
 // GET /api/share/media/:slug/:fileId/:variant/:rev/:sig - the cache ladder
@@ -23,9 +24,9 @@ import { mediaThumbs, mediaVariantTier, parseMediaRange as parseLadderRange, ser
 export async function shareMedia(request, env, ctx, parts) {
   const [slug, fileId, variant, rev, sig] = parts.map((p) => cleanText(decodeURIComponent(p || ""), 120));
   if (!mediaVariantTier(variant) || !/^[a-z0-9]{1,16}$/i.test(rev)) return json({ error: "media variant not found" }, 404);
-  if (!(await verifyMediaSig(env, slug, fileId, sig))) return json({ error: "invalid media signature" }, 403);
   const { share, error } = await loadActiveShare(env, slug);
   if (error) return error;
+  if (!(await verifyMediaSig(env, sigScope(share), fileId, sig))) return json({ error: "invalid media signature" }, 403);
   const gate = await requireViewer(request, env, share);
   if (gate.error) return gate.error;
   if (!env.GOOGLE_CLIENT_ID) return json({ error: "Drive not configured" }, 503);
@@ -65,7 +66,7 @@ export async function shareWarm(request, env, ctx) {
       const rev = decodeURIComponent(m[4]);
       const sig = decodeURIComponent(m[5]);
       if (uslug !== slug || !WARM_TIERS.has(variant)) return;
-      if (!(await verifyMediaSig(env, slug, fileId, sig))) return;
+      if (!(await verifyMediaSig(env, sigScope(share), fileId, sig))) return;
       const res = await serveMedia(request, ctx, env, { fileId, variant, rev }).catch(() => null);
       // serveMedia fills the edge cache via ctx.waitUntil; we don't need the body.
       res?.body?.cancel?.().catch(() => {});
@@ -88,9 +89,13 @@ export async function refreshShareDownload(request, env) {
   if (gate.error) return gate.error;
   const failure = await gatePin(request, env, share, b.pin, "share:", `share-${share.slug}`);
   if (failure) return failure;
+  // An old token must not outlive the file's removal from the share. Shares
+  // that were never indexed have no list to check against.
+  const known = await knownIds(env, share.slug).catch(() => null);
+  if (known?.fileIds.size && !known.fileIds.has(parsed.fileId)) return json({ error: "this file is no longer in the share" }, 410);
   const { token, expiresAt } = await signShareTokenWithExpiry(env, "dl", share.slug, parsed.fileId);
   const meta = env.GOOGLE_CLIENT_ID ? await driveFileMetaCached(env, parsed.fileId) : null;
-  const media = meta?.thumbnailLink ? await mediaThumbs(env, share.slug, meta) : { thumbs: {}, thumbsExpireAt: 0 };
+  const media = meta?.thumbnailLink ? await mediaThumbs(env, share, meta) : { thumbs: {}, thumbsExpireAt: 0 };
   return json({ dl: `/api/share/dl/${token}`, dlExpiresAt: expiresAt, ...media });
 }
 
