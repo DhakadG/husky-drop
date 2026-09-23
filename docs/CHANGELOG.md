@@ -4,6 +4,12 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The PR review action is pinned to a commit
+
+`pr-review.yml` ran `anomalyco/opencode/github@latest` with the Anthropic
+key and a GitHub token in its environment, so whatever was published next
+ran with both. It is now pinned to the v1.18.32 commit like every other action
+in CI; bump the SHA on purpose.
 ## 2026-09-23 — Saving settings no longer pushes a link's expiry out
 
 The drop-link and share settings forms show the time left as whole days,
