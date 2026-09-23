@@ -34,6 +34,7 @@ const SESSION_STALE_MS = 2 * 60_000;
 const RECENT_DONE_KEY = "recentDone";
 const TRANSCODER_STALE_MS = 120_000; // no telemetry for 2 min = the runner is gone
 
+const DISMISS_MS = 10 * 60_000;
 const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
 export class LiveTracker {
@@ -51,6 +52,7 @@ export class LiveTracker {
     this.started = new Set();
     this.pendingOpens = new Map(); // slug -> count
     this.rateBuckets = new Map(); // key -> { count, reset }
+    this.dismissed = new Map(); // session id -> hidden until (admin "dismiss")
     this.digests = new DigestQueue(env, () => this.armAlarm().catch(() => {}));
     let sql = null;
     try {
@@ -208,6 +210,8 @@ export class LiveTracker {
       let closed = 0;
       for (const [sessionId, session] of this.sessions) {
         if (id ? sessionId !== id : session.slug !== slug) continue;
+        // The uploader's next frame would re-create it within a second.
+        this.dismissed.set(sessionId, Date.now() + DISMISS_MS);
         this.sessions.delete(sessionId);
         this.markDirty(sessionId);
         closed++;
@@ -512,7 +516,8 @@ export class LiveTracker {
 
   // Shared by the WebSocket path and the /api/progress fallback.
   recordProgress(input) {
-    const session = this.recordSession(input);
+    const peek = normalizeLiveSession(input);
+    const session = (this.dismissed.get(peek.id) || 0) > Date.now() ? peek : this.recordSession(input);
     this.digests.note(session.id, { slug: session.slug, label: session.label, uploader: session.uploader, expected: session.count, done: session.state === "done" });
     return session;
   }
@@ -557,6 +562,7 @@ export class LiveTracker {
 
   prune() {
     const cutoff = Date.now() - SESSION_STALE_MS;
+    for (const [id, until] of this.dismissed) if (until <= Date.now()) this.dismissed.delete(id);
     for (const [id, session] of this.sessions) {
       if (session.lastSeen >= cutoff) continue;
       this.sessions.delete(id);

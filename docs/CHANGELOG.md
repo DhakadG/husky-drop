@@ -4,6 +4,15 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Dismissing a live upload session sticks
+
+"dismiss" on the Live tab deleted the session in the Durable Object, but the
+uploader's next progress frame, about a second later, re-created it, so the
+card came straight back and the button looked broken. Dismissed session ids
+are now remembered for ten minutes, and their frames still feed the upload
+digest but are not stored or shown. `scripts/live-dismiss-test.mjs` covers
+it.
+
 ## 2026-09-23 — Upload sessions with a skipped or failed file finish on the Live tab
 
 The drop page told the Durable Object a session was "done" only when every
