@@ -25,6 +25,9 @@ const INDEX_KEY = "share-previews:index";
 // folds them in and deletes them, which is safe because the new run's shards
 // have not written anything yet.
 const DELTA_PREFIX = "share-previews:delta:";
+// Long enough that a delta is always folded into the base by a later run,
+// short enough that reads never union more than a couple of runs' worth.
+const DELTA_TTL_SEC = 3 * 24 * 3600;
 const RUNS_KEPT = 20;
 const WORKFLOW = "transcode-share-previews.yml";
 // Decodable in a browser but heavy enough that the WebP wins by default and
@@ -65,14 +68,14 @@ export async function sharePreviewIndex(env) {
 }
 const saveIndex = (env, index) => env.KV.put(INDEX_KEY, JSON.stringify(index));
 
-// Fold the shard deltas into the base index and drop them. Called when a new
-// run is dispatched, so nothing is writing a delta at that moment.
+// Fold the shard deltas into the base index. Deleting them here would race
+// with a shard writing one between the read and the delete - which cost
+// exactly one file the first night - so they expire on their own instead.
+// Merging a delta that is already in the base is idempotent.
 async function compactPreviewIndex(env) {
   const deltas = await readDeltas(env);
   if (!deltas.length) return 0;
-  const index = await sharePreviewIndex(env);
-  await saveIndex(env, index);
-  await Promise.all(deltas.map(([name]) => env.KV.delete(name)));
+  await saveIndex(env, await sharePreviewIndex(env));
   return deltas.length;
 }
 
@@ -222,7 +225,7 @@ export async function reportSharePreviews(request, env, ctx) {
     appLog(env, ctx, { area: "share-previews", message: `run ${runId} finished: ${run.done} previews, ${run.kept || 0} kept as original (HDR / undecodable), ${run.skipped} failed, ${run.pendingLeft} left` });
   }
   if (!index.runs.some((r) => r.id === runId)) index.runs.unshift(run);
-  await env.KV.put(deltaKey, JSON.stringify(index));
+  await env.KV.put(deltaKey, JSON.stringify(index), { expirationTtl: DELTA_TTL_SEC });
   return json({ ok: true, indexed: Object.keys(index.files).length });
 }
 
