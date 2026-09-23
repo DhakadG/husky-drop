@@ -376,7 +376,8 @@ pixel work with sharp + libraw + libheif + exiftool.
   merge call.
 - `GET|POST|DELETE /api/admin/bans` `{kind: email|device|fp, value, reason}` —
   blocked accounts/devices. Banned visitors get 403 on `/d/`, `/s/`, session
-  creation and share listing/downloads (cached 30 s per isolate).
+  creation and share listing/downloads (cached 30 s per isolate). Only
+  `email` values are lowercased; device and fingerprint ids are matched exactly.
 - `POST /api/session` accepts `uploaderAlias`; per-uploader folders become
   `Name -- Alias`. A signed-in Google account names the uploader even on
   links that do not require sign-in.

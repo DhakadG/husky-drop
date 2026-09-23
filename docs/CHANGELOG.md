@@ -4,6 +4,18 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Fingerprint bans actually block
+
+`adminBans` lowercased every value before storing it, but Fingerprint Pro
+visitor ids are mixed-case and `isBanned()` compares them exactly, so a
+"block fingerprint" from the People tab never matched the device it was meant
+for (the admin still saw it as blocked). Only e-mails are lowercased now.
+`scripts/identity-ban-test.mjs` fails if a fingerprint id loses its case.
+
+Fingerprint bans stored before this fix are lowercased and cannot be repaired
+from the stored value - unblock and re-block those devices from their People
+profile.
+
 ## 2026-09-23 — Uploaded HTML/SVG no longer renders on the app origin
 
 The deep review found that `/api/share/dl/<token>?inline=1` served any Drive
