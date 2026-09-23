@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Inline share requests obey the download safety list
+
+`shareDownload` checked the public-download safety list (executables,
+scripts, installers, archives) only when `?inline=1` was absent. Since #110
+inline is limited to image, video and audio MIME types, but the list also
+blocks by extension, so a file named `holiday.jpg.exe` that Drive calls
+`image/jpeg` was still served inline, and a browser that cannot render it
+downloads it. The block now applies to inline requests too; the smoke test
+covers that file.
+
 ## 2026-09-23 — The Activity tab can load all of today
 
 The overview carries only the newest 60 events, and "Load earlier" asked for

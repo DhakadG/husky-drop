@@ -26,7 +26,8 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 >   Worker; token is HMAC-signed, scope+slug+file+expiry bound. `?inline=1`
 >   is honoured only for images, video and audio; every other type (HTML,
 >   SVG, XML, scripts) is sent as an attachment. Every response carries a
->   `sandbox` CSP, and the public-download safety list applies either way.
+>   `sandbox` CSP, and the public-download safety list applies either way,
+>   judged by name as well as MIME type.
 > - `GET /api/share/media/:slug/:fileId/:variant/:rev/:sig` - thumbnails
 >   (`thumb-lo` 512px, `thumb-md` 1024px, `thumb-hi` 1600px) and the 720p
 >   video preview (`video-720`, Range-aware) through the media cache ladder:
