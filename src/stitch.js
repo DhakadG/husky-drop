@@ -61,7 +61,14 @@ export async function runIdentityStitch(env, ctx, { force = false } = {}) {
   const unknown = people.filter((p) => !p.emails.length).map((p) => brief(p, sessions));
   if (!known.length || !unknown.length) return { suggestions: 0 };
   if (!force && unknown.length > 300) unknown.length = 300;
-  const prompt = `You match anonymous website visits to known Google accounts for a private photo-drop site. Be conservative: only suggest a match when device details (OS, browser, screen, timezone, language), places and behaviour (same links/shares, overlapping times, typed names similar to the account's names) make it likely. Output JSON only: {"suggestions":[{"key":"<unknown key>","email":"<known email>","confidence":0.0-1.0,"reason":"<one short sentence>"}]}. Omit anything under 0.5 confidence.\n\nKNOWN ACCOUNTS:\n${JSON.stringify(known)}\n\nUNKNOWN VISITS:\n${JSON.stringify(unknown)}`;
+  // The model sees opaque ids, never e-mail addresses or device/fingerprint
+  // ids: accounts are A1.., visits U1.., mapped back here. What stays is what
+  // matching needs (names, places, device traits, links, times).
+  const accountOf = new Map(known.map((k, i) => [`A${i + 1}`, k.email]));
+  const visitOf = new Map(unknown.map((u, i) => [`U${i + 1}`, u.key]));
+  const knownOut = known.map(({ email, key, ...rest }, i) => ({ id: `A${i + 1}`, ...rest }));
+  const unknownOut = unknown.map(({ key, ...rest }, i) => ({ id: `U${i + 1}`, ...rest }));
+  const prompt = `You match anonymous website visits to known Google accounts for a private photo-drop site. Be conservative: only suggest a match when device details (OS, browser, screen, timezone, language), places and behaviour (same links/shares, overlapping times, typed names similar to the account's names) make it likely. Output JSON only: {"suggestions":[{"visit":"<U id>","account":"<A id>","confidence":0.0-1.0,"reason":"<one short sentence>"}]}. Omit anything under 0.5 confidence.\n\nKNOWN ACCOUNTS:\n${JSON.stringify(knownOut)}\n\nUNKNOWN VISITS:\n${JSON.stringify(unknownOut)}`;
   let r = await askModel(env, prompt);
   // Gemini free tier throws 503 "high demand" in bursts; one retry after 20 s
   // clears most of them without an error in the log.
@@ -78,11 +85,9 @@ export async function runIdentityStitch(env, ctx, { force = false } = {}) {
   try {
     parsed = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
   } catch {}
-  const knownEmails = new Set(known.map((k) => k.email));
-  const unknownKeys = new Set(unknown.map((u) => u.key));
   const rows = (parsed.suggestions || [])
-    .filter((s) => unknownKeys.has(s.key) && knownEmails.has(String(s.email || "").toLowerCase()) && Number(s.confidence) >= 0.5)
-    .map((s) => ({ key: s.key, email: String(s.email).toLowerCase(), confidence: Math.min(1, Number(s.confidence)), reason: cleanText(s.reason || "", 200) }));
+    .filter((s) => visitOf.has(s.visit) && accountOf.has(s.account) && Number(s.confidence) >= 0.5)
+    .map((s) => ({ key: visitOf.get(s.visit), email: accountOf.get(s.account), confidence: Math.min(1, Number(s.confidence)), reason: cleanText(s.reason || "", 200) }));
   await live.fetch("https://live.internal/suggestions", { method: "POST", body: JSON.stringify({ rows }) });
   appLog(env, ctx, { area: "people", message: `identity stitch: ${rows.length} suggestion${rows.length === 1 ? "" : "s"} from ${unknown.length} unknown vs ${known.length} accounts (${r.usage} tokens)` });
   return { suggestions: rows.length };

@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The identity-matching model no longer sees e-mails or device ids
+
+The nightly stitch sent every known account's e-mail address and every
+visit's device or fingerprint id to Gemini or Anthropic, along with names,
+places and device details. The prompt now uses opaque ids (accounts `A1..`,
+visits `U1..`) mapped back on the Worker, so no e-mail address (Google OAuth
+user data) or persistent identifier leaves; what matching needs (names,
+places, device traits, links, times) stays. Disclosure of the provider is in
+the privacy policy PR. `scripts/stitch-test.mjs` checks the prompt.
+
 ## 2026-09-23 — Long compliant videos get a budgeted preview instead of failing
 
 The video runner remuxes (copies without re-encoding) any 720p H.264/AAC
