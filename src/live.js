@@ -24,6 +24,7 @@ import { IDENTITY_SCHEMA, identityMap, rememberIdentity } from "./people.js";
 import { SESSION_SCHEMA } from "./identity.js";
 import { SUGGESTION_SCHEMA } from "./stitch.js";
 import { diagnosticsRoute } from "./live-diagnostics.js";
+import { applyPreviewReports, serialBatches } from "./previews.js";
 
 // Progress ticks from N uploaders inside this window become one admin patch.
 const BROADCAST_COALESCE_MS = 200;
@@ -56,6 +57,8 @@ export class LiveTracker {
     } catch {}
     this.analytics = new Analytics(sql);
     this.completions = new CompletionQueue(env, this.analytics);
+    // Video runner shards report here so their writes to previews:index are serialized.
+    this.previewReports = serialBatches((bodies) => applyPreviewReports(env, { waitUntil() {} }, bodies));
     // One run can be spread over up to 20 runners, all reporting here.
     // `runners` is keyed by shard; `workers` by "shard:slot".
     this.transcoderState = {
@@ -148,6 +151,7 @@ export class LiveTracker {
     }
 
     if (path === "/share-stats") return reply({ rows: this.analytics.shareStatRows() });
+    if (isPost && path === "/preview-report") return reply(await this.previewReports(body));
     if (isPost && path === "/preflight") return reply({ matches: this.analytics.matchCompleted(cleanText(body.slug || "", 60), Array.isArray(body.files) ? body.files.slice(0, 500) : []) });
 
     const diag = diagnosticsRoute(this.state, path, url, body, isPost, request.method);

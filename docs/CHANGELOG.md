@@ -4,6 +4,21 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Parallel video runner reports no longer overwrite each other
+
+Every video runner shard (up to 20 per run) posts batch reports to
+`/api/admin/previews/report`, and each did a read-modify-write of the single
+`previews:index` KV key. KV has no compare-and-set, so concurrent reports
+erased each other: finished previews showed as queued until a Drive repair,
+failure counts were lost (so broken files were retried forever), and run
+totals came out low. The Worker now forwards reports to the LiveTracker
+Durable Object, which applies them strictly one batch at a time and merges
+reports that arrive meanwhile into a single KV write. Delta keys, as used by
+share previews, were not used here: the admin actions that delete entries
+from this index would have been undone by the deltas unioned on read.
+`scripts/preview-report-test.mjs` sends 12 concurrent reports through a slow
+KV stub and checks nothing is lost.
+
 ## 2026-09-23 — Changing a gallery share's folders indexes them right away
 
 `patchShare` stored new `folderIds` without planning an index job, so a folder

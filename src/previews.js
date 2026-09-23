@@ -395,10 +395,51 @@ export async function putPreview(request, env, fileId) {
 // Batch report from the Action: {runId, trigger, startedAt, finishedAt?,
 // done: [{id, name, size, previewId, previewSize, ms}], skipped: [{id, name, error}]}.
 // One KV write per report; the script reports every few files and at the end.
+// KV has no compare-and-set and up to 20 shards report at once, so a
+// read-modify-write here lost whichever reports landed in between. Reports go
+// through the LiveTracker Durable Object, which applies them one batch at a
+// time (and a burst in a single KV write).
 export async function reportPreviewRun(request, env, ctx) {
   const b = await request.json().catch(() => null);
   if (!b || !b.runId) return json({ error: "runId required" }, 400);
+  if (!env.LIVE_TRACKER) return json(await applyPreviewReports(env, ctx, [b]));
+  const r = await liveStub(env).fetch("https://live.internal/preview-report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+  return json(await r.json().catch(() => ({ error: "report failed" })), r.status);
+}
+
+// Runs callers' batches strictly one after another; batches that arrive while
+// one is being applied are merged into the next.
+export function serialBatches(apply) {
+  let waiting = [];
+  let running = null;
+  const drain = async () => {
+    while (waiting.length) {
+      const batch = waiting;
+      waiting = [];
+      try {
+        const out = await apply(batch.map((w) => w.item));
+        for (const w of batch) w.resolve(out);
+      } catch (error) {
+        for (const w of batch) w.reject(error);
+      }
+    }
+    running = null;
+  };
+  return (item) =>
+    new Promise((resolve, reject) => {
+      waiting.push({ item, resolve, reject });
+      running ||= drain();
+    });
+}
+
+export async function applyPreviewReports(env, ctx, bodies) {
   const index = await previewIndex(env);
+  for (const b of bodies) applyPreviewReport(env, ctx, index, b);
+  await saveIndex(env, index);
+  return { ok: true, indexed: Object.keys(index.files).length };
+}
+
+function applyPreviewReport(env, ctx, index, b) {
   const now = Date.now();
   const superseded = [];
   for (const d of b.done || []) {
@@ -479,8 +520,6 @@ export async function reportPreviewRun(request, env, ctx) {
   }
   if (!existing) index.runs.unshift(run);
   index.runs = index.runs.slice(0, RUNS_KEPT);
-  await saveIndex(env, index);
-  return json({ ok: true, indexed: Object.keys(index.files).length });
 }
 
 // ---- admin actions ----
