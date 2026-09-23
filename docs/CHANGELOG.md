@@ -4,6 +4,15 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The viewer does not fetch originals on its own over metered connections
+
+The viewer's full-resolution intent timer fetched the original of every photo
+a guest dwelt on for about six seconds (typically 5-15 MB each), streamed
+from Drive through the Worker. On a phone with mobile data, browsing 100
+photos silently cost about a gigabyte. With Save-Data on, a 2g/3g connection
+or a coarse pointer, the timer now stops at the high-resolution preview;
+zooming in and "Load original" still fetch the original on request.
+
 ## 2026-09-23 — Gallery navigation keeps the latest request
 
 `navigate()` returned at once while a folder was still loading. After a

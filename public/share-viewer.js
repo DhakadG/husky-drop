@@ -98,12 +98,19 @@ export async function openViewer(index, sourceEl) {
     stopHoverPreview(sourceEl, file, { removeBar: true });
     cleanupTilePreview(file);
   }
+  const meteredConnection = () => {
+    const c = navigator.connection;
+    return !!(c?.saveData || /(^|slow-)[23]g$/.test(c?.effectiveType || "") || matchMedia?.("(pointer: coarse)").matches);
+  };
   vs.viewerAssets = createViewerAssetEngine({
     loadTier: loadTierAsset,
     abort: abortAssetLoad,
     // Heavy originals (spec §5) stay opt-in: the WebP preview is the default,
     // "Load original" in the asset ladder fetches the real bytes.
-    canLoadFull: (file) => canDecodeOriginal(file) && !file.heavy,
+    // On Save-Data, slow cellular or a touch device the dwell timer no longer
+    // pulls originals (5-15 MB each) on its own; zoom and "Load original"
+    // still fetch them on request (ensureFull with force).
+    canLoadFull: (file) => canDecodeOriginal(file) && !file.heavy && !meteredConnection(),
     onChange: handleAssetState,
   });
   for (const item of lightboxItems) {
