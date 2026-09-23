@@ -19,7 +19,7 @@
 // chunk size; the code never asks which plan it is on.
 
 import { driveFileMeta, driveFileMetaCached, driveListFolder, driveTrashFile } from "./drive.js";
-import { previewIndex } from "./previews.js";
+import { patchPreviewDurations, previewIndex } from "./previews.js";
 import { cleanText, json, sha256 } from "./util.js";
 import { mediaRev, mediaThumbs } from "./media-cache.js";
 import { appLog } from "./applog.js";
@@ -196,7 +196,7 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
     // Preview entries that never got a duration (runs before the runner
     // reported one) are described from the preview file itself - one KV
     // write per chunk, only while there is something to backfill.
-    if (state.previewsDirty) await env.KV.put("previews:index", JSON.stringify(state.previews));
+    if (state.durations) await patchPreviewDurations(env, state.durations);
     cur.chunks += 1;
     cur.updatedAt = Date.now();
     cur.progress.files = state.files.length;
@@ -398,13 +398,12 @@ async function backfillDuration(env, state, f, budget) {
   budget.left -= 1;
   const ms = Number(meta?.videoMediaMetadata?.durationMillis) || 0;
   if (!ms) return;
+  // Sent as a patch, not by writing back the whole index read at the start
+  // of the chunk: runner reports landing meanwhile would be overwritten.
+  state.durations = state.durations || {};
+  state.durations[f.id] = { previewId: entry.id, ms, w: Number(meta.videoMediaMetadata.width) || 0, h: Number(meta.videoMediaMetadata.height) || 0 };
   entry.ms = ms;
-  if (!entry.w && meta.videoMediaMetadata.width) {
-    entry.w = Number(meta.videoMediaMetadata.width) || 0;
-    entry.h = Number(meta.videoMediaMetadata.height) || 0;
-  }
   f.d = ms;
-  state.previewsDirty = true;
 }
 
 // ---- read path (spec §2.5): KV pointer -> R2 blob, never Drive ----

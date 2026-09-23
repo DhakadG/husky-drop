@@ -27,4 +27,14 @@ assert.equal(Object.keys(index.failed).length, 12, "and every failure");
 assert.equal(index.runs[0].done, 12);
 assert.equal(index.runs[0].skipped, 12);
 assert.ok(writes < 12, `a burst is coalesced (${writes} writes for 12 reports)`);
+// The share-index job's duration backfill goes through the same queue, so
+// it neither loses a report landing at the same time nor is lost to one.
+await Promise.all([
+  queue({ durations: { "orig-0": { previewId: "prev-0", ms: 4200, w: 1280, h: 720 }, "orig-1": { previewId: "stale", ms: 9 } } }),
+  queue(report(12)),
+]);
+const after = await previewIndex(env);
+assert.equal(after.files["orig-0"].ms, 4200, "a backfilled duration lands");
+assert.equal(after.files["orig-1"].ms, 0, "but not on an entry whose preview was replaced");
+assert.ok(after.files["orig-12"], "and a report sent at the same time is kept");
 process.stdout.write("preview-report-test: ok\n");
