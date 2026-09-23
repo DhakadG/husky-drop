@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Fullscreen keeps a visible pointer
+
+On desktop the gallery hides the system cursor and draws its own follower on
+`<body>`. When the viewer or a video went fullscreen, only the fullscreen
+element was painted, so the follower vanished while the system cursor stayed
+hidden, and a guest could not see where the arrows, seek bar or exit button
+were. Inside a fullscreen element the system cursor now comes back.
+
 ## 2026-09-23 — Video tiles no longer buffer originals for a poster
 
 Video tiles without a Drive thumbnail pulled their own poster when they came
