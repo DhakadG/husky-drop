@@ -4,6 +4,20 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Wrong PINs no longer spend KV writes
+
+Every wrong PIN wrote two KV keys, the per-IP counter (`bf:`) and the
+per-link damping counter (`bfg:`). Scripted guessing from rotating IPs could
+burn the daily KV write allowance, after which completion flushes, link edits
+and index pointers fail app-wide. With the LiveTracker Durable Object bound,
+attempts are now counted in its in-memory rate-limit buckets and KV is
+written only when a lockout starts: the escalating per-IP level, and a
+per-link generation for the 10-minute damping. The thresholds are unchanged
+(5 per IP, 60 per link per hour). Without the binding (tests), the KV
+counters still apply. Trade-off: a DO restart forgets partial counts, but
+never a lockout, which stays in KV. `scripts/pin-counter-test.mjs` checks
+that there are no KV writes before the fifth wrong PIN, and a lockout on it.
+
 ## 2026-09-23 — Folders removed from a share leave its index
 
 The share index marks each share folder `root: true`, and pruning only
