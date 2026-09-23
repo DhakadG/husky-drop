@@ -15,6 +15,7 @@ import {
 } from "./util.js";
 import { driveFileMeta, driveGrantAnyoneReader, driveRevokePermission } from "./drive.js";
 import { liveShareStats, logEvent } from "./store.js";
+import { appLog } from "./applog.js";
 import { loadJobs, planShareIndex, runShareIndexChunk, statsPointerKey } from "./share-index.js";
 
 // Index pointer + running job per share, for the admin cards (spec §4).
@@ -235,12 +236,36 @@ export async function patchShare(request, env, slug) {
   return json(adminShare(share, await env.KV.get(`sstats:${slug}`, "json")));
 }
 
+// A revoke Drive did not confirm is kept here (folderId -> permissionId) and
+// retried by the nightly cron, so a folder is never left public while the
+// share says access is gone. Written only when a revoke fails.
+const REVOKE_PENDING = "drive:revoke-pending";
+
 export async function revokeSharePermissions(env, share) {
   if (!env.GOOGLE_CLIENT_ID) return;
+  const failed = {};
   for (const [folderId, permId] of Object.entries(share.permissionIds || {})) {
-    if (permId) await driveRevokePermission(env, folderId, permId);
+    if (permId && !(await driveRevokePermission(env, folderId, permId))) failed[folderId] = permId;
   }
   share.permissionIds = {};
+  if (!Object.keys(failed).length) return;
+  const pending = (await env.KV.get(REVOKE_PENDING, "json")) || {};
+  await env.KV.put(REVOKE_PENDING, JSON.stringify({ ...pending, ...failed }));
+  await appLog(env, null, { level: "error", area: "drive", message: `share ${share.slug}: Drive did not confirm revoking public access; retried nightly`, detail: failed });
+}
+
+export async function retryPendingRevokes(env, ctx) {
+  const pending = await env.KV.get(REVOKE_PENDING, "json");
+  if (!pending || !Object.keys(pending).length) return;
+  // Drive gives every "anyone" grant on a folder the same permission id, so a
+  // folder some share has granted again since must not be revoked.
+  const held = new Set((await getAllShares(env)).flatMap((s) => Object.keys(s.permissionIds || {}).filter((id) => s.permissionIds[id])));
+  const left = {};
+  for (const [folderId, permId] of Object.entries(pending)) {
+    if (!held.has(folderId) && !(await driveRevokePermission(env, folderId, permId))) left[folderId] = permId;
+  }
+  await env.KV.put(REVOKE_PENDING, JSON.stringify(left));
+  if (Object.keys(left).length) appLog(env, ctx, { level: "error", area: "drive", message: `${Object.keys(left).length} Drive folder(s) still public after a failed revoke`, detail: left });
 }
 
 export async function deleteShare(request, env, slug) {
