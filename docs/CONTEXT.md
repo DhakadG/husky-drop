@@ -144,8 +144,10 @@ no watch mode, and `npm test` runs all of them in sequence after ESLint.
 | `admin-workflow-test.mjs`, `kv-budget-test.mjs`, `exif-test.mjs`, `transcode-previews-test.mjs` | admin flows, KV write budget, EXIF, transcoder API |
 | `plan-policy-test.mjs` | plans stay untracked, durable specs stay tracked |
 | `docs-test.mjs` | doc links resolve, and every path this file names still exists |
+| `review-test.mjs` | the deep-review tooling: surfaces name real files, sharding covers each file once, unchanged targets are skipped |
 | `dev-fixture-server.mjs` (+ its test) | a local server with fake media so the share page can run with no Drive credentials |
 | `build-icons.mjs`, `get-refresh-token.mjs`, `migrate-r2.mjs` | tools, not tests |
+| `review/run.mjs`, `review/render.mjs`, `review/prompts.mjs`, `review/surfaces.json` | the whole-file and whole-surface review pass ([REVIEW.md](REVIEW.md)) |
 | `transcode-share-previews.mjs`, `transcode-share-thumbs.mjs`, `transcode-images.mjs`, `transcode-previews.mjs`, `lib/image-decode.mjs` | what the GitHub runners execute |
 
 ### `.github/workflows/`
@@ -155,6 +157,7 @@ no watch mode, and `npm test` runs all of them in sequence after ESLint.
 | `ci.yml` | every PR + main | `npm ci && npm test` |
 | `pr-review.yml` | every PR | opencode AI review; **skips itself** unless an `ANTHROPIC_API_KEY` secret exists |
 | `skylos.yml` | PR diffs only | static analysis gate (a whole-repo run fails on a pre-existing `innerHTML` backlog, so it is scoped) |
+| `deep-review.yml` | manual | whole-file and whole-surface review; results land on the `reviews` branch ([REVIEW.md](REVIEW.md)) |
 | `transcode-share-previews.yml` | 22:15 UTC + dispatch | RAW/HEIC → WebP previews **and** WebP thumbnails, 8 shards |
 | `transcode-previews.yml` | 21:30 UTC + dispatch | 720p video previews |
 | `transcode-images.yml` | dispatch | image-archive re-encode jobs |

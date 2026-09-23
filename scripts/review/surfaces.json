@@ -1,0 +1,272 @@
+{
+  "admin-overview": {
+    "title": "Admin — Overview tab",
+    "what": "The landing tab: headline counters, the 30-day chart, live transfers and the recent-events mini list.",
+    "files": [
+      "public/admin.js",
+      "public/admin-chart.js",
+      "public/admin-state.js",
+      "src/admin-api.js"
+    ],
+    "html": [
+      "public/admin.html"
+    ],
+    "api": [
+      "/api/admin/overview",
+      "/api/admin/timeseries",
+      "/api/admin/events"
+    ]
+  },
+  "admin-live": {
+    "title": "Admin — Live tab",
+    "what": "Upload sessions happening right now, over a hibernatable WebSocket, plus finished-this-hour.",
+    "files": [
+      "public/admin-live.js",
+      "src/live.js",
+      "src/live-completions.js"
+    ],
+    "html": [
+      "public/admin.html"
+    ],
+    "api": [
+      "/api/admin/live",
+      "/api/admin/live/close"
+    ]
+  },
+  "admin-drops": {
+    "title": "Admin — Drop links tab and link detail",
+    "what": "Creating, configuring and inspecting drop links: settings, budgets, theme, uploads, upload-session log.",
+    "files": [
+      "public/admin-links.js",
+      "public/admin-detail.js",
+      "public/admin-folders.js",
+      "src/admin-api.js"
+    ],
+    "html": [
+      "public/admin.html"
+    ],
+    "api": [
+      "/api/admin/links",
+      "/api/admin/link/:slug",
+      "/api/admin/uploads/:slug",
+      "/api/admin/upload-sessions/:slug"
+    ]
+  },
+  "admin-shares": {
+    "title": "Admin — Share links tab",
+    "what": "Creating and managing share links, index state, previews and orphan sweeps from the share card.",
+    "files": [
+      "public/admin-shares.js",
+      "src/share-admin.js",
+      "src/share-stats.js"
+    ],
+    "html": [
+      "public/admin.html"
+    ],
+    "api": [
+      "/api/admin/shares",
+      "/api/admin/share-index/*"
+    ]
+  },
+  "admin-activity-people": {
+    "title": "Admin — Activity and People tabs",
+    "what": "The event timeline with filters and export, and one profile per visitor with device/account stitching.",
+    "files": [
+      "public/admin-activity.js",
+      "public/admin-activity-tools.js",
+      "public/admin-people.js",
+      "public/admin-people-profile.js",
+      "src/people.js",
+      "src/identity.js",
+      "src/stitch.js",
+      "src/live-analytics.js"
+    ],
+    "html": [
+      "public/admin.html"
+    ],
+    "api": [
+      "/api/admin/events",
+      "/api/admin/people",
+      "/api/admin/sessions",
+      "/api/admin/bans"
+    ]
+  },
+  "admin-pipelines": {
+    "title": "Admin — Pipelines tab",
+    "what": "One view of every background job: share indexing, RAW/HEIC previews, WebP thumbnails, video previews, image archive, the Drive change feed, R2 sweeps, and the GitHub runs behind them.",
+    "files": [
+      "public/admin-pipelines.js",
+      "src/pipelines.js",
+      "src/share-changes.js"
+    ],
+    "html": [
+      "public/admin.html"
+    ],
+    "api": [
+      "/api/admin/pipelines",
+      "/api/admin/pipelines/cancel",
+      "/api/admin/media/orphans"
+    ]
+  },
+  "admin-media-jobs": {
+    "title": "Admin — Video previews and Image archive tabs",
+    "what": "The two long-running media pipelines with their own tabs: transcoder telemetry and coverage, and the re-encode planner with rules and undo.",
+    "files": [
+      "public/admin-previews.js",
+      "public/admin-images.js",
+      "public/admin-images-plan.js",
+      "public/admin-images-rules.js",
+      "src/previews.js",
+      "src/images.js",
+      "src/images-run.js",
+      "src/images-rules.js"
+    ],
+    "html": [
+      "public/admin.html"
+    ],
+    "api": [
+      "/api/admin/previews/*",
+      "/api/admin/images/*"
+    ]
+  },
+  "admin-logs": {
+    "title": "Admin — System log tab",
+    "what": "The app log from the Durable Object's SQLite, with filters and read-state.",
+    "files": [
+      "public/admin-logs.js",
+      "src/applog.js",
+      "src/live-diagnostics.js"
+    ],
+    "html": [
+      "public/admin.html"
+    ],
+    "api": [
+      "/api/admin/logs"
+    ]
+  },
+  "share-gallery": {
+    "title": "Share page — gallery, folders, selection",
+    "what": "What a guest sees: folder tiles with stats and hover previews, the justified photo grid, sorting and filtering, selection, and the download bar.",
+    "files": [
+      "public/share.js",
+      "public/share-state.js",
+      "public/share-gallery-layout.js",
+      "public/share-select.js",
+      "public/share-selection-engine.js",
+      "public/share-smart-header.js",
+      "public/share-cache.js",
+      "public/share-download.js",
+      "src/share.js"
+    ],
+    "html": [
+      "public/share.html"
+    ],
+    "api": [
+      "/api/share/list",
+      "/api/share/summary",
+      "/api/share/stats",
+      "/api/share/warm"
+    ]
+  },
+  "share-viewer": {
+    "title": "Share page — the lightbox viewer",
+    "what": "Opening a photo or video: navigation, filmstrip, zoom, file info and EXIF, motion settings, video controls, mobile action sheet.",
+    "files": [
+      "public/share-viewer.js",
+      "public/share-viewer-engine.js",
+      "public/share-viewer-state.js",
+      "public/share-viewer-assets.js",
+      "public/share-viewer-info.js",
+      "public/share-viewer-panels.js",
+      "public/share-viewer-strip.js",
+      "public/share-viewer-video.js",
+      "public/share-preview.js",
+      "src/exif.js"
+    ],
+    "html": [
+      "public/share.html"
+    ],
+    "api": [
+      "/api/share/file-info",
+      "/api/share/media/*"
+    ]
+  },
+  "share-delivery": {
+    "title": "Share page — media delivery and downloads",
+    "what": "How bytes reach the guest: the cache ladder, signed media URLs, Range downloads, WebP choice, ZIP of a selection.",
+    "files": [
+      "src/media-cache.js",
+      "src/share-media.js",
+      "src/share-zip.js",
+      "src/share-token.js",
+      "src/share-previews.js"
+    ],
+    "html": [],
+    "api": [
+      "/api/share/media/*",
+      "/api/share/dl/*",
+      "/api/share/zip-ticket",
+      "/api/share/zip/*"
+    ]
+  },
+  "share-index": {
+    "title": "Share indexing and change detection",
+    "what": "The chunked Drive walk that produces folder stats and file rows, the change feed, scheduling, resume, dedupe and orphan sweeps.",
+    "files": [
+      "src/share-index.js",
+      "src/share-changes.js",
+      "src/share-stats.js"
+    ],
+    "html": [],
+    "api": [
+      "/api/share/stats",
+      "/api/admin/share-index/*"
+    ]
+  },
+  "drop-upload": {
+    "title": "Drop page — the upload experience",
+    "what": "What a sender sees: the gate, picking files, preflight dedupe, the queue with per-file state, retries, the stall watchdog, the summary.",
+    "files": [
+      "public/drop.js",
+      "public/drop-queue.js",
+      "public/drop-render.js",
+      "public/drop-state.js",
+      "public/drop-resume.js",
+      "public/drop-live.js",
+      "public/drop-report.js",
+      "public/drop-trekker.js",
+      "public/adaptive-concurrency.js",
+      "public/drop-utils.js",
+      "src/drop-api.js"
+    ],
+    "html": [
+      "public/drop.html"
+    ],
+    "api": [
+      "/api/link/:slug",
+      "/api/preflight",
+      "/api/session",
+      "/api/progress",
+      "/api/complete"
+    ]
+  },
+  "platform": {
+    "title": "Platform — router, auth, storage, Drive",
+    "what": "The pieces everything else sits on: the router, admin and viewer auth, KV state, Drive access, email, shared helpers.",
+    "files": [
+      "src/worker.js",
+      "src/auth.js",
+      "src/store.js",
+      "src/drive.js",
+      "src/util.js",
+      "src/live-digest.js",
+      "src/applog.js"
+    ],
+    "html": [],
+    "api": [
+      "/api/admin/auth/*",
+      "/api/auth/*",
+      "/api/hello"
+    ]
+  }
+}

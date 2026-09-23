@@ -1,0 +1,143 @@
+# Whole-file and whole-surface review, run on demand.
+#
+# Not a diff review - CI, Skylos, opencode and CodeRabbit already cover diffs.
+# This reads every source file end to end, and every feature surface as a
+# whole, and writes the results to a branch as Markdown so they can be worked
+# through offline.
+name: Deep review
+
+"on":
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "file (every source file) | surface (every feature area) | both"
+        type: choice
+        options: [both, file, surface]
+        default: both
+      only:
+        description: "comma-separated targets, e.g. src/share-index.js or admin-pipelines. Blank = everything."
+        default: ""
+      force:
+        description: "re-review targets whose content has not changed"
+        type: boolean
+        default: false
+      shards:
+        description: "parallel shards for the file pass"
+        default: "8"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-review
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - id: plan
+        run: |
+          n=${{ inputs.shards }}
+          echo "shards=$(seq 0 $((n - 1)) | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  files:
+    if: inputs.mode != 'surface'
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      # Previous results seed the manifest, so unchanged files are not re-paid for.
+      - name: Fetch previous results
+        run: git fetch origin reviews:reviews 2>/dev/null && git --work-tree=review-out checkout reviews -- . 2>/dev/null || echo "no previous review branch"
+      - name: Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          test -n "$ANTHROPIC_API_KEY" || { echo "::error::ANTHROPIC_API_KEY secret is not set"; exit 1; }
+          node scripts/review/run.mjs --mode file \
+            --shard ${{ matrix.shard }} --shards ${{ inputs.shards }} \
+            ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
+            ${{ inputs.force && '--force' || '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: review-file-${{ matrix.shard }}
+          path: review-out/
+
+  surfaces:
+    if: inputs.mode != 'file'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Fetch previous results
+        run: git fetch origin reviews:reviews 2>/dev/null && git --work-tree=review-out checkout reviews -- . 2>/dev/null || echo "no previous review branch"
+      - name: Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          test -n "$ANTHROPIC_API_KEY" || { echo "::error::ANTHROPIC_API_KEY secret is not set"; exit 1; }
+          node scripts/review/run.mjs --mode surface \
+            ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
+            ${{ inputs.force && '--force' || '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: review-surface
+          path: review-out/
+
+  collect:
+    if: always() && (needs.files.result == 'success' || needs.surfaces.result == 'success')
+    needs: [files, surfaces]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          pattern: review-*
+          merge-multiple: true
+      - name: Render
+        run: |
+          mkdir -p review-out && cp -r artifacts/* review-out/ 2>/dev/null || true
+          node scripts/review/render.mjs --out review-out
+          cat review-out/INDEX.md >> "$GITHUB_STEP_SUMMARY"
+      # An orphan branch, so reviews never touch main's history.
+      - name: Publish to the reviews branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan reviews-tmp
+          git rm -rq --cached . || true
+          find . -maxdepth 1 ! -name review-out ! -name .git ! -name . -exec rm -rf {} +
+          mv review-out/* . && rmdir review-out
+          git add -A
+          git commit -q -m "review: ${{ inputs.mode }} pass from ${{ github.sha }} (run ${{ github.run_id }})"
+          git push -f origin reviews-tmp:reviews
+          echo "Results: https://github.com/${{ github.repository }}/tree/reviews" >> "$GITHUB_STEP_SUMMARY"
