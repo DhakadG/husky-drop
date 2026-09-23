@@ -16,5 +16,8 @@ entities.json
 /docs/plans/
 /docs/superpowers/plans/
 
+# local review output; the workflow publishes to the orphan `reviews` branch
+review-out/
+
 # generated knowledge graph (graphify update .)
 graphify-out/
