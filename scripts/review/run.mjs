@@ -36,6 +36,12 @@ const DRY = args.get("dry") === "true";
 const ONLY = args.get("only") || "";
 const MODEL = args.get("model") || (MODE === "surface" ? "claude-opus-5" : "claude-sonnet-5");
 const MAX_BYTES = Number(args.get("max-bytes") || 160_000);
+// Read once, by name: the only environment value that ever leaves this process.
+const API_KEY = process.env.ANTHROPIC_API_KEY || "";
+if (!DRY && !API_KEY) {
+  console.error("ANTHROPIC_API_KEY is not set (use --dry to build prompts without calling the API)");
+  process.exit(1);
+}
 
 // Files worth reviewing: tracked, ours, and not generated.
 const SKIP = /^(public\/vendor\/|public\/icons\.svg|docs\/archive\/|docs\/assets\/|graphify-out\/)|\.(png|jpe?g|webm|mp4|mov|svg)$|package-lock\.json$/;
@@ -87,7 +93,7 @@ async function ask(prompt, model) {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "x-api-key": API_KEY,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify(body),

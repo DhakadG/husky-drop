@@ -39,8 +39,11 @@ jobs:
       shards: ${{ steps.plan.outputs.shards }}
     steps:
       - id: plan
+        env:
+          SHARDS: ${{ inputs.shards }}
         run: |
-          n=${{ inputs.shards }}
+          n=$(printf '%d' "${SHARDS:-8}" 2>/dev/null || echo 8)
+          [ "$n" -ge 1 ] && [ "$n" -le 20 ] || n=8
           echo "shards=$(seq 0 $((n - 1)) | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
 
   files:
@@ -67,13 +70,19 @@ jobs:
       - name: Review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Dispatch inputs are attacker-influenced text: they reach the shell
+          # as quoted environment values, never as expanded expressions.
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ inputs.shards }}
+          ONLY: ${{ inputs.only }}
+          FORCE: ${{ inputs.force }}
         run: |
           test -n "$ANTHROPIC_API_KEY" || { echo "::error::ANTHROPIC_API_KEY secret is not set"; exit 1; }
-          node scripts/review/run.mjs --mode file \
-            --shard ${{ matrix.shard }} --shards ${{ inputs.shards }} \
-            ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
-            ${{ inputs.force && '--force' || '' }}
-      - uses: actions/upload-artifact@v4
+          set -- --mode file --shard "$SHARD" --shards "$SHARDS"
+          [ -n "$ONLY" ] && set -- "$@" --only "$ONLY"
+          [ "$FORCE" = "true" ] && set -- "$@" --force
+          node scripts/review/run.mjs "$@"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: review-file-${{ matrix.shard }}
           path: review-out/
@@ -95,12 +104,15 @@ jobs:
       - name: Review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ONLY: ${{ inputs.only }}
+          FORCE: ${{ inputs.force }}
         run: |
           test -n "$ANTHROPIC_API_KEY" || { echo "::error::ANTHROPIC_API_KEY secret is not set"; exit 1; }
-          node scripts/review/run.mjs --mode surface \
-            ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
-            ${{ inputs.force && '--force' || '' }}
-      - uses: actions/upload-artifact@v4
+          set -- --mode surface
+          [ -n "$ONLY" ] && set -- "$@" --only "$ONLY"
+          [ "$FORCE" = "true" ] && set -- "$@" --force
+          node scripts/review/run.mjs "$@"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: review-surface
           path: review-out/
@@ -118,7 +130,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
           pattern: review-*
@@ -130,6 +142,11 @@ jobs:
           cat review-out/INDEX.md >> "$GITHUB_STEP_SUMMARY"
       # An orphan branch, so reviews never touch main's history.
       - name: Publish to the reviews branch
+        env:
+          MODE: ${{ inputs.mode }}
+          SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -138,6 +155,6 @@ jobs:
           find . -maxdepth 1 ! -name review-out ! -name .git ! -name . -exec rm -rf {} +
           mv review-out/* . && rmdir review-out
           git add -A
-          git commit -q -m "review: ${{ inputs.mode }} pass from ${{ github.sha }} (run ${{ github.run_id }})"
+          git commit -q -m "review: ${MODE} pass from ${SHA} (run ${RUN_ID})"
           git push -f origin reviews-tmp:reviews
-          echo "Results: https://github.com/${{ github.repository }}/tree/reviews" >> "$GITHUB_STEP_SUMMARY"
+          echo "Results: https://github.com/${REPO}/tree/reviews" >> "$GITHUB_STEP_SUMMARY"
