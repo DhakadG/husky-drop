@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The API reviewer and the agent queue agree on surface fingerprints
+
+`run.mjs` fingerprinted a surface from its numbered, header-prefixed prompt
+body, while `queue.mjs` and `mark.mjs` hash the raw files joined by
+newlines. The two never matched: after an agent pass marked every surface,
+a `deep-review.yml` run re-reviewed all of them (the most expensive calls),
+and afterwards the queue called every surface stale. `run.mjs` now uses the
+same fingerprint, and `review-test.mjs` checks that a surface marked by
+`mark.mjs` is skipped by `run.mjs`.
+
 ## 2026-09-23 — Fullscreen keeps a visible pointer
 
 On desktop the gallery hides the system cursor and draws its own follower on

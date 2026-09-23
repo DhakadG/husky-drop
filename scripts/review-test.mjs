@@ -153,6 +153,14 @@ fs.writeFileSync(path.join(out, "manifest.json"), JSON.stringify(stale, null, 2)
 assert.match(queue(["--stale"]), /public\/skeleton\.js/, "a changed file goes back on the board as stale");
 
 assert.equal(calls, 1, "exactly one model call for one changed file");
+
+// A surface marked by the agent path (mark.mjs) is unchanged to the API
+// runner too: the three scripts share one fingerprint.
+const surfaceKey = Object.keys(surfaces)[0];
+const surfaceOut = path.join(work, "surface-out");
+execFileSync(process.execPath, ["scripts/review/mark.mjs", surfaceKey, "--mode", "surface", "--out", surfaceOut], { cwd: root, encoding: "utf8" });
+const surfaceRun = execFileSync(process.execPath, ["scripts/review/run.mjs", "--mode", "surface", "--dry", "--shards", "1", "--shard", "0", "--only", surfaceKey, "--out", surfaceOut], { cwd: root, encoding: "utf8" });
+assert.match(surfaceRun, new RegExp(`= skip ${surfaceKey} \\(unchanged`), "run.mjs agrees with mark.mjs on a surface fingerprint");
 server.close();
 fs.rmSync(work, { recursive: true, force: true });
 console.log(`review tooling checks passed (${Object.keys(surfaces).length} surfaces, ${seen.size} files in scope)`);
