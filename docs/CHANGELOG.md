@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Changing a gallery share's folders indexes them right away
+
+`patchShare` stored new `folderIds` without planning an index job, so a folder
+added to a gallery share had no counts, cover or warm previews until the
+nightly run, while the card still read "Indexed 3 h ago". A folder or mode
+change on a gallery share now plans a full index job and runs its first chunk,
+as creating a share does. If a job is already running it is left alone; the
+nightly run picks up anything it missed.
+`scripts/share-edit-index-test.mjs` checks both cases.
+
 ## 2026-09-23 — The folder picker lists more than 100 folders
 
 `driveListFolders` asked Drive for 100 subfolders and ignored
