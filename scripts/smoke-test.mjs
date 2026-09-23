@@ -187,6 +187,13 @@ async function withMockedGoogleDrive(fn) {
       mimeType: "application/x-msdownload",
       modifiedTime: "2026-07-04T00:00:00.000Z",
     },
+    "file-fake-jpg": {
+      id: "file-fake-jpg",
+      name: "holiday.jpg.exe",
+      size: "8",
+      mimeType: "image/jpeg",
+      modifiedTime: "2026-07-08T00:00:00.000Z",
+    },
     "file-svg": {
       id: "file-svg",
       name: "evil.svg",
@@ -223,6 +230,7 @@ async function withMockedGoogleDrive(fn) {
     "file-video": new TextEncoder().encode("VIDEO!"),
     "file-mov": new TextEncoder().encode("MOV!!"),
     "file-exe": new TextEncoder().encode("EXE!!!!!"),
+    "file-fake-jpg": new TextEncoder().encode("EXE!!!!!"),
     "file-svg": new TextEncoder().encode("<svg onload='alert(document.cookie)'/>"),
     "file-nested": new TextEncoder().encode("NESTED!!!!!"),
     "file-raw": new TextEncoder().encode("RAWRAWRAWRAWRAWRAWRA"),
@@ -1356,6 +1364,9 @@ async function main() {
     assert.equal(res.status, 451, "risky executable public download is blocked");
     res = await worker.fetch(request(`${blockedExe.dl}?inline=1`), driveEnv);
     assert.equal(res.status, 451, "?inline=1 cannot bypass the public-download safety list");
+    const fakeJpgToken = await signShareToken(driveEnv, "dl", "drive-share", "file-fake-jpg");
+    res = await worker.fetch(request(`/api/share/dl/${fakeJpgToken}?inline=1`), driveEnv);
+    assert.equal(res.status, 451, "a blocked name with an image MIME type is not served inline either");
     const svgToken = await signShareToken(driveEnv, "dl", "drive-share", "file-svg");
     res = await worker.fetch(request(`/api/share/dl/${svgToken}?inline=1`), driveEnv);
     assert.equal(res.status, 200, "an SVG still downloads");

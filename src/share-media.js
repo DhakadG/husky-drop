@@ -271,7 +271,9 @@ export async function shareDownload(request, env, token, ctx) {
   const method = request.method.toUpperCase();
   const bytes = Number(meta.size) || 0;
   const safety = publicDownloadSafety(meta);
-  if (!inline && safety.blocked) {
+  // Inline too: a blocked name with an image/video MIME type would otherwise
+  // reach the browser, which downloads what it cannot render.
+  if (safety.blocked) {
     return json({ error: safety.reason }, 451, { "x-robots-tag": "noindex, nofollow, noarchive" });
   }
   const etag = `"${(await sha256(`${meta.id}:${meta.modifiedTime || ""}:${bytes}:${meta.mimeType || ""}`)).slice(0, 32)}"`;
