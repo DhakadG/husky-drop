@@ -289,7 +289,7 @@ export async function driveListFolder(env, folderId, pageToken, options = {}) {
     fields:
       "nextPageToken,files(id,name,size,mimeType,modifiedTime,createdTime,thumbnailLink,md5Checksum," +
       "imageMediaMetadata(width,height,rotation),videoMediaMetadata(width,height,durationMillis))",
-    orderBy: "folder,name",
+    orderBy: options.orderBy || "folder,name",
     pageSize: String(pageSize),
     supportsAllDrives: "true",
     includeItemsFromAllDrives: "true",

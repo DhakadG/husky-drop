@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — "Newest first" and "Largest first" sort the whole folder
+
+Drive pages arrived in name order, 200 at a time, and the gallery only
+re-sorted what was loaded, so "Newest first" on a 1,400-photo folder showed
+the newest of the alphabetically first 200. `/api/share/list` now takes
+`order` (`new`, `old`, `size`) and asks Drive for the folder in that order
+(modified time or size, folders first); the gallery sends it with every page
+and reloads a paged folder when the sort changes. Listings are cached per
+order.
+
 ## 2026-09-23 — "Load next" appends tiles instead of rebuilding the gallery
 
 Every page of a big folder called `render()`, which emptied the gallery and

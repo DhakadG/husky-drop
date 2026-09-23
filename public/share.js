@@ -298,9 +298,13 @@ async function showGallery() {
   const sortEl = $("sort");
   sortEl.value = sortMode;
   sortEl.addEventListener("change", () => {
+    const before = listOrder();
     setSortMode(sortEl.value);
     localStorage.setItem("lhdb_sort", sortMode);
-    render();
+    // A paged folder is reloaded in the new order; a fully loaded one is
+    // simply re-sorted in place.
+    if (before !== listOrder() && (current?.folders || []).some((f) => f.nextPageToken) && crumbs.length) navigate(crumbs[crumbs.length - 1], { push: false, fromHistory: true });
+    else render();
   });
   installTileSizeControl();
   installDownloadFormatControl();
@@ -341,8 +345,11 @@ async function restorePath(fids) {
 
 // ---- Navigation core (stable fid, dedupe, browser history) ----
 
+// Sorts Drive can apply to the whole folder (see LIST_ORDER on the Worker).
+const listOrder = () => (["new", "old", "size"].includes(sortMode) ? sortMode : "");
+
 async function fetchListing(token) {
-  const body = { slug, pin };
+  const body = { slug, pin, ...(listOrder() ? { order: listOrder() } : {}) };
   if (token) body.folderToken = token;
   const r = await fetch("/api/share/list", {
     method: "POST",
@@ -399,19 +406,21 @@ function keepListing(fid, d, token) {
 }
 
 async function resolveListing(entry) {
-  const cached = listingCache.get(entry.fid);
+  // A listing in another order is a different listing.
+  const key = listOrder() ? `${entry.fid}~${listOrder()}` : entry.fid;
+  const cached = listingCache.get(key);
   if (cached && Date.now() - cached.at < LISTING_TTL_MS) return cached.d;
   // L0: a listing this browser fetched a moment ago (its signed tokens are
   // minted for 15 min, so a 5 min old copy is still fully usable).
-  const stored = await cachedJson("listing", `${slug}/${entry.fid}`, LISTING_TTL_MS);
+  const stored = await cachedJson("listing", `${slug}/${key}`, LISTING_TTL_MS);
   if (stored?.data?.d) {
-    listingCache.set(entry.fid, { d: stored.data.d, token: stored.data.token, at: stored.at });
+    listingCache.set(key, { d: stored.data.d, token: stored.data.token, at: stored.at });
     if (stored.data.token) entry.token = stored.data.token;
     return stored.data.d;
   }
   try {
     const d = await fetchListing(entry.token);
-    keepListing(entry.fid, d, entry.token);
+    keepListing(key, d, entry.token);
     return d;
   } catch (err) {
     if (err.status !== 403 || !entry.fid) throw err;
@@ -800,7 +809,7 @@ export async function prefetchMore(folder) {
 
 async function fetchMorePage(folder) {
   const here = crumbs[crumbs.length - 1];
-  const body = { slug, pin, pageToken: folder.nextPageToken };
+  const body = { slug, pin, pageToken: folder.nextPageToken, ...(listOrder() ? { order: listOrder() } : {}) };
   if (here.token) body.folderToken = here.token;
   else body.folderIndex = folder.index;
   const r = await fetch("/api/share/list", {
