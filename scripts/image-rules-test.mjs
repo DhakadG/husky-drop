@@ -4,6 +4,8 @@
 // silently dropped the rule's name exclusions (and auto-confirmed REPLACE).
 import assert from "node:assert/strict";
 import { upsertImageRule, listImageRules } from "../src/images-rules.js";
+import { reportImageBatch } from "../src/images-run.js";
+import { readFileSync } from "node:fs";
 
 const kv = new Map();
 const env = { KV: { get: async (k, t) => (kv.has(k) ? (t === "json" ? JSON.parse(kv.get(k)) : kv.get(k)) : null), put: async (k, v) => void kv.set(k, String(v)) } };
@@ -27,6 +29,15 @@ assert.deepEqual(rule.options.excludeFolderIds, ["f2"], "and the excluded folder
 await upsertImageRule(post({ ...rule, confirm: "REPLACE" }), env);
 rule = (await (await listImageRules(env)).json()).rules[0];
 assert.equal(rule.options.excludeRe, "_edited|\\.psd$", "re-saving stored options keeps the regex");
+
+// Gain-map HDR photos are kept as they are: the archive runner must check
+// for them (sharp would flatten them to SDR), and the worker counts that as
+// a deliberate skip, not a failure.
+assert.match(readFileSync(new URL("./transcode-images.mjs", import.meta.url), "utf8"), /await hasGainMap\(input, file\)/, "the archive runner checks for gain-map HDR before encoding");
+kv.set("images:jobs", JSON.stringify({ jobs: [{ id: "img-1", status: "running", options: { mode: "archive" }, files: [{ id: "a", size: 10, name: "IMG_1.jpg" }], items: [], progress: { done: 0, failed: 0, skipped: 0, bytesIn: 0, bytesOut: 0 } }] }));
+const report = new Request("https://drop.test/x", { method: "POST", body: JSON.stringify({ skipped: [{ id: "a", error: "gain-map HDR: original kept" }] }) });
+const progress = (await (await reportImageBatch(report, env, null, "img-1")).json()).progress;
+assert.deepEqual([progress.skipped, progress.failed], [1, 0], "a kept HDR original is a skip, not a failure");
 
 console.log = log;
 console.log("image-rules-test: ok");

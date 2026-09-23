@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The image archive keeps gain-map HDR photos as they are
+
+The share preview runner already skipped Apple Adaptive HDR / Ultra HDR JPEGs
+(sharp flattens the gain map to SDR), but the image-archive runner never
+checked, so an archive or replace job quietly turned every HDR photo into an
+SDR one - and in those modes the SDR copy takes the original's place.
+`transcode-images.mjs` now calls `hasGainMap()` before encoding and reports
+"gain-map HDR: original kept", which the worker counts as a skip, not a
+failure. `image-rules-test.mjs` checks both halves.
+
 ## 2026-09-23 — The Drive change feed no longer sticks after a big burst
 
 `maybeCheckChanges` reads at most five pages (5,000 changes) per check. When
