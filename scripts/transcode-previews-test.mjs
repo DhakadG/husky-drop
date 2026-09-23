@@ -443,6 +443,11 @@ console.log("\nAll video transcoder tests passed successfully!");
   assert.ok(script.includes("const dropAudio = silent || probe.hasAudio === false"), "a source with no audio is encoded with -an");
   assert.ok(script.includes('? ["-an"]'), "-an is what gets passed");
   assert.ok(script.includes("{ silent: true }"), "a failed encode is retried without audio");
+  // A 45-minute 720p recording at 2.4 Mb/s is ~800 MB: compliant codecs, but a
+  // remux can never fit, so it must take the budgeted path (and a remux that
+  // still comes out too big is transcoded once instead of failing for good).
+  assert.ok(script.includes("(duration * bitrate) / 8 <= BUDGET_PREVIEW_BYTES"), "remux only when the copy fits the budget");
+  assert.ok(script.includes("{ ...probe, isCompliant: false }"), "an oversized remux falls back to a budgeted transcode");
   assert.ok(script.includes('"-threads", "2"'), "x264 is capped so six workers do not fight over four cores");
 
   // A silent h264 720p file should fast-remux, not re-encode.

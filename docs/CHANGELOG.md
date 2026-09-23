@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Long compliant videos get a budgeted preview instead of failing
+
+The video runner remuxes (copies without re-encoding) any 720p H.264/AAC
+source under 2.6 Mb/s. A 45-minute recording at 2.4 Mb/s is about 800 MB,
+far over the 88 MB upload limit: the remux failed the size check, and after
+three nights the file was permanently "failed", even though this is exactly
+the case the duration-based bitrate budget exists for. A source now counts as
+remuxable only when duration x bitrate fits the budget, and a remux that
+still comes out too big is transcoded to the budget once before any failure
+is reported.
+
 ## 2026-09-23 — The API reviewer and the agent queue agree on surface fingerprints
 
 `run.mjs` fingerprinted a surface from its numbered, header-prefixed prompt

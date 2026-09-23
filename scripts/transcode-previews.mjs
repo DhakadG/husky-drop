@@ -164,7 +164,10 @@ async function probeVideo(filePath) {
         (!hasAudio || ["aac", "mp3"].includes(audioCodec)) &&
         width > 0 && width <= 1280 &&
         height > 0 && height <= 720 &&
-        bitrate > 0 && bitrate <= 2_600_000,
+        bitrate > 0 && bitrate <= 2_600_000 &&
+        // A long recording at a compliant bitrate still remuxes to far more
+        // than the upload limit; those go through the budgeted transcode.
+        (!duration || (duration * bitrate) / 8 <= BUDGET_PREVIEW_BYTES),
     };
   } catch {
     return {
@@ -379,7 +382,16 @@ async function transcodeOne(file, dir, slot) {
     via = `${via}-silent`;
   }
 
-  const { size } = await stat(output);
+  let { size } = await stat(output);
+  // ffprobe's duration or bitrate can be missing or wrong; a remux that still
+  // comes out too big gets one budgeted transcode instead of a failure that
+  // turns permanent after three nights.
+  if (via === "remux" && size > MAX_PREVIEW_BYTES) {
+    console.log(`retry [w${slot}] ${file.name}: remux is ${Math.round(size / 1e6)} MB, transcoding to the budget`);
+    ({ via } = await transcodeVideo(input, output, { ...probe, isCompliant: false }, onTick));
+    via = `${via}-budget`;
+    ({ size } = await stat(output));
+  }
   if (!size) throw new Error("transcoder produced empty file");
   if (size > MAX_PREVIEW_BYTES) {
     throw new Error(`preview ${Math.round(size / 1e6)} MB exceeds ${Math.round(MAX_PREVIEW_BYTES / 1e6)} MB limit`);
