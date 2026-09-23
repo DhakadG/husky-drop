@@ -148,6 +148,7 @@ export class LiveTracker {
     }
 
     if (path === "/share-stats") return reply({ rows: this.analytics.shareStatRows() });
+    if (isPost && path === "/preflight") return reply({ matches: this.analytics.matchCompleted(cleanText(body.slug || "", 60), Array.isArray(body.files) ? body.files.slice(0, 500) : []) });
 
     const diag = diagnosticsRoute(this.state, path, url, body, isPost, request.method);
     if (diag) return diag;

@@ -4,6 +4,19 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Preflight dedupe sees every past upload, not the newest 200
+
+`/api/preflight` matched dropped files only against the link's recent-uploads
+list in KV, which is capped at 200 rows, and the server cut each request at
+500 files. Re-dropping an older folder, or any folder bigger than 500 files,
+uploaded duplicates. Every verified completion is now also written to a
+`completed_files` table in the LiveTracker Durable Object (idempotent per
+Drive file id), preflight asks that index and unions it with the KV rows
+(which still cover uploads from before the index existed), and the drop page
+sends files in batches of 500 with one combined "already in Drive" toast.
+`scripts/preflight-index-test.mjs` checks matching beyond the old cap against
+real SQLite.
+
 ## 2026-09-23 — The Overview chart no longer counts share downloads as uploads
 
 Share traffic is rolled up in `day_stats` under `share:<slug>` with the same

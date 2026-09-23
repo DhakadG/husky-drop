@@ -11,6 +11,18 @@ const DAY_MS = 86400_000;
 const PRUNE_EVERY_MS = 6 * 3600_000;
 
 const SCHEMA = [
+  // Every verified completion per drop link, so "already in Drive?" is
+  // answered for the whole history, not just the newest RECENT_CAP rows.
+  `CREATE TABLE IF NOT EXISTS completed_files (
+    slug TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    lm INTEGER NOT NULL DEFAULT 0,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (slug, file_id)
+  )`,
+  "CREATE INDEX IF NOT EXISTS completed_lookup_idx ON completed_files(slug, name, size)",
   `CREATE TABLE IF NOT EXISTS day_stats (
     slug TEXT NOT NULL,
     day TEXT NOT NULL,
@@ -236,6 +248,30 @@ export class Analytics {
     this.bumpDay(`share:${slug}`, delta);
     if (body.record) this.recordEvent(body.record);
     return viewerPreviouslySeen;
+  }
+
+  // ---- completed-file index (preflight dedupe) ----
+
+  recordCompleted(slug, metas) {
+    if (!this.ready) return;
+    for (const m of metas) {
+      const id = m.f || `${m.n}:${m.at}`;
+      this.sql.exec(
+        "INSERT INTO completed_files (slug, file_id, name, size, lm, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(slug, file_id) DO NOTHING",
+        slug, id, String(m.n || ""), Number(m.s) || 0, Number(m.lm) || 0, Number(m.at) || Date.now(),
+      );
+    }
+  }
+
+  // Same rule as the KV path: name + size, and lastModified when both sides have one.
+  matchCompleted(slug, files) {
+    if (!this.ready) return null;
+    return files.map((f) => {
+      const rows = this.sql.exec("SELECT file_id, lm, at FROM completed_files WHERE slug = ? AND name = ? AND size = ? LIMIT 20", slug, String(f.name || ""), Number(f.size) || 0).toArray();
+      const lm = Number(f.lastModified) || 0;
+      const hit = rows.find((r) => !Number(r.lm) || !lm || Number(r.lm) === lm);
+      return hit ? { fileId: hit.file_id, at: Number(hit.at) || 0 } : null;
+    });
   }
 
   // ---- per-day rollups ----
