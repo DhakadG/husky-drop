@@ -4,6 +4,19 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — A failed completion flush no longer loses upload counts
+
+`flushOne` wrote `recent:<slug>` before `stats:<slug>` and decided which files
+were new from the recent list. When the stats write failed (KV write limit,
+transient error), the retry found every file already in the recent list and
+skipped the counters, the day rollup and the activity event for good. The
+counters, rollup and events are now written first, and only then are the
+files marked recorded (the `completed_files` index) and the recent list
+written. "New" is checked against that index as well, so re-synced files past
+the 200-row recent cap no longer count twice either.
+`scripts/completion-flush-test.mjs` fails a stats write and a recent write
+and checks each retry counts once.
+
 ## 2026-09-23 — Admin pollers start once and rest while the tab is hidden
 
 `unlock()` started the 15 s overview poll, the 1 s live tick and the chart

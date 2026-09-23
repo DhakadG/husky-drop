@@ -263,6 +263,11 @@ export class Analytics {
     }
   }
 
+  hasCompleted(slug, fileId) {
+    if (!this.ready) return false;
+    return this.sql.exec("SELECT 1 FROM completed_files WHERE slug = ? AND file_id = ?", slug, fileId).toArray().length > 0;
+  }
+
   // Same rule as the KV path: name + size, and lastModified when both sides have one.
   matchCompleted(slug, files) {
     if (!this.ready) return null;
