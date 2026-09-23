@@ -333,9 +333,9 @@ async function showItems(id, filter = "all") {
   const box = $(`ia-items-${id}`);
   if (box.innerHTML && !filter) return (box.innerHTML = "");
   const d = await fetch(`/api/admin/images/jobs/${encodeURIComponent(id)}/items`).then((r) => r.json());
-  const items = d.items.filter((i) => (filter === "failed" ? !i.ok : true));
+  const items = d.items.filter((i) => (filter === "failed" ? !i.ok || i.undoError : true));
   box.innerHTML = `<div class="ia-items-head"><span class="muted">${items.length} shown</span><span class="section-tools"><button class="mini" data-items-filter="all" data-job="${id}" type="button">all</button><button class="mini" data-items-filter="failed" data-job="${id}" type="button">failed only</button><button class="mini" data-items-close="${id}" type="button">close</button></span></div>
-    <ul class="ia-items">${items.map((i) => `<li>${i.ok ? icon("check", "ico-sm") : icon(i.soft ? "info" : "circle-x", "ico-sm")} <span class="ia-item-name" title="${escAttr(i.path)}/${escAttr(i.name)}">${esc(i.name)}</span>${i.via && i.via !== "direct" ? `<span class="ia-tag">${esc(i.via)}</span>` : ""}${i.q ? `<span class="ia-tag">q${i.q}</span>` : ""}<span class="muted">${i.ok ? `${fmtBytes(i.sizeIn)} → ${fmtBytes(i.size)} · ${fmtTime(i.ms / 1000)}` : esc(i.error)}${i.undone ? " · undone" : ""}</span></li>`).join("") || "<li class='muted'>nothing here</li>"}</ul>`;
+    <ul class="ia-items">${items.map((i) => `<li>${i.ok ? icon("check", "ico-sm") : icon(i.soft ? "info" : "circle-x", "ico-sm")} <span class="ia-item-name" title="${escAttr(i.path)}/${escAttr(i.name)}">${esc(i.name)}</span>${i.via && i.via !== "direct" ? `<span class="ia-tag">${esc(i.via)}</span>` : ""}${i.q ? `<span class="ia-tag">q${i.q}</span>` : ""}<span class="muted">${i.ok ? `${fmtBytes(i.sizeIn)} → ${fmtBytes(i.size)} · ${fmtTime(i.ms / 1000)}` : esc(i.error)}${i.undone ? " · undone" : ""}${i.undoError ? ` · could not undo: ${esc(i.undoError)}` : ""}</span></li>`).join("") || "<li class='muted'>nothing here</li>"}</ul>`;
 }
 async function jobAction(button, id, action) {
   if (action === "cancel" && !confirm("Cancel this job? Files already written stay as they are.")) return;
@@ -380,14 +380,16 @@ async function convertJob(button, id, to) {
 async function undoJob(button, id) {
   if (!confirm("Undo this job? Copies go to Drive's trash; archived originals move back.")) return;
   button.disabled = true;
+  let failed = 0;
   for (let i = 0; i < 100; i++) {
     const r = await post(`/api/admin/images/jobs/${encodeURIComponent(id)}/undo`);
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return flash(button, d.error || "undo failed");
     flash(button, `${d.remaining} left…`);
+    failed = d.failed || 0;
     if (!d.remaining) break;
   }
-  flash(button, "undone");
+  flash(button, failed ? `undone, ${failed} could not be restored` : "undone");
   setTimeout(refreshImages, 1000);
 }
 

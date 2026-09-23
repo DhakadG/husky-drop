@@ -309,18 +309,22 @@ export async function undoImageJob(env, ctx, jobId) {
       }
       if (item.newId) await driveTrashFile(env, item.newId);
       item.undone = true;
+      delete item.undoError;
       undone += 1;
     } catch (error) {
       item.undoError = cleanText(error.message, 120);
     }
   }
   const remaining = job.items.filter((i) => i.ok && !i.undone && !i.undoError).length;
-  if (!remaining) {
+  // Files that could not be restored keep the job "done", so undo can be
+  // retried, and the admin is told how many are still archived.
+  const failed = job.items.filter((i) => i.ok && !i.undone && i.undoError).length;
+  if (!remaining && !failed) {
     job.status = "undone";
     appLog(env, ctx, { area: "images", message: `job ${job.id} undone (${job.items.filter((i) => i.undone).length} files)` });
   }
   await saveJobs(env, jobs);
-  return json({ ok: true, undone, remaining, status: job.status });
+  return json({ ok: true, undone, remaining, failed, status: job.status });
 }
 async function archiveFolderOf(env, tok, fileId) {
   const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=parents&supportsAllDrives=true`, { headers: { authorization: `Bearer ${tok}` } });
