@@ -102,6 +102,18 @@ user data) or persistent identifier leaves; what matching needs (names,
 places, device traits, links, times) stays. Disclosure of the provider is in
 the privacy policy PR. `scripts/stitch-test.mjs` checks the prompt.
 
+## 2026-09-23 — The privacy policy names every processor and identifier
+
+The policy listed Google Drive, Cloudflare storage and the e-mail provider,
+and said data is processed "only as needed", but the app also runs
+Fingerprint (the `hd_fp` device id, next to the worker's `hd_did`, both
+400-day cookies), injects Microsoft Clarity and Cloudflare Web Analytics into
+every page, and sends visitor profiles to Gemini or Anthropic nightly for
+identity matching. A new "Device identification and analytics" section
+describes each of them, the processors paragraph points to it, and Retention
+gives the real limits (activity 90 days, identity records until removed).
+Visitors and Google's OAuth review read this page as the complete list.
+
 ## 2026-09-23 — Long compliant videos get a budgeted preview instead of failing
 
 The video runner remuxes (copies without re-encoding) any 720p H.264/AAC
