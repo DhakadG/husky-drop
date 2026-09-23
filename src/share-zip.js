@@ -8,7 +8,8 @@ import {
   json,
   sanitizeFilename,
 } from "./util.js";
-import { driveFileMeta, accessToken } from "./drive.js";
+import { driveFileMetaCached, accessToken } from "./drive.js";
+import { loadFiles } from "./share-index.js";
 import { mediaRev } from "./media-cache.js";
 import { sharePreviewIndex } from "./share-previews.js";
 import { gatePin } from "./store.js";
@@ -34,11 +35,28 @@ export async function createShareZipTicket(request, env) {
   const previews = smaller ? await sharePreviewIndex(env) : { files: {} };
   const files = [];
   const blocked = [];
+  // Tokens first (no I/O), then metadata: from the share's index rows where
+  // it has them, Drive only for the rest and 20 at a time. One uncached Drive
+  // call per file, in series, made a 400-photo zip take half a minute.
+  const picked = [];
   for (const item of requested) {
     const token = downloadTokenFrom(item?.dl || item?.token);
     const parsed = await verifyShareToken(env, token, "dl", { allowExpired: true });
     if (!parsed || parsed.slug !== share.slug) return json({ error: "invalid file selection" }, 403);
-    const meta = await driveFileMeta(env, parsed.fileId);
+    picked.push({ item, parsed });
+  }
+  const rows = new Map((await loadFiles(env, share.slug).catch(() => [])).map((f) => [f.id, f]));
+  const metas = new Map();
+  for (const [id, f] of rows) metas.set(id, { id, name: f.n, size: f.s, mimeType: f.m, rev: f.r });
+  const missing = [...new Set(picked.map((p) => p.parsed.fileId).filter((id) => !metas.has(id)))];
+  for (let i = 0; i < missing.length; i += 20) {
+    await Promise.all(missing.slice(i, i + 20).map(async (id) => {
+      const meta = await driveFileMetaCached(env, id);
+      if (meta?.id) metas.set(id, { ...meta, rev: mediaRev(meta) });
+    }));
+  }
+  for (const { item, parsed } of picked) {
+    const meta = metas.get(parsed.fileId);
     if (!meta?.id) return json({ error: "selected file was not found" }, 404);
     const safety = publicDownloadSafety(meta);
     if (safety.blocked) {
@@ -47,7 +65,7 @@ export async function createShareZipTicket(request, env) {
     }
     const preview = previews.files[parsed.fileId];
     // The WebP preview lives in Drive (`d`); older ones may still be in R2.
-    const usePreview = smaller && preview && !preview.skip && preview.r === mediaRev(meta) && (preview.d || env.MEDIA_BUCKET);
+    const usePreview = smaller && preview && !preview.skip && preview.r === meta.rev && (preview.d || env.MEDIA_BUCKET);
     files.push({
       fileId: parsed.fileId,
       name: sanitizeFilename(usePreview ? (meta.name || `${parsed.fileId}`).replace(/\.[^.]+$/, "") + ".webp" : meta.name || item?.name || `${parsed.fileId}.bin`),
