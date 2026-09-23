@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Pipelines lists transcoder runs however busy CI is
+
+The Pipelines tab read the repository's last 20 Actions runs and kept the
+transcoder ones. On a day of PR pushes, CI, review and Skylos runs filled
+those 20, so a running preview or video job was missing: no "Running now",
+no Cancel button. It now asks for the last 5 runs of each transcoder workflow
+(three requests, same timeout) and merges them.
+
 ## 2026-09-23 — The Overview shows the share side too
 
 The landing tab's stat cards covered drop links only, so checking how a

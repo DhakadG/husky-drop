@@ -35,10 +35,13 @@ async function gh(env, path, init = {}) {
 }
 
 // Recent runs of the three workflows, active ones with their per-shard jobs.
+// Asked per workflow: the repo-wide list filled up with CI and review runs on
+// busy days and hid an in-progress transcoder run (and its Cancel button).
 async function githubRuns(env) {
-  const list = await gh(env, "runs?per_page=20");
+  const lists = await Promise.all(Object.keys(WORKFLOWS).map((file) => gh(env, `workflows/${file}/runs?per_page=5`)));
+  const runs = lists.flatMap((l) => l?.workflow_runs || []).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const out = [];
-  for (const run of list?.workflow_runs || []) {
+  for (const run of runs) {
     const kind = WORKFLOWS[String(run.path || "").split("/").pop()];
     if (!kind) continue;
     const row = { kind, id: run.id, status: run.status, conclusion: run.conclusion, event: run.event, startedAt: Date.parse(run.run_started_at || run.created_at) || 0, updatedAt: Date.parse(run.updated_at) || 0, url: run.html_url, jobs: [] };
