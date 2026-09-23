@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import worker from "../src/worker.js";
+import { signShareToken } from "../src/share-token.js";
 
 // Background relays (ctx.waitUntil paths) swallow exceptions into
 // console.error, so a missing import there never fails a request. Collect
@@ -186,6 +187,13 @@ async function withMockedGoogleDrive(fn) {
       mimeType: "application/x-msdownload",
       modifiedTime: "2026-07-04T00:00:00.000Z",
     },
+    "file-svg": {
+      id: "file-svg",
+      name: "evil.svg",
+      size: "40",
+      mimeType: "image/svg+xml",
+      modifiedTime: "2026-07-07T00:00:00.000Z",
+    },
     "nested-folder": {
       id: "nested-folder",
       name: "Nested",
@@ -215,6 +223,7 @@ async function withMockedGoogleDrive(fn) {
     "file-video": new TextEncoder().encode("VIDEO!"),
     "file-mov": new TextEncoder().encode("MOV!!"),
     "file-exe": new TextEncoder().encode("EXE!!!!!"),
+    "file-svg": new TextEncoder().encode("<svg onload='alert(document.cookie)'/>"),
     "file-nested": new TextEncoder().encode("NESTED!!!!!"),
     "file-raw": new TextEncoder().encode("RAWRAWRAWRAWRAWRAWRA"),
   };
@@ -1321,6 +1330,13 @@ async function main() {
     assert.equal(blockedExe.downloadBlocked, true, "risky executable is flagged in public share listings");
     res = await worker.fetch(request(blockedExe.dl), driveEnv);
     assert.equal(res.status, 451, "risky executable public download is blocked");
+    res = await worker.fetch(request(`${blockedExe.dl}?inline=1`), driveEnv);
+    assert.equal(res.status, 451, "?inline=1 cannot bypass the public-download safety list");
+    const svgToken = await signShareToken(driveEnv, "dl", "drive-share", "file-svg");
+    res = await worker.fetch(request(`/api/share/dl/${svgToken}?inline=1`), driveEnv);
+    assert.equal(res.status, 200, "an SVG still downloads");
+    assert.match(res.headers.get("content-disposition") || "", /^attachment/, "an uploaded SVG is never rendered inline on the app origin");
+    assert.match(res.headers.get("content-security-policy") || "", /sandbox/, "file bytes are served under a sandbox CSP");
 
     const firstDl = listed.folders[0].files[0].dl;
     res = await worker.fetch(request(`${firstDl}?inline=1`), driveEnv, { waitUntil: (promise) => promise });

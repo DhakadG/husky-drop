@@ -193,6 +193,13 @@ export async function shareFileInfo(request, env) {
 // Drive again. Larger files always stream straight through (uncached).
 const EDGE_CACHEABLE_BYTES = 100 * 1024 * 1024;
 
+// Only media the lightbox and <video> actually render may be served inline.
+// Anything else from Drive (HTML, SVG, XML, scripts) would execute on this
+// origin with the admin's cookies in scope, so it always goes out as an
+// attachment, sandboxed, and through the public-download safety list.
+const INLINE_SAFE = /^(image\/(jpeg|png|gif|webp|avif|bmp|heic|heif|tiff)|video\/|audio\/)/i;
+export const inlineAllowed = (mime) => INLINE_SAFE.test(String(mime || ""));
+
 function shareThumbnailHeaders(source, tier, browserCache = true) {
   const headers = new Headers({
     "content-type": source.get("content-type") || "image/jpeg",
@@ -255,7 +262,7 @@ export async function shareDownload(request, env, token, ctx) {
   const meta = await driveFileMetaCached(env, parsed.fileId);
   if (!meta?.id) return json({ error: "file not found" }, 404);
   // ?inline=1 serves the file for in-page viewing (lightbox images, <video>).
-  const inline = new URL(request.url).searchParams.get("inline") === "1";
+  const inline = new URL(request.url).searchParams.get("inline") === "1" && inlineAllowed(meta.mimeType);
   const method = request.method.toUpperCase();
   const bytes = Number(meta.size) || 0;
   const safety = publicDownloadSafety(meta);
@@ -360,6 +367,7 @@ function shareMediaHeaders(meta, inline, etag, lastModified) {
     "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name || "file")}`,
     "cache-control": inline ? "public, max-age=86400" : "private, no-store",
     "x-content-type-options": "nosniff",
+    "content-security-policy": "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
     "x-robots-tag": "noindex, nofollow, noarchive",
     "accept-ranges": "bytes",
     "x-husky-asset-tier": inline ? "full" : "download",

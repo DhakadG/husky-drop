@@ -4,6 +4,23 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Uploaded HTML/SVG no longer renders on the app origin
+
+The deep review found that `/api/share/dl/<token>?inline=1` served any Drive
+file with its own MIME type, inline, and without a CSP (API responses never
+got `SECURITY_HEADERS`). An `.svg` or `.html` dropped through a drop link and
+then shared - the "share this drop's folder" flow does that in one click -
+became script running on `dropbox.losthusky.qzz.io`, where the admin's session
+cookie is in scope. The same parameter also skipped the public-download safety
+list, so `setup.exe?inline=1` downloaded anyway.
+
+Inline is now honoured only for image, video and audio types (the only things
+the lightbox and `<video>` render); everything else goes out as an attachment
+and through the safety list. Every file response carries a `sandbox` CSP as a
+second layer. `smoke-test.mjs` covers both: an SVG must come back as an
+attachment under a sandbox CSP, and a blocked `.exe` must stay 451 with
+`?inline=1`.
+
 ## 2026-09-23 — Whole-file and whole-surface review pass (PR #107)
 
 Every review tool pointed at this repo reads a diff. Nothing read the code that
