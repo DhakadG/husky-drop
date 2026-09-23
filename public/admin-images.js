@@ -232,7 +232,7 @@ async function loadSources() {
     const links = (known.links || []).map((l) => opt(l.folder.id, l.folder.name, l.label));
     $("ia-known").innerHTML = `<option value="">Choose a share or drop-link folder…</option>${shares.length ? `<optgroup label="Share folders">${shares.join("")}</optgroup>` : ""}${links.length ? `<optgroup label="Drop-link folders">${links.join("")}</optgroup>` : ""}`;
   } catch {}
-  initRules({ roots, cfg, options, known: () => known, getEvery: () => every, setEvery: (v) => (every = v), renderRoots, refresh: refreshImages });
+  initRules({ roots, cfg, options, excluded, known: () => known, getEvery: () => every, setEvery: (v) => (every = v), renderRoots, refresh: refreshImages });
   loadRules();
 }
 function renderRecent() {
@@ -270,7 +270,9 @@ async function doScan(button) {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || `scan ${r.status}`);
     scan = { ...d, doneSet: new Set(d.doneBefore) };
-    excluded.clear();
+    // Keep exclusions that still name a scanned folder (a loaded rule's, or a re-scan's).
+    const scanned = new Set(d.folders.map((f) => f.id));
+    for (const id of [...excluded]) if (!scanned.has(id)) excluded.delete(id);
   } catch (error) {
     $("ia-tree").innerHTML = `<p class="muted">${icon("circle-alert", "ico-sm")} ${esc(error.message)}</p>`;
   } finally {

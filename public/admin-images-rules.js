@@ -42,11 +42,11 @@ export async function saveRule(button) {
 export async function ruleAction(button, id, action) {
   const rule = rules.find((r) => r.id === id);
   if (!rule) return;
-  const { roots, cfg, known, setEvery, renderRoots, refresh } = deps;
+  const { roots, cfg, known, setEvery, renderRoots, refresh, excluded } = deps;
   button.disabled = true;
   let r;
   if (action === "run") r = await post(`/api/admin/images/rules/${encodeURIComponent(id)}/run`);
-  else if (action === "toggle") r = await post("/api/admin/images/rules", { ...rule, enabled: !rule.enabled, confirm: "REPLACE" });
+  else if (action === "toggle") r = await post("/api/admin/images/rules", { id: rule.id, enabled: !rule.enabled });
   else if (action === "delete") {
     if (!confirm(`Delete rule "${rule.name}"?`)) return (button.disabled = false);
     r = await fetch(`/api/admin/images/rules/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -57,9 +57,13 @@ export async function ruleAction(button, id, action) {
     roots.clear();
     for (const fid of o.folderIds) roots.set(fid, all.find((f) => f.id === fid)?.name || fid);
     Object.assign(cfg, { maxMp: o.maxMp, quality: o.quality, format: o.format, metadata: o.metadata, mode: o.mode, onlyIfSmaller: o.onlyIfSmaller, minMb: o.minBytes / 1024 / 1024, targetMb: o.targetBytes / 1024 / 1024, skipRecentDays: o.skipRecentDays, skipSidecar: o.skipSidecar, largestFirst: o.largestFirst, parallel: o.parallel || 4, types: new Set(o.types) });
+    cfg.exclude = cfg.excludeRe = o.excludeRe || "";
+    if ($("ia-exclude")) $("ia-exclude").value = cfg.exclude;
     setEvery(rule.every);
     $("ia-rule-name").value = rule.name;
     renderRoots();
+    // renderRoots clears folder exclusions; the next scan keeps these.
+    for (const id of o.excludeFolderIds || []) excluded.add(id);
     button.disabled = false;
     return flash(button, "loaded - scan to see it");
   }

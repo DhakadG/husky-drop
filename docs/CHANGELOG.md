@@ -4,6 +4,21 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Pausing an image rule no longer changes what it does
+
+The rule's pause/enable button re-posted the whole stored rule. Stored options
+keep the name-exclusion regex under `excludeRe`, but `normalizeOptions` only
+read `exclude`, so every toggle erased the regex - the next nightly run then
+re-encoded (and in archive/replace mode moved or overwrote) exactly the files
+the admin had excluded. The toggle also sent `confirm: "REPLACE"` for the
+admin.
+
+Now a POST with an existing rule id and no `options` only flips state; the
+recipe is never re-normalised, and a replace rule can be paused without a
+confirmation. `normalizeOptions` also accepts `excludeRe`, and "load recipe"
+restores the regex and the unticked folders. `scripts/image-rules-test.mjs`
+covers toggle and re-save.
+
 ## 2026-09-23 — Fingerprint bans actually block
 
 `adminBans` lowercased every value before storing it, but Fingerprint Pro

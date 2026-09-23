@@ -28,12 +28,24 @@ export async function listImageRules(env) {
 
 export async function upsertImageRule(request, env, ctx) {
   const b = await request.json().catch(() => ({}));
-  const options = normalizeOptions(b.options || {});
-  if (!options.folderIds.length) return json({ error: "a rule needs at least one folder" }, 400);
-  if (options.mode === "replace" && b.confirm !== "REPLACE") return json({ error: "type REPLACE to save a rule that overwrites originals" }, 400);
   const rules = await loadRules(env);
   const id = cleanText(b.id || "", 40) || `rule-${Date.now().toString(36)}`;
   const existing = rules.find((r) => r.id === id);
+  // Pause / enable: no options in the body means "change state only". The
+  // stored options stay exactly as saved (and a replace rule needs no fresh
+  // REPLACE confirmation just to be paused).
+  if (existing && !("options" in b)) {
+    if ("enabled" in b) existing.enabled = b.enabled !== false;
+    if ("notify" in b) existing.notify = b.notify !== false;
+    if (EVERY[b.every]) existing.every = b.every;
+    if (b.name) existing.name = cleanText(b.name, 80);
+    await saveRules(env, rules);
+    appLog(env, ctx, { area: "rules", message: `${existing.enabled ? "enabled" : "paused"} rule "${existing.name}"` });
+    return json({ ok: true, rule: existing });
+  }
+  const options = normalizeOptions(b.options || {});
+  if (!options.folderIds.length) return json({ error: "a rule needs at least one folder" }, 400);
+  if (options.mode === "replace" && b.confirm !== "REPLACE") return json({ error: "type REPLACE to save a rule that overwrites originals" }, 400);
   const rule = {
     ...(existing || { createdAt: Date.now() }),
     id,
