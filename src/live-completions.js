@@ -73,28 +73,30 @@ export class CompletionQueue {
   }
 
   async flushOne(slug, pend) {
-    this.analytics.recordCompleted(slug, pend.recents);
     const existing = (await this.env.KV.get(`recent:${slug}`, "json")) || [];
     const existingIds = new Set(existing.map(fileKey));
 
     // Stats counters only ever move for files we have never recorded, so a
     // retried/re-synced completion refreshes the history without inflating
-    // the totals. Drive remains the source of truth for the full archive.
+    // the totals. "Recorded" is the DO's completed_files index (every file,
+    // not just the capped recent list) plus the recent rows from before it.
     let newFiles = 0;
     let newBytes = 0;
     const newMetas = [];
     for (const m of pend.recents) {
       const id = fileKey(m);
-      if (existingIds.has(id)) continue;
+      if (existingIds.has(id) || this.analytics.hasCompleted(slug, id)) continue;
       existingIds.add(id);
       newFiles++;
       newBytes += m.s;
       newMetas.push(m);
     }
 
-    await this.env.KV.put(`recent:${slug}`, JSON.stringify(mergeRecent(existing, pend.recents)));
-    if (newFiles === 0) return;
-
+    // Counters, day rollup and events first; only then are the files marked
+    // recorded and the recent list written. A failed stats write leaves the
+    // batch "new" for the retry, and a failed recent write can no longer
+    // make the retry skip the counters.
+    if (newFiles === 0) return this.markRecorded(slug, pend, existing);
     const stats = normalizeStats(await this.env.KV.get(`stats:${slug}`, "json"));
     stats.files += newFiles;
     stats.bytes += newBytes;
@@ -129,5 +131,11 @@ export class CompletionQueue {
         ),
       );
     }
+    await this.markRecorded(slug, pend, existing);
+  }
+
+  async markRecorded(slug, pend, existing) {
+    this.analytics.recordCompleted(slug, pend.recents);
+    await this.env.KV.put(`recent:${slug}`, JSON.stringify(mergeRecent(existing, pend.recents)));
   }
 }
