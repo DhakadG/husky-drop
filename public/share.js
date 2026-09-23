@@ -93,7 +93,9 @@ const moreObserver =
     ? new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
-            if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder);
+            // Speculative: a failure here only means the click fetches again
+            // (and shows "Could not load" if it fails too).
+            if (entry.isIntersecting && entry.target._folder) prefetchMore(entry.target._folder).catch(() => {});
           }
         },
         { rootMargin: "700px" },
@@ -241,9 +243,13 @@ async function verifyPinValue(candidate, silent = false) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ slug, pin: candidate }),
-  });
-  if (r.ok) return true;
+  }).catch(() => null);
+  if (r?.ok) return true;
   if (silent) return false;
+  if (!r) {
+    $("gate-err").textContent = "Can't reach the server. Check your connection and try again.";
+    return false;
+  }
   const d = await r.json().catch(() => ({}));
   if (r.status === 401 && d.authRequired) {
     $("gate-err").textContent = "Please sign in with Google first.";
@@ -268,9 +274,9 @@ async function doRedirect() {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ slug, pin }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.urls?.length) {
+  }).catch(() => null);
+  const d = r ? await r.json().catch(() => ({})) : { error: "Can't reach the server. Check your connection and reload." };
+  if (!r?.ok || !d.urls?.length) {
     $("redirect-label").textContent = d.error || "Could not open this share.";
     return;
   }
@@ -1311,7 +1317,8 @@ export function card(file) {
   });
   fig.addEventListener("click", () => {
     if (selected.size) return toggleSelect(file, fig);
-    if (file._lbIndex != null) openViewer(file._lbIndex, fig);
+    // The viewer module loads on first use; on a dropped connection say so.
+    if (file._lbIndex != null) openViewer(file._lbIndex, fig).catch(() => toast("Could not open the viewer", "Check your connection and try again.", "err"));
     else downloadFile(file);
   });
   installTouchSelection(fig, file);

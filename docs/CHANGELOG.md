@@ -4,6 +4,21 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — A dropped connection is no longer a "client error" alert
+
+A guest on mobile data in Jaipur triggered an alert e-mail:
+`unhandledrejection Failed to fetch` from `fetchMorePage`. The gallery
+prefetches the next page when "Load next" scrolls into view, and nothing
+handled a failed request, so a network blip became an unhandled rejection.
+That call now swallows the failure (the click fetches again and shows "Could
+not load. Try again" if it fails too). A sweep of the guest pages for
+promises nobody awaited or caught found three more that threw on a network
+drop with no message: the share PIN check, redirect-mode shares and opening
+the viewer (its module loads on first use). Each now tells the guest to
+check their connection. As a safety net, the client-error endpoint logs a
+pure network failure ("Failed to fetch", "Load failed", "NetworkError...")
+as a warning without an alert e-mail; real crashes still mail.
+
 ## 2026-09-23 — The viewer keeps going past the loaded page
 
 The viewer only knew the files already paged into the gallery, so in a
