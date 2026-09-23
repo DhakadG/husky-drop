@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Uploads that die mid-way stay visible on the Live tab
+
+When an uploader's tab crashed or lost the network, the session turned
+"stale" and the Live tab, which listed only `uploading` sessions, dropped it
+at once. Two minutes later the tracker pruned it, leaving no trace. The one
+upload the admin most needed to see was the one that disappeared. Stale and
+failed sessions now stay in the list with a "disconnected" or "error" pill,
+while the badge and metrics still count only live transfers. When the
+tracker prunes an unfinished session, it goes into "Finished this hour" as
+"stopped · X of Y files". `scripts/live-dismiss-test.mjs` covers the prune.
+
 ## 2026-09-23 — The image runner never re-encodes a file after a lost report
 
 When a batch report failed three times, the runner went on to fetch the next
