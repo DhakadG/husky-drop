@@ -20,7 +20,7 @@ import { Analytics } from "./live-analytics.js";
 import { DigestQueue } from "./live-digest.js";
 import { CompletionQueue } from "./live-completions.js";
 import { LOG_SCHEMA } from "./applog.js";
-import { IDENTITY_SCHEMA, identityMap, rememberIdentity } from "./people.js";
+import { IDENTITY_SCHEMA, identityMap, personKey, rememberIdentity } from "./people.js";
 import { SESSION_SCHEMA } from "./identity.js";
 import { SUGGESTION_SCHEMA } from "./stitch.js";
 import { diagnosticsRoute } from "./live-diagnostics.js";
@@ -116,7 +116,14 @@ export class LiveTracker {
     } catch {
       return events;
     }
-    return events.map((e) => (e && !e.e && e.d && ids.get(e.d) ? { ...e, e: ids.get(e.d).email, ei: 1 } : e));
+    // `k` is the person key the People tab uses (merges and aliases applied),
+    // so an Activity card's "profile" finds the same person.
+    return events.map((e) => {
+      if (!e) return e;
+      const out = !e.e && e.d && ids.get(e.d) ? { ...e, e: ids.get(e.d).email, ei: 1 } : { ...e };
+      out.k = personKey(e, ids);
+      return out;
+    });
   }
 
   adminSockets() {
