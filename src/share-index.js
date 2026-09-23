@@ -163,6 +163,7 @@ export async function runShareIndexChunk(env, ctx, jobId, request) {
   try {
     const { pointer, folders } = await loadStats(env, job.slug);
     const state = { folders: folders || {}, files: await loadFiles(env, job.slug) };
+    dropRemovedRoots(state, share.folderIds || []);
     // Changes folded into a running job (change feed while it walks or
     // warms) are applied whatever phase it is in; a folder they add is
     // queued and walked before the job may complete.
@@ -258,6 +259,20 @@ async function walkChunk(env, cur, state, budget) {
     cur.phase = "warm";
     cur.warmAt = 0;
   }
+}
+
+// A folder taken out of the share keeps root: true from earlier walks, so
+// nothing would ever prune it; its files kept feeding the preview runners and
+// kept its media out of the orphan sweep.
+export function dropRemovedRoots(state, folderIds) {
+  let dropped = false;
+  for (const [id, folder] of Object.entries(state.folders)) {
+    if (folder.root && !folderIds.includes(id)) {
+      folder.root = false;
+      dropped = true;
+    }
+  }
+  if (dropped) pruneUnreachable(state);
 }
 
 // Folders that no root reaches any more (moved out, trashed) are dropped
