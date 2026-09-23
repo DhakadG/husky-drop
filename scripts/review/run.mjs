@@ -212,7 +212,9 @@ for (const target of mine) {
     const parts = [...(target.files || []), ...(target.html || [])].filter((f) => fs.existsSync(path.join(root, f)));
     const bodies = parts.map((f) => `\n\n===== ${f} =====\n${numbered(fs.readFileSync(path.join(root, f), "utf8"))}`).join("");
     if (bodies.length > MAX_BYTES * 4) console.warn(`! ${target.key}: ${bodies.length} chars, this will be an expensive call`);
-    fingerprint = sha(bodies);
+    // Same fingerprint as queue.mjs and mark.mjs (raw files joined by "\n",
+    // before numbering), or a surface marked by one is re-reviewed by the other.
+    fingerprint = sha(parts.map((f) => fs.readFileSync(path.join(root, f), "utf8")).join("\n"));
     prompt = surfaceReviewPrompt({ title: target.title, what: target.what, api: target.api || [], files: bodies, context: repoContext() });
   } else {
     const stat = fs.statSync(path.join(root, target.key));
