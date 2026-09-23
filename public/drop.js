@@ -486,7 +486,15 @@ export function addFiles(files) {
   hideResumeBanner();
 }
 
+// The server answers for at most 500 files per call; a dropped folder can be
+// thousands, so ask in batches and apply each answer as it arrives.
 async function preflight(items) {
+  let dupes = 0;
+  for (let i = 0; i < items.length; i += 500) dupes += (await preflightBatch(items.slice(i, i + 500))) || 0;
+  if (dupes) toast(`${dupes} file${dupes === 1 ? "" : "s"} already in Drive`, "Skipped - tap retry on a row to upload it anyway.", "warn");
+}
+
+async function preflightBatch(items) {
   if (!items.length) return;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 6000);
@@ -509,7 +517,7 @@ async function preflight(items) {
       window.dropTrekker?.track("upload_skipped_duplicate", item.file.name, { size: item.file.size, fileId: res.fileId || "", uploadSessionId: sessionId });
       dupes++;
     });
-    if (dupes) toast(`${dupes} file${dupes === 1 ? "" : "s"} already in Drive`, "Skipped - tap retry on a row to upload it anyway.", "warn");
+    return dupes;
   } catch {
     // Preflight is advisory; a failure means "treat everything as new".
   } finally {

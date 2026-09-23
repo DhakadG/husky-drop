@@ -432,13 +432,23 @@ export async function preflightFiles(request, env) {
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key).push(u);
   }
-  const results = files.map((f) => {
-    const name = sanitizeFilename(String(f?.name || ""));
-    const size = Number(f?.size) || 0;
-    const lm = Number(f?.lastModified) || 0;
+  const clean = files.map((f) => ({ name: sanitizeFilename(String(f?.name || "")), size: Number(f?.size) || 0, lastModified: Number(f?.lastModified) || 0 }));
+  // The DO index knows every completion ever verified for this link; the KV
+  // rows cover links that finished before the index existed.
+  let indexed = null;
+  if (env.LIVE_TRACKER) {
+    indexed = await liveStub(env)
+      .fetch("https://live.internal/preflight", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug: link.slug, files: clean }) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.matches || null)
+      .catch(() => null);
+  }
+  const results = clean.map(({ name, size, lastModified: lm }, i) => {
     const candidates = byKey.get(`${name}|${size}`) || [];
     const match = candidates.find((u) => !u.lm || !lm || u.lm === lm);
-    return match ? { status: "duplicate", fileId: match.f || "", at: match.at, uploader: match.u } : { status: "new" };
+    if (match) return { status: "duplicate", fileId: match.f || "", at: match.at, uploader: match.u };
+    const hit = indexed?.[i];
+    return hit ? { status: "duplicate", fileId: hit.fileId, at: hit.at } : { status: "new" };
   });
   return json({ ok: true, results, known: known.length });
 }

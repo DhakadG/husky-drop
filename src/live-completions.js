@@ -73,6 +73,7 @@ export class CompletionQueue {
   }
 
   async flushOne(slug, pend) {
+    this.analytics.recordCompleted(slug, pend.recents);
     const existing = (await this.env.KV.get(`recent:${slug}`, "json")) || [];
     const existingIds = new Set(existing.map(fileKey));
 

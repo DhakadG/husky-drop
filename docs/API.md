@@ -12,7 +12,9 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 >   limited 5/min/IP via the Durable Object; logged as `clienterror` events.
 > - `POST /api/preflight` `{linkId, pin, files:[{name,size,lastModified}]}` -
 >   per file `{status:"new"|"duplicate", fileId?, at?, uploader?}` against the
->   drop's completed uploads (name + size, + lastModified when recorded).
+>   drop's completed uploads (name + size, + lastModified when recorded). At
+>   most 500 files per call (the client batches); matched against every
+>   verified completion in the Durable Object's index, plus the recent KV rows.
 > - `GET /api/share/meta/:slug` - public share-link metadata (no folder IDs).
 > - `POST /api/share/verify` `{slug, pin}` - share PIN gate (same lockouts).
 > - `POST /api/share/opened` `{slug}` - share open counter (DO-batched).
