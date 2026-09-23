@@ -4,6 +4,19 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Parallel image-preview uploads keep their Drive ids
+
+`putSharePreview` uploaded each WebP to Drive and then read-modify-wrote the
+base `share-previews:index` KV key. Eight shards PUT at once, so concurrent
+PUTs overwrote each other and some files lost their `d` Drive id: those
+previews 404'd until a later run re-made them, each loss orphaned a WebP in
+`_share_previews`, and bursts hit the one-write-per-second KV limit. The
+index write now goes through the LiveTracker Durable Object like the video
+reports (#126): PUTs are applied one batch at a time, a burst becomes one KV
+write, and a replaced WebP is trashed after the write.
+`scripts/share-preview-put-test.mjs` sends 16 concurrent PUTs through a slow
+KV stub.
+
 ## 2026-09-23 — Parallel video runner reports no longer overwrite each other
 
 Every video runner shard (up to 20 per run) posts batch reports to

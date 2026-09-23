@@ -15,6 +15,7 @@ import { mediaSig } from "./share-token.js";
 import { getAllShares } from "./share-admin.js";
 import { loadFiles } from "./share-index.js";
 import { appLog } from "./applog.js";
+import { liveStub } from "./store.js";
 
 const INDEX_KEY = "share-previews:index";
 // KV has no compare-and-set, and a run reports from eight shards at once. A
@@ -180,12 +181,28 @@ export async function putSharePreview(request, env, fileId) {
     return json({ error: String(e.message || e) }, 502);
   }
   if (!created?.id) return json({ error: "Drive upload failed" }, 502);
-  const index = await sharePreviewIndex(env);
-  const prev = index.files[id];
-  if (prev?.d && prev.d !== created.id) await driveTrashFile(env, prev.d).catch(() => {});
-  index.files[id] = { ...(prev || {}), r: rev, s: body.byteLength, at: Date.now(), d: created.id };
-  await saveIndex(env, index);
+  // Eight shards PUT at once and KV has no compare-and-set: writing the base
+  // index from here lost other PUTs' Drive ids. The Durable Object applies
+  // them one batch at a time instead (see applyPreviewReports).
+  const put = { id, r: rev, s: body.byteLength, d: created.id };
+  if (env.LIVE_TRACKER) {
+    const r = await liveStub(env).fetch("https://live.internal/share-preview-put", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(put) });
+    if (!r.ok) return json({ error: "index update failed" }, 502);
+  } else await applySharePreviewPuts(env, [put]);
   return json({ ok: true, bytes: body.byteLength, driveId: created.id }, 201);
+}
+
+export async function applySharePreviewPuts(env, puts) {
+  const index = await sharePreviewIndex(env);
+  const replaced = [];
+  for (const { id, r, s, d } of puts) {
+    const prev = index.files[id];
+    if (prev?.d && prev.d !== d) replaced.push(prev.d);
+    index.files[id] = { ...(prev || {}), r, s, at: Date.now(), d };
+  }
+  await saveIndex(env, index);
+  await Promise.all(replaced.map((d) => driveTrashFile(env, d).catch(() => {})));
+  return { ok: true };
 }
 
 // Batch report: {runId, done:[{id, rev, name, size, ms, via, w, h}],
