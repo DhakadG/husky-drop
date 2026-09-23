@@ -311,7 +311,7 @@ async function api(request, env, url, ctx) {
     if (m === "POST" && p === "/api/admin/pipelines/cancel") return cancelPipelineRun(request, env);
     if (m === "POST" && p === "/api/admin/share-index/thumbs-report") return reportShareThumbs(request, env);
     if (m === "PATCH" && p.startsWith("/api/admin/shares/")) {
-      return patchShare(request, env, p.slice("/api/admin/shares/".length));
+      return patchShare(request, env, p.slice("/api/admin/shares/".length), ctx);
     }
     if (m === "DELETE" && p.startsWith("/api/admin/shares/")) {
       return deleteShare(request, env, p.slice("/api/admin/shares/".length));

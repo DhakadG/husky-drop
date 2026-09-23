@@ -170,7 +170,7 @@ export async function createShareRecord(env, ctx, request, b) {
   return { share };
 }
 
-export async function patchShare(request, env, slug) {
+export async function patchShare(request, env, slug, ctx) {
   const share = await env.KV.get(`share:${slug}`, "json");
   if (!share) return json({ error: "share not found" }, 404);
   const b = await request.json().catch(() => ({}));
@@ -233,6 +233,11 @@ export async function patchShare(request, env, slug) {
   }
   await env.KV.put(`share:${slug}`, JSON.stringify(share));
   await logEvent(env, { type: "shareedit", slug, label: share.label }, request);
+  // New folders need counts, covers and warm previews now, not at the nightly run.
+  if (destinationChanged && share.mode === "gallery" && env.MEDIA_BUCKET && env.GOOGLE_CLIENT_ID) {
+    const { job, started } = await planShareIndex(env, ctx, share, { trigger: "edit" });
+    if (started && job) ctx?.waitUntil?.(runShareIndexChunk(env, ctx, job.id, request));
+  }
   return json(adminShare(share, await env.KV.get(`sstats:${slug}`, "json")));
 }
 
