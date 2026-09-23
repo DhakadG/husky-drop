@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Folders removed from a share leave its index
+
+The share index marks each share folder `root: true`, and pruning only
+drops folders no root reaches. A folder taken out of a share kept its root
+flag from earlier walks, so it and its files stayed in
+`stats/<slug>.files.json` for good: the preview and thumbnail runners kept
+working on it, its R2 media stayed out of the orphan sweep, and the change
+feed still counted its ids as known. Every index chunk now clears `root` on
+folders that are no longer in `share.folderIds` and prunes what that
+orphans. `scripts/share-roots-test.mjs` covers it.
+
 ## 2026-09-23 — Parallel image-preview uploads keep their Drive ids
 
 `putSharePreview` uploaded each WebP to Drive and then read-modify-wrote the
