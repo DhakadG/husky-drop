@@ -1234,6 +1234,8 @@ async function main() {
     assert.ok(pipes.shareThumbs.runs[0].finishedAt, "and the run closes when every shard finished");
     assert.equal(pipes.orphans.removed, 1, "the last orphan sweep is remembered");
     assert.equal(pipes.sharePreviews.pending, 1, "pending previews are counted from the index");
+    const statsPointer = await driveEnv.KV.get("share-stats:drive-share", "json");
+    assert.deepEqual(statsPointer.wants, [["file-raw", "abcdef0123456789"]], "the pointer carries what the poll counts, so files.json is not read");
     res = await worker.fetch(request("/api/admin/pipelines"), driveEnv);
     assert.equal(res.status, 401, "pipelines needs admin");
 

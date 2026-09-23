@@ -77,7 +77,17 @@ export async function pipelinesOverview(env) {
     if (active) cursor = await env.MEDIA_BUCKET?.get(`stats/${share.slug}.job.json`).then((o) => (o ? o.json() : null)).catch(() => null);
     const last = indexJobs.find((j) => j.slug === share.slug && j.status !== "running") || null;
     let files = 0;
-    if (pointer?.r2Key && shareState(share) === "active") {
+    if (pointer?.r2Key && shareState(share) === "active" && Array.isArray(pointer.wants)) {
+      // Polled every 10 s: the pointer carries what is needed, so the (often
+      // multi-megabyte) files.json is not read on every poll.
+      files = pointer.files || 0;
+      totalFiles += files;
+      for (const [id, r] of pointer.wants) {
+        const e = previewsIdx.files[id];
+        if (!e || e.r !== r) pendingPreviews += 1;
+      }
+    } else if (pointer?.r2Key && shareState(share) === "active") {
+      // Pointers written before `wants` existed, until the next index run.
       const rows = await loadFiles(env, share.slug);
       files = rows.length;
       totalFiles += files;
