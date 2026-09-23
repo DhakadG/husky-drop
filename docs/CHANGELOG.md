@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — A failed drop-link save keeps the admin's edits
+
+`saveDetail` wrote "Save failed." and then re-rendered the whole detail view
+from the server, which replaced the message and put every edited field back
+to its old value, so the edits were lost with no visible error. A failed save
+now leaves the form as edited and shows the server's error; a successful one
+re-renders first and then says "Saved.", so the message is not wiped.
+
 ## 2026-09-23 — Inline share requests obey the download safety list
 
 `shareDownload` checked the public-download safety list (executables,

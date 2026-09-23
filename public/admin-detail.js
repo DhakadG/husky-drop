@@ -266,10 +266,17 @@ async function saveDetail(slug, clearPin) {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  });
-  $("detail-msg").textContent = r.ok ? "Saved." : "Save failed.";
+  }).catch(() => null);
+  // A failed save keeps the form as edited: re-rendering it put every field
+  // back to the server value and wiped the error with it.
+  if (!r?.ok) {
+    const d = await r?.json().catch(() => ({}));
+    $("detail-msg").textContent = `Save failed: ${d?.error || (r ? `HTTP ${r.status}` : "network error")}. Your changes are still in the form.`;
+    return;
+  }
   refreshAll();
-  refreshDetail(slug, false);
+  await refreshDetail(slug, false);
+  $("detail-msg").textContent = "Saved.";
 }
 
 function uploadRow(u) {
