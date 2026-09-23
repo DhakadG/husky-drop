@@ -1237,7 +1237,9 @@ async function main() {
     for (const shard of [0, 1, 2, 3]) {
       assert.equal(compacted.files[`shard-file-${shard}`].r, `rev${shard}`, `shard ${shard} survived compaction`);
     }
-    assert.equal((await driveEnv.KV.list({ prefix: "share-previews:delta:" })).keys.length, 0, "compaction clears the deltas");
+    // Deltas are left to expire rather than deleted: deleting them races with
+    // a shard writing one, and re-merging a folded delta changes nothing.
+    assert.ok((await driveEnv.KV.list({ prefix: "share-previews:delta:" })).keys.length > 0, "deltas survive compaction and expire on their own");
     assert.ok(compacted.files["file-raw"].d || compacted.files["file-raw"].r, "the Drive id recorded at upload is not clobbered by the run report");
     const secondPage = await (await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderIndex: 0, pageToken: listed.folders[0].nextPageToken }), driveEnv)).json();
     res = await worker.fetch(publicJsonRequest("/api/share/list", { slug: "drive-share", pin: "2468", folderToken: secondPage.folders[0].subfolders[0].ls }), driveEnv);

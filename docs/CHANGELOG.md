@@ -21,6 +21,13 @@ wrote last erased what the other seven had recorded.
   only affected what the Pipelines tab displayed, and is fixed alongside.
 - `smoke-test.mjs` reports from four shards at once and fails if any of them
   is lost.
+- Follow-up: compaction no longer deletes the deltas. Deleting raced with a
+  shard writing one between the read and the delete, which cost exactly one
+  file (`KAR00355.ARW`) on the first night. They carry a three-day TTL and
+  expire on their own; re-merging a delta already in the base changes nothing.
+
+Backlog after the fix: 149 pending → 1, in a single run that reported 1,494
+previews where the previous run had reported 75.
 
 ## 2026-09-23 — CI on every PR, shared loading skeletons (PR #101, #102)
 
