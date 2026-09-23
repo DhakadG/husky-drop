@@ -266,6 +266,12 @@ async function withMockedGoogleDrive(fn) {
     if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/drive/v3/changes")) {
       if (url.pathname.endsWith("/startPageToken")) return new Response(JSON.stringify({ startPageToken: "tok-1" }), { headers: { "content-type": "application/json" } });
       const tokenIn = url.searchParams.get("pageToken");
+      const burst = /^burst-(\d+)$/.exec(tokenIn || "");
+      if (burst) {
+        const n = Number(burst[1]);
+        const page = n < 7 ? { nextPageToken: `burst-${n + 1}`, changes: [{ fileId: `noise-${n}`, file: { id: `noise-${n}`, parents: ["elsewhere"] } }] } : { newStartPageToken: "tok-3", changes: [] };
+        return new Response(JSON.stringify(page), { headers: { "content-type": "application/json" } });
+      }
       const body = tokenIn === "tok-1"
         ? { newStartPageToken: "tok-2", changes: [{ fileId: "file-img", file: { id: "file-img", parents: ["drive-folder"], mimeType: "image/jpeg" } }, { fileId: "unrelated", file: { id: "unrelated", parents: ["elsewhere"] } }] }
         : { newStartPageToken: tokenIn, changes: [] };
@@ -1157,6 +1163,12 @@ async function main() {
     assert.equal(cursor.pageToken, "tok-2", "the change cursor advances to Drive's new start token");
     res = await worker.fetch(jsonRequest("/api/admin/share-index/check-changes", {}), driveEnv);
     assert.equal((await res.json()).changes, 0, "an empty feed touches nothing");
+    // A backlog longer than MAX_CHANGE_PAGES resumes where it stopped.
+    await driveEnv.KV.put("changes:cursor", JSON.stringify({ pageToken: "burst-0", checkedAt: 0 }));
+    const burstRes = await (await worker.fetch(jsonRequest("/api/admin/share-index/check-changes", {}), driveEnv)).text();
+    assert.equal((await driveEnv.KV.get("changes:cursor", "json")).pageToken, "burst-5", `a capped read saves the next page, not the old token (${burstRes})`);
+    await worker.fetch(jsonRequest("/api/admin/share-index/check-changes", {}), driveEnv);
+    assert.equal((await driveEnv.KV.get("changes:cursor", "json")).pageToken, "tok-3", "the next check drains the rest");
 
     // Orphan sweep (spec §1.1): unreferenced media keys go, referenced stay.
     await driveEnv.MEDIA_BUCKET.put("media/file-img/thumb-lo-deadbeef", new Uint8Array([1]), {});
