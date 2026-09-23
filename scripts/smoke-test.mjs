@@ -784,6 +784,18 @@ async function main() {
     env
   );
   assert.equal(res.status, 200, "client errors are accepted");
+  // A dropped connection ("Failed to fetch") is logged as a warning, not an
+  // error alert; a real crash stays an error.
+  {
+    const logged = [];
+    const log = console.log;
+    console.log = (tag, body) => (tag === "applog" ? logged.push(JSON.parse(body)) : log(tag, body));
+    for (const message of ["Failed to fetch", "TypeError: boom"]) {
+      await worker.fetch(request("/api/client-error", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "unhandledrejection", message, url: "/s/album" }) }), env);
+    }
+    console.log = log;
+    assert.deepEqual(logged.filter((e) => e.area === "client").map((e) => e.level), ["warn", "error"], "a network failure is a warning, a crash an error");
+  }
 
   // Events live in one rolling key, never one KV key per event.
   const evKeys = (await env.KV.list({ prefix: "ev:" })).keys;
