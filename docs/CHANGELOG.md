@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The image runner never re-encodes a file after a lost report
+
+When a batch report failed three times, the runner went on to fetch the next
+batch. `/next` works from `job.items`, which the lost report never updated,
+so the same files came back. In Replace mode the recompressed file was encoded
+again from its own lossy copy, adding a second generation of loss; Copy mode
+left a duplicate in `_compressed`; and Archive mode reported the second move
+as a failure. The runner now skips file ids it has already handled in this
+run, and stops ("report failed - resume from the admin") when a batch cannot
+be recorded. The held batch is sent with the stop report.
+
 ## 2026-09-23 — A finished share-index job no longer reverts to "running"
 
 Found while checking #131 in production: job `si-mubu2kqi-6cne6q56` had

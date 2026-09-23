@@ -120,6 +120,10 @@ async function report(extra = {}) {
 const started = Date.now();
 const dir = await mkdtemp(join(tmpdir(), "hd-images-"));
 let processed = 0;
+// A lost report leaves job.items unchanged, so /next hands the same files
+// out again; re-encoding them would stack a second generation of loss on a
+// replaced original or a duplicate copy. Files this run handled are skipped.
+const handled = new Set();
 try {
   for (;;) {
     const first = await api(`/api/admin/images/jobs/${jobId}/next?n=1`);
@@ -147,6 +151,8 @@ try {
       const mine = join(dir, `w${slot}`);
       await mkdir(mine, { recursive: true });
       for (let file = queue.shift(); file; file = queue.shift()) {
+        if (handled.has(file.id)) continue;
+        handled.add(file.id);
         if (Date.now() - started > budgetMs) {
           stop = "time budget reached - resume from the admin to continue";
           return;
@@ -167,7 +173,10 @@ try {
     };
     await Promise.all(Array.from({ length: Math.min(parallel, files.length) }, (_, i) => worker(i)));
     const state = await report();
-    if (stop || (state && state.status !== "running")) {
+    // The batch could not be recorded: stop rather than fetch files the
+    // server still thinks are pending. The held batch goes with "stopped".
+    if (!state) stop = "report failed - resume from the admin to continue";
+    if (stop || state.status !== "running") {
       console.log(stop || `job is ${state.status}; stopping`);
       await report({ stopped: true });
       break;
