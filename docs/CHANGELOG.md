@@ -4,6 +4,23 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Review follow-ups (CodeRabbit on #136, #153, #161)
+
+- Image jobs are idempotent per job on the store side, not only in the
+  runner's memory: a replace-mode PUT for a file this job already replaced is
+  a soft skip ("already replaced by this job"), and copy/archive trash an
+  earlier copy made by this job before storing a new one (previously only on
+  `x-retry`, and across every job). A batch re-sent after a lost response no
+  longer adds items or progress twice.
+- The fullscreen cursor rule uses `auto`: `revert` could inherit `none` from
+  `.pswp` when a video wrapper inside the viewer went fullscreen.
+- A stored share PIN checked while offline now says the server is out of
+  reach instead of showing a bare PIN gate.
+- Opening the viewer calls a failure a connection problem only when the
+  module download failed; anything else goes to the crash reporter.
+- The smoke test now sees the alert e-mails: none for "Failed to fetch", one
+  for a real crash.
+
 ## 2026-09-23 — An audit keeps unhandled rejections and storage crashes out of the pages
 
 Following the "Failed to fetch" alert, `scripts/promise-audit.mjs` parses
