@@ -231,7 +231,9 @@ async function saveDetail(slug, clearPin) {
     requireAuth: $("d-auth")?.checked === true,
     folderId: value("d-folder"),
     folderName: dropEditFolder?.name || $("d-folder-name")?.textContent || "",
-    expiresDays: Number(value("d-days")) || 0,
+    // The field shows whole days left, so resending it on every save pushed
+    // the expiry out by up to a day. Only an edited value moves it.
+    ...($("d-days").value !== $("d-days").defaultValue ? { expiresDays: Number(value("d-days")) || 0 } : {}),
     settings: {
       concurrency: Number(value("d-conc")) || 4,
       chunkMB: Number(value("d-chunk")) || 32,
