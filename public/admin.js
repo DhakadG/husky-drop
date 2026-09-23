@@ -235,7 +235,8 @@ async function tryToken() {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ token: $("tok").value.trim() }),
-  });
+  }).catch(() => null);
+  if (!r) return ($("tok-err").textContent = "Can't reach the server - check your connection and try again.");
   if (r.ok) {
     $("tok").value = "";
     unlock();

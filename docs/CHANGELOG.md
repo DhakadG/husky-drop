@@ -4,6 +4,32 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — An audit keeps unhandled rejections and storage crashes out of the pages
+
+Following the "Failed to fetch" alert, `scripts/promise-audit.mjs` parses
+every browser script (espree, already installed with ESLint) and works out
+which async functions can reject: an `await` of fetch, `json()`,
+`import()` or another rejecting function, or a `throw`, outside try/catch.
+It reports every place such a promise is dropped: a statement call,
+`a && f()`, `void f()`, a `.then`/`.finally` chain without `.catch`, or an
+async callback given to an event listener, observer or timer.
+
+It found 26 more: the admin log, detail, people, sign-in, share create/edit,
+link delete and folder-add fetches (a dropped connection left buttons
+disabled or views half-drawn), `r.json()` on the drop and share landing
+pages, the viewer's asset promotion chains, and a dynamic import in the
+Activity tools. Each now handles the failure where it happens, with a
+message where the user needs one. `promise-audit-test.mjs` fails if a new
+one appears, and checks that the audit still flags a planted example.
+
+Separately, `localStorage`/`sessionStorage` throw when a browser blocks
+site data (and `setItem` throws on a full quota). Several modules read them
+at load, which would stop the page before it rendered. A shim at the top of
+`public/public.js` (loaded before every page's own scripts) now puts
+never-throwing wrappers in their place: the real store while it works,
+memory for the page view when it does not. The test runs the shim against a
+blocked and a full store and checks each page's script order.
+
 ## 2026-09-23 — A dropped connection is no longer a "client error" alert
 
 A guest on mobile data in Jaipur triggered an alert e-mail:

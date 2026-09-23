@@ -171,10 +171,10 @@ export async function createShare() {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }).catch(() => null);
   $("share-create").disabled = false;
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) return ($("share-err").textContent = d.error || "failed");
+  const d = r ? await r.json().catch(() => ({})) : { error: "Can't reach the server - check your connection and try again." };
+  if (!r?.ok) return ($("share-err").textContent = d.error || "failed");
   navigator.clipboard?.writeText(`${location.origin}/s/${d.slug}`).catch(() => {});
   ["s-label", "s-slug", "s-folders", "s-pin"].forEach((id) => {
     if ($(id)) $(id).value = "";
@@ -253,9 +253,9 @@ export async function saveShareEditor(event) {
     ...($("se-clear-pin").checked ? { pin: "" } : pin ? { pin } : {}),
     theme: { logoUrl: value("se-logo"), backgroundUrl: value("se-bg"), accentColor: value("se-accent"), backgroundColor: value("se-bgcolor"), welcome: value("se-welcome") },
   };
-  const response = await fetch(`/api/admin/shares/${encodeURIComponent(slug)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) return ($("share-edit-err").textContent = data.error || "Could not save settings.");
+  const response = await fetch(`/api/admin/shares/${encodeURIComponent(slug)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  const data = response ? await response.json().catch(() => ({})) : { error: "Can't reach the server - check your connection and try again." };
+  if (!response?.ok) return ($("share-edit-err").textContent = data.error || "Could not save settings.");
   $("share-edit-dialog").close();
   await refreshAll();
 }

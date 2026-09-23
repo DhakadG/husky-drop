@@ -188,7 +188,7 @@ export async function openViewer(index, sourceEl) {
     refreshFileInfo(current);
     if (/^image\//.test(current?.mime || "")) {
       // The viewer may close while the asset is still loading.
-      void vs.viewerAssets.activate(current).then(() => vs.pswp && warmViewerNeighbors(vs.pswp.currIndex));
+      vs.viewerAssets.activate(current).then(() => vs.pswp && warmViewerNeighbors(vs.pswp.currIndex)).catch(() => {});
     }
     if (vs.suppressNextViewerTransition) vs.suppressNextViewerTransition = false;
     else applyViewerTransition();
@@ -277,7 +277,7 @@ export async function openViewer(index, sourceEl) {
   updateCaption(file);
   bindRapidPointer(vs.pswp.element?.querySelector(".pswp__button--arrow--prev"), "previous");
   bindRapidPointer(vs.pswp.element?.querySelector(".pswp__button--arrow--next"), "next");
-  if (/^image\//.test(file.mime)) void vs.viewerAssets.activate(file).then(() => warmViewerNeighbors(index));
+  if (/^image\//.test(file.mime)) vs.viewerAssets.activate(file).then(() => warmViewerNeighbors(index)).catch(() => {});
 }
 
 export function registerProgressiveImageContent(instance) {

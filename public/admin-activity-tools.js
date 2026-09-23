@@ -1,4 +1,4 @@
-import { $, activityOlder, icon, overview, setActivityFilter, setActivityQuery } from "./admin-state.js";
+import { $, activityOldestDay, activityOlder, icon, overview, setActivityFilter, setActivityQuery } from "./admin-state.js";
 import { refreshAll } from "./admin.js";
 import { activityTypeLabel, eventKind, eventTypeIcon, loadEarlierActivity, personKeyOf, renderEvents } from "./admin-activity.js";
 
@@ -51,7 +51,8 @@ export function wireActivityTools() {
     renderEvents();
     // Pull earlier days until the loaded window covers the range (max 14).
     const target = new Date(Date.now() - tools.days * 86400e3).toISOString().slice(0, 10);
-    for (let i = 0; i < 5 && (await import("./admin-state.js")).activityOldestDay > target; i++) await loadEarlierActivity();
+    // activityOldestDay is a live binding; it moves as each load lands.
+    for (let i = 0; i < 5 && activityOldestDay > target; i++) await loadEarlierActivity();
   });
   on("activity-refresh", "click", async () => {
     const b = $("activity-refresh");

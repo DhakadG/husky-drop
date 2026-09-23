@@ -128,7 +128,9 @@ async function init() {
   if (r.status === 404) return showShareGone();
   if (r.status === 410) return showShareGone("expired", "This share has closed.", "Ask whoever sent it for a fresh link.");
   if (!r.ok) return showShareGone("hiccup", "Something went wrong on our side.", "Reload in a moment.");
-  setMeta(await r.json());
+  const loaded = await r.json().catch(() => null);
+  if (!loaded) return showShareGone("hiccup", "Something went wrong on our side.", "Reload in a moment.");
+  setMeta(loaded);
   const returnHash = sessionStorage.getItem(`lhdb_sreturn_${slug}`);
   if (returnHash) {
     sessionStorage.removeItem(`lhdb_sreturn_${slug}`);

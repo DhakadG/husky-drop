@@ -100,8 +100,8 @@ export async function openPerson(key) {
       </div>
       <section class="panel"><div class="section-title"><h2>${icon("activity")} Timeline</h2></div><div id="person-timeline">${skeleton(3)}</div></section>
     </article>`;
-  const r = await fetch(`/api/admin/people/${encodeURIComponent(key)}`);
-  const d = await r.json().catch(() => ({}));
+  const r = await fetch(`/api/admin/people/${encodeURIComponent(key)}`).catch(() => null);
+  const d = r ? await r.json().catch(() => ({})) : {};
   const sessions = d.sessions || [];
   $("person-devices").innerHTML = sessions.length ? `<ul class="device-list">${sessions.map(deviceCard).join("")}</ul>` : `<p class="muted">No device details yet - recorded from the next visit on.</p>`;
   if (sessions.length) $("person-device-count").textContent = sessions.length;

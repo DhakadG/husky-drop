@@ -2,6 +2,46 @@
 // drop.js, and share.js - keeps formatting/escaping/DOM-diffing in one place
 // instead of three copy-pasted versions.
 
+// Storage that never throws. With site data blocked (or in some embedded and
+// private modes) touching localStorage / sessionStorage throws a
+// SecurityError, and a full quota throws on setItem - at module load that
+// killed the whole page. Every later script gets a wrapper: the real store
+// while it works, an in-memory map for this page view when it does not.
+(function safeStorage() {
+  for (const name of ["localStorage", "sessionStorage"]) {
+    let real = null;
+    try {
+      real = window[name];
+      real.getItem("__hd_probe");
+    } catch {
+      real = null;
+    }
+    const mem = new Map();
+    const attempt = (fn, fallback) => {
+      try {
+        return real ? fn(real) : fallback();
+      } catch {
+        return fallback();
+      }
+    };
+    const safe = {
+      getItem: (k) => attempt((s) => s.getItem(k), () => (mem.has(String(k)) ? mem.get(String(k)) : null)),
+      setItem: (k, v) => attempt((s) => s.setItem(k, String(v)), () => void mem.set(String(k), String(v))),
+      removeItem: (k) => attempt((s) => s.removeItem(k), () => void mem.delete(String(k))),
+      clear: () => attempt((s) => s.clear(), () => mem.clear()),
+      key: (i) => attempt((s) => s.key(i), () => [...mem.keys()][i] ?? null),
+      get length() {
+        return attempt((s) => s.length, () => mem.size);
+      },
+    };
+    try {
+      Object.defineProperty(window, name, { configurable: true, get: () => safe });
+    } catch {
+      /* the browser refused; scripts keep the native object */
+    }
+  }
+})();
+
 function esc(s) {
   return String(s ?? "").replace(
     /[&<>"']/g,

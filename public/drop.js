@@ -41,7 +41,8 @@ async function init() {
   }
   if (r.status === 404) return showGone("closed", "This link is not available.", "It expired, was deleted, or the URL is incomplete.");
   if (!r.ok) return showGone("hiccup", "Something went wrong on our side.", "Reload in a moment; nothing you sent is lost.", { tone: "warn", retry: true });
-  st.link = await r.json();
+  st.link = await r.json().catch(() => null);
+  if (!st.link) return showGone("hiccup", "Something went wrong on our side.", "Reload in a moment; nothing you sent is lost.", { tone: "warn", retry: true });
   if (st.link.expired) return showGone("expired", "This drop has closed.", "Ask the collector for a new link.");
   if (st.link.paused && st.link.budgetHit) return showGone("budget reached", "This drop reached its upload budget.", "Files already delivered are safe. Ask the collector to raise the limit or reopen the link.");
   if (st.link.paused) return showGone("paused", "This link is paused right now.", "Ask the collector to reopen it or try again later.", { icon: "pause" });
