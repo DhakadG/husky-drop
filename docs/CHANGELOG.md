@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Admin pollers start once and rest while the tab is hidden
+
+`unlock()` started the 15 s overview poll, the 1 s live tick and the chart
+poll every time it ran, and it runs again when a 401 sends the admin back to
+the sign-in screen. Each re-sign-in doubled every request. The timers now
+start once, skip their work while `document.hidden`, and one refresh runs
+when the tab becomes visible again.
+
 ## 2026-09-23 — Preflight dedupe sees every past upload, not the newest 200
 
 `/api/preflight` matched dropped files only against the link's recent-uploads

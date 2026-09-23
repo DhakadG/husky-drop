@@ -250,6 +250,7 @@ async function logout() {
   location.reload();
 }
 
+let pollersStarted = false;
 function unlock() {
   $("auth").classList.add("hidden");
   $("panel").classList.remove("hidden");
@@ -257,9 +258,16 @@ function unlock() {
   connectLive();
   refreshAll();
   refreshChart();
-  setInterval(refreshAll, 15000);
-  setInterval(tickLive, 1000);
-  setInterval(refreshChart, 5 * 60000);
+  // Signing in again after a 401 calls unlock() a second time; the timers
+  // must not double. Hidden tabs skip the polls and catch up when shown.
+  if (pollersStarted) return;
+  pollersStarted = true;
+  setInterval(() => !document.hidden && refreshAll(), 15000);
+  setInterval(() => !document.hidden && tickLive(), 1000);
+  setInterval(() => !document.hidden && refreshChart(), 5 * 60000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshAll();
+  });
 }
 
 function tickLive() {
