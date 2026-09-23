@@ -1179,6 +1179,16 @@ async function main() {
     assert.equal(swept.removed, 1, "a superseded revision is swept");
     assert.equal(driveEnv.MEDIA_BUCKET.objects.has("media/file-img/thumb-lo-deadbeef"), false);
     assert.ok(mediaKeys().length >= 1, "live thumbnails stay");
+    // A share whose index is not complete would lose all its cached media.
+    const pointerKey = "share-stats:drive-share";
+    const pointer = await driveEnv.KV.get(pointerKey, "json");
+    await driveEnv.KV.put(pointerKey, JSON.stringify({ ...pointer, complete: false }));
+    await driveEnv.MEDIA_BUCKET.put("media/file-img/thumb-lo-cafebabe", new Uint8Array([1]), {});
+    res = await worker.fetch(jsonRequest("/api/admin/media/orphans", {}), driveEnv);
+    assert.equal(res.status, 409, "the sweep refuses while an active share is not fully indexed");
+    assert.ok(driveEnv.MEDIA_BUCKET.objects.has("media/file-img/thumb-lo-cafebabe"), "and deletes nothing");
+    await driveEnv.KV.put(pointerKey, JSON.stringify(pointer));
+    await driveEnv.MEDIA_BUCKET.delete("media/file-img/thumb-lo-cafebabe");
 
     // ---- dedupe: identical md5+size inside a folder subtree, oldest stays ----
     const filesObj = await driveEnv.MEDIA_BUCKET.get("stats/drive-share.files.json").then((o) => o.json());

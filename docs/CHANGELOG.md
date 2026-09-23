@@ -4,6 +4,17 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The orphan sweep waits for complete share indexes
+
+"Clear orphaned media" kept every R2 object referenced by a share's
+`files.json`. A share still on its first walk, or whose last index failed
+before writing that file, had no rows or only some, so all of its cached
+thumbnails and watched video previews were deleted, and the next visitors paid
+cold Drive fetches again. The sweep now answers 409 and names the shares
+while any active gallery share has no complete index or has an index job
+running. Closed shares do not hold it up. The smoke test checks that an
+incomplete index blocks the sweep and nothing is deleted.
+
 ## 2026-09-23 — Removing a folder from a share retires its media URLs
 
 Share media URLs carry an HMAC over slug + file id with no expiry, and the
