@@ -26,6 +26,7 @@ import { SUGGESTION_SCHEMA } from "./stitch.js";
 import { diagnosticsRoute } from "./live-diagnostics.js";
 import { applyPreviewReports, serialBatches } from "./previews.js";
 import { applySharePreviewPuts } from "./share-previews.js";
+import { applyJobOps } from "./share-index.js";
 
 // Progress ticks from N uploaders inside this window become one admin patch.
 const BROADCAST_COALESCE_MS = 200;
@@ -63,6 +64,7 @@ export class LiveTracker {
     // Video runner shards report here so their writes to previews:index are serialized.
     this.previewReports = serialBatches((bodies) => applyPreviewReports(env, { waitUntil() {} }, bodies));
     this.sharePreviewPuts = serialBatches((puts) => applySharePreviewPuts(env, puts));
+    this.shareIndexJobs = serialBatches((ops) => applyJobOps(env, ops));
     // One run can be spread over up to 20 runners, all reporting here.
     // `runners` is keyed by shard; `workers` by "shard:slot".
     this.transcoderState = {
@@ -157,6 +159,7 @@ export class LiveTracker {
     if (path === "/share-stats") return reply({ rows: this.analytics.shareStatRows() });
     if (isPost && path === "/preview-report") return reply(await this.previewReports(body));
     if (isPost && path === "/share-preview-put") return reply(await this.sharePreviewPuts(body));
+    if (isPost && path === "/share-index-jobs") return reply(await this.shareIndexJobs(body));
     if (isPost && path === "/preflight") return reply({ matches: this.analytics.matchCompleted(cleanText(body.slug || "", 60), Array.isArray(body.files) ? body.files.slice(0, 500) : []) });
 
     const diag = diagnosticsRoute(this.state, path, url, body, isPost, request.method);
