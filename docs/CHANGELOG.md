@@ -4,6 +4,15 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Zip tickets no longer make one Drive call per file
+
+`createShareZipTicket` awaited an uncached `driveFileMeta` for every selected
+file, one after another, so a 400-photo zip spent 20-40 s on Drive round trips
+before the download could start, and near the 1,000-file cap it ran into the
+subrequest limit. Name, size, type and revision now come from the share's
+index rows (`files.json`), and only files missing from the index are looked
+up in Drive, 20 at a time through the metadata cache.
+
 ## 2026-09-23 — The video coverage crawl is bounded and says what it skipped
 
 The coverage scan fanned out over every subfolder at every level at once,
