@@ -150,7 +150,11 @@ export async function adminBans(request, env) {
   if (request.method === "GET") return proxy(env, "/bans");
   const b = await request.json().catch(() => ({}));
   const kind = cleanText(b.kind || "", 10);
-  const value = cleanText(b.value || "", 120).toLowerCase();
+  // Only e-mails are case-insensitive. Fingerprint Pro visitor ids are
+  // mixed-case and matched exactly by isBanned(), so lowercasing them made
+  // every fingerprint ban silently miss.
+  const raw = cleanText(b.value || "", 120);
+  const value = kind === "email" ? raw.toLowerCase() : raw;
   if (!["email", "device", "fp"].includes(kind) || !value) return json({ error: "kind email|device|fp and value required" }, 400);
   banCache.clear();
   return proxy(env, "/bans", { method: "POST", body: JSON.stringify({ kind, value, reason: cleanText(b.reason || "", 120), on: request.method !== "DELETE" }) });
