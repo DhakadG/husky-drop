@@ -582,6 +582,12 @@ export function render(revealOnlyIds = null) {
   renderCrumbs();
   renderMeta();
   const host = $("folders");
+  // The observers hold their targets; detached tiles stayed referenced.
+  for (const el of host.querySelectorAll(".g-card, .load-more-card")) {
+    cardObserver?.unobserve(el);
+    hotObserver?.unobserve(el);
+    moreObserver?.unobserve(el);
+  }
   host.innerHTML = "";
   visibleFiles.clear();
   setLightboxItems([]);
@@ -618,6 +624,7 @@ export function render(revealOnlyIds = null) {
     const grid = document.createElement("div");
     grid.className = "justified";
     grid._files = files;
+    folder._grid = grid;
     files.forEach((file, i) => {
       file._renderIndex = i;
       const el = card(file);
@@ -729,13 +736,51 @@ async function loadMore(folder, button) {
       if (!folder.subfolders.some((s) => s.fid === sub.fid)) folder.subfolders.push(sub);
     }
     folder.nextPageToken = page.nextPageToken;
-    render(newIds);
+    if (!appendPage(folder, button, page)) render(newIds);
   } catch {
     button.disabled = false;
     updateLoadMoreCopy(button, folder, "error");
   } finally {
     pending.remove();
   }
+}
+
+// "Load next" used to rebuild every tile of the folder (1,000 by page five)
+// and jump the scroll position. When the new page only extends what is on
+// screen - one folder in view (lightbox order), no new subfolders, and the
+// sort puts the new files after the loaded ones - its tiles are appended.
+function appendPage(folder, button, page) {
+  const grid = folder._grid;
+  if (!grid?.isConnected || (current?.folders || []).length !== 1 || (page.subfolders || []).length) return false;
+  const all = sortFiles(folder.files);
+  const old = grid._files || [];
+  if (all.length < old.length || old.some((f, i) => all[i] !== f)) return false;
+  const reveal = [];
+  for (const file of all.slice(old.length)) {
+    file._renderIndex = grid.children.length;
+    const el = card(file);
+    file._el = el;
+    visibleFiles.set(file.id, file);
+    grid.appendChild(el);
+    reveal.push(el);
+    if (isViewable(file)) {
+      file._lbIndex = lightboxItems.length;
+      lightboxItems.push(file);
+    }
+  }
+  grid._files = all;
+  if (!folder.nextPageToken) {
+    moreObserver?.unobserve(button);
+    button.remove();
+  } else {
+    button.disabled = false;
+    updateLoadMoreCopy(button, folder);
+  }
+  renderMeta();
+  updateSelInfo();
+  scheduleLayout();
+  fx.reveal(reveal);
+  return true;
 }
 
 export async function prefetchMore(folder) {

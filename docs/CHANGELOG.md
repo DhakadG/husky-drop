@@ -4,6 +4,16 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — "Load next" appends tiles instead of rebuilding the gallery
+
+Every page of a big folder called `render()`, which emptied the gallery and
+recreated every tile, image and listener (1,000 tiles by page five), made the
+scroll position jump, and left the removed tiles observed by three
+IntersectionObservers. A page that only extends what is on screen (one folder
+in view, no new subfolders, and the sort puts the new files after the loaded
+ones) now has its tiles appended; any other case still re-renders, and a
+re-render first stops observing the tiles it removes.
+
 ## 2026-09-23 — The identity-matching model no longer sees e-mails or device ids
 
 The nightly stitch sent every known account's e-mail address and every
