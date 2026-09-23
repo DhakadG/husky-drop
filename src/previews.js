@@ -99,6 +99,8 @@ async function previewFolderId(env) {
 
 // ---- share tree scan (Drive reads with memory & KV cache) ----
 const TREE_CACHE_KEY = "previews:tree_cache2";
+const MAX_DEPTH = 3;
+const CRAWL_PARALLEL = 6;
 let scanMemo = { at: 0, tree: null };
 
 async function scanShares(env, fresh = false) {
@@ -115,8 +117,14 @@ async function scanShares(env, fresh = false) {
   const folders = []; // {slug, label, folderId, name, depth, videos: [{id,name,size,mime}]}
   const seen = new Set();
 
-  const walk = async (slug, label, folderId, name, depth, parentId = null) => {
-    if (depth > 3 || seen.has(folderId)) return;
+  // A bounded pool: fanning out over every subfolder at once ran into the
+  // subrequest cap and Drive's rate limit, and a failed listing silently
+  // dropped the folder. Failures are marked `unreadable`; subfolders past
+  // MAX_DEPTH are counted in `deeper` so coverage can say what it skipped.
+  const queue = [];
+  let active = 0;
+  const visit = async ({ slug, label, folderId, name, depth, parentId }) => {
+    if (seen.has(folderId)) return;
     seen.add(folderId);
     const node = { slug, label, folderId, parentId, name, depth, videos: [] };
     folders.push(node);
@@ -126,30 +134,43 @@ async function scanShares(env, fresh = false) {
       try {
         page = await driveListFolder(env, folderId, pageToken);
       } catch {
+        node.unreadable = true;
         break;
       }
-      const subtasks = [];
       for (const f of page.files || []) {
         if (f.mimeType === "application/vnd.google-apps.folder") {
-          subtasks.push(walk(slug, label, f.id, f.name, depth + 1, folderId));
+          if (depth + 1 > MAX_DEPTH) node.deeper = (node.deeper || 0) + 1;
+          else queue.push({ slug, label, folderId: f.id, name: f.name, depth: depth + 1, parentId: folderId });
         } else if (isVideo(f)) {
           node.videos.push({ id: f.id, name: f.name, size: Number(f.size) || 0, mime: f.mimeType });
         }
       }
-      if (subtasks.length) await Promise.all(subtasks);
       pageToken = page.nextPageToken || "";
     } while (pageToken);
   };
+  const worker = async () => {
+    for (;;) {
+      const item = queue.shift();
+      if (!item) {
+        if (!active) return;
+        await new Promise((r) => setTimeout(r, 20));
+        continue;
+      }
+      active += 1;
+      try {
+        await visit(item);
+      } finally {
+        active -= 1;
+      }
+    }
+  };
 
-  const shareTasks = [];
   for (const slug of slugs) {
     const share = await env.KV.get(`share:${slug}`, "json");
     if (shareState(share) !== "active") continue;
-    for (const id of share.folderIds || []) {
-      shareTasks.push(walk(slug, share.label || slug, id, share.label || slug, 0));
-    }
+    for (const id of share.folderIds || []) queue.push({ slug, label: share.label || slug, folderId: id, name: share.label || slug, depth: 0, parentId: null });
   }
-  await Promise.all(shareTasks);
+  await Promise.all(Array.from({ length: CRAWL_PARALLEL }, worker));
 
   scanMemo = { at: Date.now(), tree: folders };
   // No TTL: the overview must answer from this instantly; scans and the
@@ -306,6 +327,8 @@ export async function previewsCoverage(request, env) {
     folders: cov.folders,
     failed: cov.failed,
     orphans: cov.orphans,
+    unreadable: tree.filter((n) => n.unreadable).map((n) => n.name),
+    tooDeep: tree.reduce((t, n) => t + (n.deeper || 0), 0),
     indexed: Object.keys(index.files).length,
     scannedAt: scanMemo.at,
   });

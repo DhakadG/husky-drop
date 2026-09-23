@@ -175,6 +175,20 @@ export async function loadCoverage({ fresh = false } = {}) {
 
     updateStatCards(data.totals);
     redrawCoverage();
+    // Say what the crawl could not see instead of leaving those videos out silently.
+    const skipped = [
+      cov.unreadable?.length ? `${cov.unreadable.length} folder${cov.unreadable.length === 1 ? "" : "s"} could not be read (${cov.unreadable.slice(0, 3).join(", ")}${cov.unreadable.length > 3 ? ", …" : ""}) - rescan to retry` : "",
+      cov.tooDeep ? `${cov.tooDeep} folder${cov.tooDeep === 1 ? " is" : "s are"} deeper than 3 levels and not scanned` : "",
+    ].filter(Boolean).join(" · ");
+    const section = $("previews-coverage-section");
+    let note = $("coverage-crawl-note");
+    if (skipped && section && !note) {
+      note = document.createElement("p");
+      note.id = "coverage-crawl-note";
+      note.className = "img-bad";
+      section.appendChild(note);
+    }
+    if (note) note.textContent = skipped;
     swap("previews-failed-wrap", () => renderFailedSection(data.failed || []), true);
   } catch (error) {
     const section = $("previews-coverage-section");
