@@ -735,7 +735,7 @@ async function main() {
   const previews = await previewsMod.previewIndex(env);
   const previewFields = previewsMod.previewFields;
   const bare = { id: "vid-3", mimeType: "video/mp4" };
-  const filled = await previewFields(env, "s1", bare, previews);
+  const filled = await previewFields(env, { slug: "s1" }, bare, previews);
   assert.equal(filled.previewState, "ready");
   assert.equal(filled.dur, 12345, "a file Drive gave no duration for borrows the preview's");
   assert.equal(filled.aspect, 1280 / 720, "and its aspect");
@@ -745,7 +745,7 @@ async function main() {
 
   // Whatever Drive did supply still wins.
   const described = { id: "vid-3", mimeType: "video/mp4", thumbnailLink: "https://drive/thumb", videoMediaMetadata: { durationMillis: "500", width: 1920, height: 1080 } };
-  const untouched = await previewFields(env, "s1", described, previews);
+  const untouched = await previewFields(env, { slug: "s1" }, described, previews);
   assert.equal(untouched.dur, undefined, "Drive's own duration is not overwritten");
   assert.equal(untouched.thumb, undefined, "nor its thumbnail");
   assert.equal(previewsOverviewBody.totals.failed, 0, "one try is not a failure yet (3 tries)");
@@ -1062,7 +1062,9 @@ async function main() {
     assert.equal(res.status, 403, "tampered media signature is rejected");
     const foreignShare = firstImage.thumbs.base.replace("/media/drive-share/", "/media/other-share/");
     res = await worker.fetch(request(foreignShare), driveEnv);
-    assert.equal(res.status, 403, "a signature is bound to its share");
+    // The share is loaded first (its tokenEpoch scopes the signature), so an
+    // unknown slug is a 404 before the signature is even checked.
+    assert.ok([403, 404].includes(res.status), "a signature is bound to its share");
     // Access is re-checked on every request, hit or miss: pausing the share
     // closes cached thumbnails too.
     await worker.fetch(jsonRequest("/api/admin/shares/drive-share", { disabled: true }, "test-admin", "PATCH"), driveEnv);

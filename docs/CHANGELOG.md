@@ -4,6 +4,20 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — Removing a folder from a share retires its media URLs
+
+Share media URLs carry an HMAC over slug + file id with no expiry, and the
+media route checked neither the PIN nor whether the file was still shared.
+Download refresh re-minted a token for any old one after a PIN check. A
+guest who had loaded a gallery could therefore keep loading thumbnails, the
+full WebP previews and 720p videos from a folder the owner had since removed,
+and keep downloading its originals. Shares now carry a `tokenEpoch`, bumped
+when a folder is removed or the PIN changes, and media signatures are made
+and checked under `slug.epoch`. Epoch 0 signs exactly as before, so no
+existing URL breaks until an edit calls for it. `/api/share/refresh-dl` now
+answers 410 for a file that the share's index no longer lists.
+`scripts/media-epoch-test.mjs` covers the epoch rules.
+
 ## 2026-09-23 — Wrong PINs no longer spend KV writes
 
 Every wrong PIN wrote two KV keys, the per-IP counter (`bf:`) and the

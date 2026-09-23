@@ -418,7 +418,7 @@ export async function shareStatsPayload(env, share) {
   const out = {};
   for (const [id, folder] of Object.entries(folders)) {
     const totals = subtreeTotals(folders, id, memo);
-    const cover = folder.cover?.id ? (await mediaThumbs(env, share.slug, { id: folder.cover.id, rev: folder.cover.r })).thumbs.base : "";
+    const cover = folder.cover?.id ? (await mediaThumbs(env, share, { id: folder.cover.id, rev: folder.cover.r })).thumbs.base : "";
     out[await folderFid(env, id)] = { ...totals, cover };
   }
   return { indexed: true, generatedAt, complete: pointer.complete !== false, folders: out };

@@ -122,6 +122,11 @@ export async function verifyShareToken(env, token, expectScope, options = {}) {
 // signature without an expiry: it proves the file was listed through this
 // share, and the route still checks the share is active and the viewer is
 // signed in on every request (spec §1.2). The sig alone opens nothing.
+// A share's tokenEpoch is bumped when folders leave it or its PIN changes;
+// signing under slug.epoch retires every media URL handed out before. Epoch
+// 0 signs exactly as before, so existing URLs stay valid until a bump.
+export const sigScope = (share) => (share.tokenEpoch ? `${share.slug}.${share.tokenEpoch}` : share.slug);
+
 export async function mediaSig(env, slug, fileId) {
   const key = await shareSigningKey(env);
   const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`media.${slug}.${fileId}`));

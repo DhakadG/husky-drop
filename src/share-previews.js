@@ -11,7 +11,7 @@ import { cleanText, json, shareState } from "./util.js";
 import { typeOf } from "./images.js";
 import { mediaRev, mediaUrl, mediaVariantTier, r2PutBytes } from "./media-cache.js";
 import { accessToken, driveCreateFolder, driveFindFolder, driveFileMetaCached, driveThumbnail, driveTrashFile } from "./drive.js";
-import { mediaSig } from "./share-token.js";
+import { mediaSig, sigScope } from "./share-token.js";
 import { getAllShares } from "./share-admin.js";
 import { loadFiles } from "./share-index.js";
 import { appLog } from "./applog.js";
@@ -92,7 +92,7 @@ export function wantsPreview(file) {
 
 // Fields for one listed file: the preview replaces the "max" tier, and
 // heavy originals stop auto-loading in the viewer.
-export async function sharePreviewFields(env, slug, f, index) {
+export async function sharePreviewFields(env, share, f, index) {
   const wants = wantsPreview({ name: f.name, mime: f.mimeType, size: f.size });
   if (!wants) return {};
   const entry = index.files[f.id];
@@ -100,7 +100,7 @@ export async function sharePreviewFields(env, slug, f, index) {
   const fields = { heavy: (Number(f.size) || 0) >= HEAVY_BYTES && /^image\/(jpe?g|png|webp)$/.test(f.mimeType || "") };
   if (!entry || entry.r !== rev) return { ...fields, previewImage: false };
   if (entry.skip) return { ...fields, previewImage: false, previewSkip: entry.skip };
-  const url = mediaUrl(slug, f.id, "preview-webp", rev, await mediaSig(env, slug, f.id));
+  const url = mediaUrl(share.slug, f.id, "preview-webp", rev, await mediaSig(env, sigScope(share), f.id));
   return { ...fields, previewImage: true, previewImageUrl: url, previewImageBytes: entry.s || 0 };
 }
 

@@ -348,7 +348,7 @@ export async function resolveShareTargets(env, share, body) {
 export async function publicShareFile(env, share, f, previews = {}, imagePreviews = { files: {} }) {
   const [{ token, expiresAt }, media] = await Promise.all([
     signShareTokenWithExpiry(env, "dl", share.slug, f.id),
-    f.thumbnailLink ? mediaThumbs(env, share.slug, f) : null,
+    f.thumbnailLink ? mediaThumbs(env, share, f) : null,
   ]);
   const img = f.imageMediaMetadata || {};
   const vid = f.videoMediaMetadata || {};
@@ -361,7 +361,7 @@ export async function publicShareFile(env, share, f, previews = {}, imagePreview
   const thumbsExpireAt = media?.thumbsExpireAt || 0;
   // RAW / oversized originals (spec §5): the WebP preview-equivalent stands
   // in as the high-resolution tier; the original stays one click away.
-  const imagePreview = await sharePreviewFields(env, share.slug, f, imagePreviews);
+  const imagePreview = await sharePreviewFields(env, share, f, imagePreviews);
   if (imagePreview.previewImage) thumbs.max = imagePreview.previewImageUrl;
   return {
     id: f.id,
@@ -381,7 +381,7 @@ export async function publicShareFile(env, share, f, previews = {}, imagePreview
     downloadBlocked: safety.blocked,
     downloadBlockReason: safety.reason,
     ...imagePreview,
-    ...(await previewFields(env, share.slug, f, previews)),
+    ...(await previewFields(env, share, f, previews)),
   };
 }
 
