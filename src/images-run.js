@@ -218,7 +218,7 @@ export async function reportImageBatch(request, env, ctx, jobId) {
   }
   for (const s of b.skipped || []) {
     if (!known.has(s.id)) continue;
-    const soft = /not smaller|unsupported/i.test(s.error || "");
+    const soft = /not smaller|unsupported|gain-map/i.test(s.error || "");
     job.items.push({ id: s.id, ok: false, soft, error: cleanText(s.error || "failed", 160) });
     job.progress[soft ? "skipped" : "failed"] += 1;
     if (!soft) appLog(env, ctx, { level: "warn", area: "images", message: `job ${job.id}: ${known.get(s.id)?.name || s.id} failed`, detail: s.error });

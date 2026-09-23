@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { copyMetadataUpright, decodable, ext, run } from "./lib/image-decode.mjs";
+import { copyMetadataUpright, decodable, ext, hasGainMap, run } from "./lib/image-decode.mjs";
 
 const origin = (process.env.HUSKY_ORIGIN || "").replace(/\/$/, "");
 const token = process.env.HUSKY_ADMIN_TOKEN || "";
@@ -72,7 +72,10 @@ async function processOne(file, options, dir) {
   const src = await api(`/api/admin/images/source/${file.id}`);
   if (!src.ok || !src.body) throw new Error(`source ${src.status}`);
   await pipeline(Readable.fromWeb(src.body), createWriteStream(input));
-  const { path: source, via } = await decodable(input, file);
+  // Gain-map HDR (Apple Adaptive HDR, Ultra HDR) would come out of sharp as
+  // flat SDR - and in archive/replace mode that copy takes the original's
+  // place. Leave these alone, exactly as the share preview runner does.
+  if (await hasGainMap(input, file)) throw new Error("gain-map HDR: original kept");
   const info = await encode(source, output, file, options, input);
   const { size } = await stat(output);
   if (!size || !info.width) throw new Error("encoder produced nothing");
