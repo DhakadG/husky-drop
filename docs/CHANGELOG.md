@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — The folder picker lists more than 100 folders
+
+`driveListFolders` asked Drive for 100 subfolders and ignored
+`nextPageToken`, so in a folder with more children the drop, share and
+image-archive pickers never showed anything after the 100th name; pasting an
+ID was the only way in. It now follows pages of 1000, up to 5000 folders.
+`scripts/folder-list-test.mjs` checks that every page is listed.
+
 ## 2026-09-23 — The log area filter covers every area that logs
 
 The Logs tab's area dropdown was a hard-coded list without `share-index`,
