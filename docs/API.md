@@ -49,7 +49,9 @@ Base: the Worker origin. All request bodies are JSON. Errors use `{ "error":
 > - `POST /api/admin/login` `{token}` - sets HttpOnly cookie (7d); login is
 >   rate limited 5 / 15 min / IP. `POST /api/admin/logout` clears it.
 > - `GET /api/admin/timeseries?days=30&slug=` - per-day rollups
->   `{rows:[{day,opens,sessions,files,bytes,downloads}]}` from DO SQLite.
+>   `{rows:[{day,opens,sessions,files,bytes,shareOpens,downloads,servedBytes}]}`
+>   from DO SQLite. `opens/sessions/files/bytes` are drop links only;
+>   `shareOpens/downloads/servedBytes` are share links (`share:<slug>` rows).
 > - `GET/POST /api/admin/shares`, `PATCH/DELETE /api/admin/shares/:slug` -
 >   share-link CRUD (`{label, slug?, folders, mode, pin?, expiresDays,
 >   allowZip}`; folders accepts Drive URLs or IDs, comma separated).
