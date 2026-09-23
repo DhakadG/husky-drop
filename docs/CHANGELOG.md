@@ -4,6 +4,14 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-09-23 — "Select all" in a gallery selects what is on screen
+
+`selectAll` added every loaded file of every folder listing, ignoring the
+kind filter, so with "Show: photos" the hidden videos went into the zip. On a
+folder with more than one page it also selected only the loaded 200 files
+without saying so. It now selects the rendered (filtered) files, and when a
+folder has more pages a toast says only the loaded files were selected.
+
 ## 2026-09-23 — Uploads that die mid-way stay visible on the Live tab
 
 When an uploader's tab crashed or lost the network, the session turned

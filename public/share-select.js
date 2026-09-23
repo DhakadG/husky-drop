@@ -136,7 +136,11 @@ export function selectAll(on) {
   cancelTouchSelection();
   selected.clear();
   if (on) {
-    for (const f of current?.folders || []) for (const file of f.files) selected.set(file.id, file);
+    // What is on screen: the kind filter already applies, so a "photos only"
+    // view no longer puts hidden videos in the zip.
+    for (const file of visibleFiles.values()) selected.set(file.id, file);
+    // Folders are paged; say so rather than let a partial set pass for all.
+    if ((current?.folders || []).some((f) => f.nextPageToken)) toast("Selected the files loaded so far", "This folder has more - scroll to load them, then select all again.");
   }
   document.querySelectorAll(".g-card").forEach((el) => el.classList.remove("selected"));
   if (on) document.querySelectorAll(".g-card").forEach((el) => el.classList.add("selected"));
