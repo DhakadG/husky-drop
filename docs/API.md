@@ -280,8 +280,9 @@ Used by `.github/workflows/transcode-previews.yml` (Bearer `ADMIN_TOKEN`).
   `appProperties.previewOf`, and records it in KV `previews:index`.
 - `POST /api/admin/previews/report` — batch results from the Action
   (`{runId, trigger, startedAt, done[], skipped[], finishedAt?, pendingLeft?}`);
-  one KV write per report merges the file map, failure counts and run
-  history into the single `previews:index` key.
+  reports are forwarded to the LiveTracker Durable Object, which applies
+  them one batch at a time (a burst from parallel shards becomes one KV
+  write) to the single `previews:index` key.
 - `GET /api/admin/previews/overview[?fresh=1]` — totals, per-folder coverage
   for every active share, failed files, last 20 runs, the queue, the active
   GitHub run (when `GITHUB_TOKEN` is set) and `nextRunAt`. The Drive walk is
