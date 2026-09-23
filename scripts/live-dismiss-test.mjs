@@ -17,4 +17,14 @@ assert.equal(t.sessions.has("sess-1"), false, "the next frame does not bring the
 t.dismissed.set("sess-1", Date.now() - 1);
 t.recordProgress({ ...frame, done: 4 });
 assert.ok(t.sessions.has("sess-1"), "after the hold expires the session shows again");
+// A session that died mid-upload is listed as stopped when it is pruned,
+// instead of vanishing from the Live tab.
+Object.assign(t, { recentDone: [], state: { storage: { sql: null, put: async () => {} } } });
+const dead = t.sessions.get("sess-1");
+dead.state = "stale";
+dead.lastSeen = 0;
+t.prune();
+assert.equal(t.sessions.has("sess-1"), false);
+assert.equal(t.recentDone[0]?.stopped, true, "a pruned unfinished session is kept as stopped");
+assert.equal(t.recentDone[0].count, 10);
 console.log("live-dismiss-test: ok");

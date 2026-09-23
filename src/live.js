@@ -568,6 +568,9 @@ export class LiveTracker {
     for (const [id, until] of this.dismissed) if (until <= Date.now()) this.dismissed.delete(id);
     for (const [id, session] of this.sessions) {
       if (session.lastSeen >= cutoff) continue;
+      // An upload that died mid-way (tab closed, network gone) would otherwise
+      // vanish without a trace; the Live tab lists it as stopped.
+      if (session.state !== "done" && (session.done || session.sent)) this.noteFinished(session, true);
       this.sessions.delete(id);
       this.markDirty(id);
     }
@@ -621,8 +624,9 @@ export class LiveTracker {
 
   // Compact summaries of recently completed sessions for the admin Live tab
   // ("Finished this hour"). Persisted so a hibernation wake keeps them.
-  noteFinished(session) {
+  noteFinished(session, stopped = false) {
     this.recentDone.unshift({
+      ...(stopped ? { stopped: true, count: session.count } : {}),
       id: session.id,
       slug: session.slug,
       label: session.label,

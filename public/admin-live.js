@@ -4,6 +4,10 @@ import { setEmpty, upsertCards } from "./admin.js";
 // Live tab: active upload sessions, finished-this-hour list, metrics.
 export function renderLive() {
   const uploading = liveActive.filter((session) => session.state === "uploading");
+  // Disconnected (stale) and failed sessions stay listed until the tracker
+  // prunes them into "Finished this hour" as stopped; the badge and metrics
+  // count only live transfers.
+  const listed = liveActive.filter((session) => session.state !== "done");
   renderMetrics(uploading);
   const badge = $("live-badge");
   if (badge) {
@@ -11,9 +15,9 @@ export function renderLive() {
     badge.classList.toggle("hidden", uploading.length === 0);
   }
   const box = $("live-list");
-  if (box) reconcile(box, uploading, (session) => session.id, makeLiveRow, updateLiveRow);
-  $("live-empty")?.classList.toggle("hidden", uploading.length !== 0);
-  const last = liveRecent[0];
+  if (box) reconcile(box, listed, (session) => session.id, makeLiveRow, updateLiveRow);
+  $("live-empty")?.classList.toggle("hidden", listed.length !== 0);
+  const last = liveRecent.find((session) => !session.stopped);
   if ($("live-last-completed")) $("live-last-completed").innerHTML = last ? `<span class="muted">Last completed: <b>${esc(last.uploader || "anonymous")}</b> → ${esc(last.label || last.slug)} · ${last.files || 0} files · ${fmtBytes(last.bytes || 0)} · ${new Date(last.endedAt).toLocaleTimeString()}</span>` : "";
   const finished = $("live-finished-list");
   if (finished) reconcile(finished, liveRecent, (session) => session.id, makeFinishedLiveRow, updateFinishedLiveRow);
@@ -34,7 +38,7 @@ function makeFinishedLiveRow() {
 }
 
 function updateFinishedLiveRow(row, session) {
-  row.innerHTML = `<span class="avatar">${esc(initialsOf(session.uploader || "anonymous"))}</span><span><b>${esc(session.uploader || "anonymous")} → ${esc(session.label || session.slug)}</b><small>${session.files || 0} files · ${fmtBytes(session.bytes || 0)} · ${fmtTime(session.duration || 0)}</small></span><time>${new Date(session.endedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>`;
+  row.innerHTML = `<span class="avatar">${esc(initialsOf(session.uploader || "anonymous"))}</span><span><b>${esc(session.uploader || "anonymous")} → ${esc(session.label || session.slug)}</b><small>${session.stopped ? `stopped · ${session.files || 0} of ${session.count || "?"} files` : `${session.files || 0} files`} · ${fmtBytes(session.bytes || 0)} · ${fmtTime(session.duration || 0)}</small></span><time>${new Date(session.endedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>`;
 }
 
 export function renderMetrics(sessions) {
@@ -89,7 +93,7 @@ function liveRowInner(session) {
     return `<div class="file-row ${escAttr(state)}"><div class="file-top"><div class="file-name">${esc(file.name || "file")}</div><div class="file-stat ${escAttr(liveFileStatClass(state))}">${fmtBytes(file.sent || 0)} / ${fmtBytes(file.size || 0)}</div></div><div class="trail"><i style="width:${pct}%"></i></div></div>`;
   }).join("");
   const more = session.count > session.done + inFlight.length ? `<div class="list-note">${session.count - session.done - inFlight.length} more queued</div>` : "";
-  return `<div class="live-card-head"><div class="live-ring"><svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="none" stroke="rgba(12,26,43,.08)" stroke-width="4"></circle><circle cx="22" cy="22" r="18" fill="none" stroke="#2f6bff" stroke-width="4" stroke-linecap="round" stroke-dasharray="113.1" stroke-dashoffset="${113.1 * (1 - (session.pct || 0) / 100)}"></circle></svg><b>${session.pct || 0}%</b></div><span class="avatar">${esc(initialsOf(session.uploader || "anonymous"))}</span><div class="live-card-copy"><h2>${esc(session.uploader || "anonymous")} → <button data-open-detail="${escAttr(session.slug)}" type="button">${esc(session.label || session.slug)}</button></h2><p>${session.done || 0} of ${session.count || 0} files · ${fmtBytes(session.sent || 0)} of ${fmtBytes(session.total || 0)}${session.speed ? ` · ${fmtBytes(session.speed)}/s` : ""}${session.eta ? ` · ~${fmtTime(session.eta)} left` : ""}${session.paused ? " · paused" : ""}</p></div><span class="state-pill">${session.paused ? "paused" : "uploading"}</span></div><div class="live-spark"><span>Last 60 seconds</span>${speedSparkline(session.speedHist || [])}</div><div class="filelist live-queue">${files}${more}</div><div class="row-actions"><button class="mini" data-open-detail="${escAttr(session.slug)}" type="button">${icon("list")}detail</button><button class="mini" data-open-folder="${escAttr(session.slug)}" type="button">${icon("folder")}Drive folder</button><button class="mini danger" data-close-session="${escAttr(session.id)}" data-close-slug="${escAttr(session.slug)}" type="button">dismiss</button></div>`;
+  return `<div class="live-card-head"><div class="live-ring"><svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="none" stroke="rgba(12,26,43,.08)" stroke-width="4"></circle><circle cx="22" cy="22" r="18" fill="none" stroke="#2f6bff" stroke-width="4" stroke-linecap="round" stroke-dasharray="113.1" stroke-dashoffset="${113.1 * (1 - (session.pct || 0) / 100)}"></circle></svg><b>${session.pct || 0}%</b></div><span class="avatar">${esc(initialsOf(session.uploader || "anonymous"))}</span><div class="live-card-copy"><h2>${esc(session.uploader || "anonymous")} → <button data-open-detail="${escAttr(session.slug)}" type="button">${esc(session.label || session.slug)}</button></h2><p>${session.done || 0} of ${session.count || 0} files · ${fmtBytes(session.sent || 0)} of ${fmtBytes(session.total || 0)}${session.speed ? ` · ${fmtBytes(session.speed)}/s` : ""}${session.eta ? ` · ~${fmtTime(session.eta)} left` : ""}${session.paused ? " · paused" : ""}</p></div><span class="state-pill">${session.state === "stale" ? "disconnected" : session.state === "error" ? "error" : session.paused ? "paused" : "uploading"}</span></div><div class="live-spark"><span>Last 60 seconds</span>${speedSparkline(session.speedHist || [])}</div><div class="filelist live-queue">${files}${more}</div><div class="row-actions"><button class="mini" data-open-detail="${escAttr(session.slug)}" type="button">${icon("list")}detail</button><button class="mini" data-open-folder="${escAttr(session.slug)}" type="button">${icon("folder")}Drive folder</button><button class="mini danger" data-close-session="${escAttr(session.id)}" data-close-slug="${escAttr(session.slug)}" type="button">dismiss</button></div>`;
 }
 
 export function speedSparkline(samples) {
