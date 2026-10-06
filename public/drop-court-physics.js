@@ -116,6 +116,14 @@ function collide(net, c, drag) {
   }
 }
 
+// The woven net's radius at depth y below the rim (rest shape).
+export function netRadiusAt(y) {
+  const k = Math.max(0, Math.min(NET_RINGS - 1, y / RING_GAP));
+  const i = Math.floor(k);
+  const j = Math.min(NET_RINGS - 1, i + 1);
+  return TAPER[i] + (TAPER[j] - TAPER[i]) * (k - i);
+}
+
 // Lowest point of the net right now (the stretch, in rim radii).
 export function netDepth(net) {
   let y = 0;

@@ -119,7 +119,7 @@ it defines the globals `esc`, `escAttr`, `reconcile`, `fmtBytes`, `uiIcon`.
 | --- | --- | --- |
 | Shared | `public.js`, `identity.js`, `skeleton.js` | `skeleton.js` is the one loading-state vocabulary (see §6) |
 | Drop page | `drop.js` + `drop-{queue,render,state,resume,live,report,trekker,utils}.js`, `adaptive-concurrency.js` | the upload engine: parallel chunked PUTs, resume from IndexedDB, stall watchdog |
-| Drop court | `drop-court.js`, `drop-court-physics.js`, `drop-bench.js`, `drop-batch.js`, `drop-walk.js`, `drop.css` | the drop page's UI: glass board, canvas rim and net, bench of upload lanes, drag-in batch, scoreboard. `-physics` is DOM-free and tested; the engine only exposes `st.onState` |
+| Drop court | `drop-court.js`, `drop-court-shots.js`, `drop-court-ball.js`, `drop-court-physics.js`, `drop-bench.js`, `drop-batch.js`, `drop-walk.js`, `drop.css` | the drop page's UI: glass board, canvas rim and net, the shot queue (bursts bundle), the floor pile and Drive box, bench of upload lanes, drag-in batch, scoreboard. `-ball` (18-shot book, rim/glass/net collisions) and `-physics` (net cloth) are DOM-free and tested; the engine only exposes `st.onState` |
 | Share page | `share.js` (1.3k lines, the big one) + `share-{state,utils,cache,access,download,select,selection-engine,gallery-layout,smart-header,preview,beacon,trekker,fx}.js` | |
 | Share viewer | `share-viewer.js` + `share-viewer-{engine,state,assets,info,panels,strip,video}.js` | PhotoSwipe-based lightbox; `-engine` is deliberately DOM-free so it can be unit-tested |
 | Admin | `admin.js` + `admin-{state,links,detail,shares,live,activity,activity-tools,people,people-profile,images,images-plan,images-rules,previews,pipelines,logs,folders,chart}.js` | one module per tab |

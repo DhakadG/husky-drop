@@ -115,7 +115,10 @@ assert.match(dropHtml, /id="collector-name"/, "plan 08 displays the real collect
 assert.match(dropHtml, /id="scoreboard"/, "the court keeps every transfer total on one scoreboard");
 assert.match(dropHtml, /id="seats"/, "the court seats each parallel upload on the bench");
 assert.match(dropHtml, /class="board" id="zone"/, "the glass backboard is the dropzone");
-assert.match(dropHtml, /id="tray"[\s\S]*id="who"/, "the Drive tray carries the sender name");
+assert.match(dropHtml, /class="court-sender" id="sender">[\s\S]*?id="who"/, "the sender name lives in the header, always reachable");
+assert.match(dropHtml, /id="tray"[\s\S]*?id="tray-arrivals"/, "the Drive box lists what arrived");
+assert.match(dropCss, /\.tray:not\(\.open\)\s*\{[^}]*visibility:\s*hidden/, "the Drive box stays closed until files have gone through the hoop");
+assert.match(dropCss, /body:not\(\[data-phase="ready"\]\) \.court-more\s*\{[^}]*grid-template-rows:\s*0fr/, "the header folds away while files move");
 assert.match(dropHtml, /href="\/drop\.css"/, "the drop page loads its court stylesheet");
 assert.match(dropJs, /st\.onState\?\.\(item, prev, next\)/, "verified files are handed to the bench to be shot");
 assert.match(dropJs, /pendingShots\(\)/, "MADE ticks when the shot lands, not when it is thrown");
