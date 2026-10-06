@@ -88,6 +88,10 @@ export const st = {
   speedBps: 0,
   speedAt: 0,
   speedSent: 0,
+  speedHist: [], // last ~24 s of throughput, for the scoreboard sparkline
+  startedAt: 0,
+  finishedAt: 0,
+  onState: null, // (item, prev, next) => void; the bench shoots verified files from it
   resumeDb: null,
   networkPaused: false,
 };

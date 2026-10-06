@@ -225,11 +225,15 @@
   },
   "drop-upload": {
     "title": "Drop page — the upload experience",
-    "what": "What a sender sees: the gate, picking files, preflight dedupe, the queue with per-file state, retries, the stall watchdog, the summary.",
+    "what": "What a sender sees: the gate, the court (glass board, rim and net, Drive tray, bench of upload lanes, scoreboard, log), picking and dropping files, preflight dedupe, per-file state, retries, the stall watchdog.",
     "files": [
       "public/drop.js",
       "public/drop-queue.js",
       "public/drop-render.js",
+      "public/drop-bench.js",
+      "public/drop-batch.js",
+      "public/drop-court.js",
+      "public/drop-court-physics.js",
       "public/drop-state.js",
       "public/drop-resume.js",
       "public/drop-live.js",

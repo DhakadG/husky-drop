@@ -109,9 +109,17 @@ assert.match(css, /\.viewer-chip\s*\{/, "plan 07 styles recent-viewer chips");
 assert.match(css, /\.share-mode-card\s*\{/, "plan 07 styles the Share Link mode choices");
 
 const dropHtml = await read("public/drop.html");
-const dropJs = (await Promise.all(["drop", "drop-state", "drop-queue", "drop-render", "drop-live", "drop-resume", "drop-report", "drop-utils"].map((n) => read(`public/${n}.js`)))).join("\n");
+const dropJs = (await Promise.all(["drop", "drop-state", "drop-queue", "drop-render", "drop-live", "drop-resume", "drop-report", "drop-utils", "drop-bench", "drop-batch", "drop-court"].map((n) => read(`public/${n}.js`)))).join("\n");
+const dropCss = await read("public/drop.css");
 assert.match(dropHtml, /id="collector-name"/, "plan 08 displays the real collector name");
-assert.match(dropHtml, /id="progress-ring-value"/, "plan 08 provides the transfer progress ring");
+assert.match(dropHtml, /id="scoreboard"/, "the court keeps every transfer total on one scoreboard");
+assert.match(dropHtml, /id="seats"/, "the court seats each parallel upload on the bench");
+assert.match(dropHtml, /class="board" id="zone"/, "the glass backboard is the dropzone");
+assert.match(dropHtml, /id="tray"[\s\S]*id="who"/, "the Drive tray carries the sender name");
+assert.match(dropHtml, /href="\/drop\.css"/, "the drop page loads its court stylesheet");
+assert.match(dropJs, /st\.onState\?\.\(item, prev, next\)/, "verified files are handed to the bench to be shot");
+assert.match(dropJs, /pendingShots\(\)/, "MADE ticks when the shot lands, not when it is thrown");
+assert.match(dropJs, /MAX_ACTIVE; i\+\+/, "the bench has one seat per possible parallel upload");
 assert.match(dropHtml, /id="budget-notice"/, "plan 08 provides the real budget-stop notice");
 assert.match(dropHtml, /id="done-card"/, "plan 08 provides the delivered-files recap");
 assert.match(dropHtml, /class="[^"]*trust-strip[^"]*"/, "plan 08 provides uploader trust guidance");
@@ -121,6 +129,9 @@ assert.match(dropJs, /paused:\s*st\.queuePaused/, "plan 08 reports queue pause s
 assert.match(dropJs, /budgetHit/, "plan 08 handles real backend budget limits");
 assert.match(dropJs, /fileId: item\.fileId \|\| "",\s*sessionId,/, "completion logging includes the upload session id");
 assert.match(dropJs, /setState\(item, "done"\);\s*\n\s*sendLive\(true\)/, "final Drive verification forces a terminal live update");
-assert.match(css, /\.transfer-panel-v3\s*\{/, "plan 08 styles the uploader transfer queue");
+assert.match(dropCss, /\.scoreboard\s*\{/, "the court styles the scoreboard");
+assert.match(dropCss, /\.seats\s*\{/, "the court styles the bench seats");
+assert.match(dropCss, /backdrop-filter:\s*blur\(14px\) saturate\(160%\)/, "the backboard is real glass, not a flat panel");
+assert.match(dropCss, /@media \(prefers-reduced-motion: reduce\)/, "the court honours reduced motion");
 
 console.log("UI v3 structure tests passed");

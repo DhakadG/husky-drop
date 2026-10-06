@@ -39,9 +39,9 @@ export function toggleQueuePause() {
   if (!st.queuePaused) pump();
 }
 
-// Step 1 shows a tick once there is a name, so the page reads as progress.
+// The tray's name field glows until there is a name to send under.
 export function syncNameStep() {
-  document.querySelector(".dv4-name")?.classList.toggle("done", !!$("who").value.trim());
+  $("tray")?.classList.toggle("named", !!$("who").value.trim());
 }
 
 // Going offline pauses the queue without touching the user's own pause; back
@@ -66,6 +66,7 @@ export function setNetworkPaused(offline) {
 
 export function setState(item, next) {
   if (item.state === next) return;
+  const prev = item.state;
   totals[item.state]--;
   if (item.state === "uploading") removeFrom(uploadingList, item);
   if (ATTENTION_STATES.has(item.state)) removeFrom(attention, item);
@@ -88,6 +89,7 @@ export function setState(item, next) {
       schedulePaint();
     }, 1400);
   }
+  st.onState?.(item, prev, next);
   schedulePaint();
 }
 
