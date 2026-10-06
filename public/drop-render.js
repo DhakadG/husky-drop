@@ -12,12 +12,12 @@ import { pump } from "./drop-queue.js";
 import { sendLive } from "./drop-live.js";
 import { h, icon, toast } from "./drop-utils.js";
 import { renderBench } from "./drop-bench.js";
-import { pendingShots } from "./drop-court.js";
+import { pendingShots, setDrive } from "./drop-court.js";
 
 // Rendering. Every fact has one home: the scoreboard owns the totals, the
 // bench owns the files uploading right now, the log owns what needs a look
 // (failed, skipped) and what already landed.
-const LOG_DONE = 6; // finished rows shown before "Show all"
+const DRIVE_OPENS_AT = 3; // makes before the Drive box rises to collect them
 const SEGMENTS = 48; // one chart segment per file up to this many, then a stacked bar
 
 export function schedulePaint() {
@@ -65,12 +65,12 @@ export function updateSpeed() {
   st.speedSent = totals.sent;
 }
 
-// The log: what needs a look first, then what landed, newest first. Files on
-// the bench are not repeated here; "Show all" lists everything in queue order.
+// The log is only what needs a look (failed, skipped, canceled). Files on the
+// bench are not repeated, and what landed is listed in the Drive box; "Show
+// all" lists everything in queue order.
 export function visibleItems() {
   if (st.showAllFiles) return queue;
-  const att = attention.length > 50 ? attention.slice(-50) : attention;
-  return [...att, ...doneRecent.slice(-LOG_DONE).reverse()];
+  return attention.length > 50 ? attention.slice(-50) : attention;
 }
 
 export function renderVisible() {
@@ -152,6 +152,10 @@ export function renderSummary() {
   $("retry-all").replaceChildren(icon("refresh-cw"), `Retry ${failed} failed`);
 
   renderScoreboard(phase, landed);
+  // The Drive box rises once a few have gone through the hoop (or the batch
+  // is done); the court then empties the floor into it.
+  const made = totals.done + totals.warning - pendingShots();
+  if (made >= DRIVE_OPENS_AT || (completed && made > 0)) openDriveBox();
 
   $("done-card").classList.toggle("hidden", !completed);
   if (completed) {
@@ -198,16 +202,70 @@ function renderScoreboard(phase, landed) {
   $("sb-lanes").textContent = `${Math.min(st.concurrency, MAX_ACTIVE)} of ${MAX_ACTIVE} lanes`;
 }
 
+// MADE counts toward its target instead of jumping: one at a time for a few
+// files, in strides for a burst, so a thousand screenshots landing together
+// read as a fast count, not a flicker. The pulse is rationed to one per
+// 450 ms however many land.
+let madeShown = 0;
+let madeTarget = 0;
+let madeRaf = 0;
+let lastPulse = 0;
+
 function tickMade(sb, made) {
+  madeTarget = made;
+  if (made < madeShown) madeShown = made; // a new, smaller batch
+  if (!madeRaf && madeShown !== madeTarget) madeRaf = requestAnimationFrame(() => stepMade(sb));
+}
+
+function stepMade(sb) {
+  madeRaf = 0;
+  const gap = madeTarget - madeShown;
+  if (gap <= 0) return;
+  madeShown += Math.max(1, Math.ceil(gap / 10));
   const el = $("sb-made");
-  if (el.textContent === String(made)) return;
-  const up = made > Number(el.textContent || 0);
-  el.textContent = String(made);
-  if (!up) return;
-  for (const node of [el, sb]) {
-    node.classList.remove("tick");
-    void node.offsetWidth;
-    node.classList.add("tick");
+  el.textContent = String(madeShown);
+  const now = performance.now();
+  if (now - lastPulse > 450) {
+    lastPulse = now;
+    for (const node of [el, sb]) {
+      node.classList.remove("tick");
+      void node.offsetWidth;
+      node.classList.add("tick");
+    }
+  }
+  if (madeShown < madeTarget) madeRaf = requestAnimationFrame(() => stepMade(sb));
+}
+
+function openDriveBox() {
+  const tray = $("tray");
+  if (tray.classList.contains("open")) return;
+  tray.classList.add("open");
+  setDrive(true);
+}
+
+// The Drive box's arrivals: the latest few by name, newest first, with
+// "+N more" for what a burst carried in beyond them.
+const ARRIVALS = 4;
+let arrivedExtra = 0;
+
+export function trayArrivals(metas, extra = 0) {
+  const list = $("tray-arrivals");
+  arrivedExtra += extra;
+  for (const m of metas) {
+    const li = h("li", { class: `fam-${m.family || "file"}` }, h("b", {}, (m.ext || "file").toUpperCase().slice(0, 4)), h("span", {}, m.name || ""));
+    li.title = m.name || "";
+    list.prepend(li);
+  }
+  const rows = [...list.querySelectorAll("li:not(.more)")];
+  for (const li of rows.slice(ARRIVALS)) {
+    li.remove();
+    arrivedExtra++;
+  }
+  let more = list.querySelector(".more");
+  if (arrivedExtra) {
+    if (!more) more = list.appendChild(h("li", { class: "more" }));
+    more.textContent = `+${arrivedExtra} more`;
+    list.append(more);
   }
 }
 

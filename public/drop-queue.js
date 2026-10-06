@@ -39,9 +39,15 @@ export function toggleQueuePause() {
   if (!st.queuePaused) pump();
 }
 
-// The tray's name field glows until there is a name to send under.
+// The sender field glows until there is a name to send under; the Drive box
+// says which folder the files land in.
 export function syncNameStep() {
-  $("tray")?.classList.toggle("named", !!$("who").value.trim());
+  const name = $("who").value.trim();
+  $("sender")?.classList.toggle("named", !!name);
+  const own = st.link?.settings?.perUploaderFolders;
+  const folder = $("alias")?.value.trim() || name;
+  const path = $("tray-path");
+  if (path) path.textContent = own && folder ? `your folder: ${folder}` : "the collector's folder";
 }
 
 // Going offline pauses the queue without touching the user's own pause; back

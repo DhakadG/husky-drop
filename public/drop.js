@@ -24,7 +24,7 @@ import {
 } from "./drop-queue.js";
 import { resumeKey, loadResumeRecords, maybeShowResumeBanner, hideResumeBanner } from "./drop-resume.js";
 import { crumb, installErrorReporting, reportProblem } from "./drop-report.js";
-import { schedulePaint } from "./drop-render.js";
+import { schedulePaint, trayArrivals } from "./drop-render.js";
 import { connectLive, acquireWakeLock, startCountdown } from "./drop-live.js";
 import { toast, clamp } from "./drop-utils.js";
 import { installCourt } from "./drop-court.js";
@@ -278,7 +278,7 @@ export function showMain() {
   // drops accepted anywhere on the page.
   buildBench();
   st.onState = benchOnState;
-  installCourt({ board: zone, tray: $("tray"), slot: $("tray-slot"), onLand: schedulePaint });
+  installCourt({ board: zone, tray: $("tray"), onMade: schedulePaint, onIngest: trayArrivals });
   installBatch({
     boardEl: zone,
     onFilesDropped: (files) => {
@@ -328,6 +328,7 @@ export function showMain() {
   });
 
   $("who").addEventListener("input", syncNameStep);
+  $("alias")?.addEventListener("input", syncNameStep);
   window.addEventListener("offline", () => setNetworkPaused(true));
   window.addEventListener("online", () => setNetworkPaused(false));
   $("retry-all").addEventListener("click", retryAll);

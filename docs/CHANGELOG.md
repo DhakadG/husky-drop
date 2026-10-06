@@ -4,6 +4,49 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-10-07 — Real shots, bursts, and a basket that collects
+
+The first court scripted every shot the same way (fixed arc, a coin-flip
+rim kiss, a straight drop) and threw one card per finished file. With a
+thousand small screenshots finishing together that is a thousand identical
+flights. This round makes the court behave like a basket and scale.
+
+- **Shots are physics.** \`drop-court-ball.js\` flies each file as a ball in
+  3D with gravity; the rim is a torus with restitution, the backboard a
+  plane, and the net funnels and slows the ball while the ball stretches the
+  net (two-way coupling with the existing cloth). An 18-entry shot book
+  (swish, rainbow, drop-in, line drive, front-rim roll-in, back iron, rim
+  kisses, rattle, roll-around, front-rim pop-up, bank, angle bank, high
+  glass, glass-and-iron, lay-up...) only chooses aim, arc and spin; how it
+  plays at the rim comes out of the collisions. A verified file always goes
+  in: a soft rim turns outward bounces back in and lets a ball on the outer
+  lip climb over, and arcs are raised until they clear the front of the
+  rim. A file that failed for good is thrown as a brick and stays out.
+  \`drop-court-ball-test.mjs\` plays 1000 shots of the real mix plus 150 of
+  each type and checks every one goes in, each type plays like its name, and
+  nothing tunnels through the iron or gets stuck.
+- **Bursts.** Completions queue in \`drop-court-shots.js\`: at most four in
+  the air, launches spaced with jitter, a backlog merged into bundles (a
+  fanned stack with a ×N badge, up to 40 files), and more than 300 waiting
+  are counted without a flight. MADE counts up in strides instead of
+  flickering, one "+N" label absorbs a run of makes, and the scoreboard's
+  pulse is rationed to one per 450 ms.
+- **The basket is a place.** Files are dealt *out of the net* onto the
+  bench. Made shots fall out of the bottom with real drift and bounce and
+  pile on the floor; after three, the Drive box rises, swallows the pile and
+  catches everything after, listing the latest arrivals by name (so the log
+  keeps only what needs a look). The sender's name moved to a "Sending as"
+  row in the header, since the Drive box is hidden at first.
+- **Less header.** While files move, the eyebrow, welcome, facts and note
+  fold away and the title shrinks; they return for the next batch.
+- **Speed.** Cards and badges are painted once into sprites and stamped
+  with drawImage (painting each card every frame was ~40 % of a frame);
+  court geometry and seat boxes are cached instead of forcing layout on
+  every frame and completion. 2,171 screenshots through 12 lanes hold
+  ~100 fps with p95 frame time 17 ms and no long frames.
+- The court redraws when anything above it changes height (a banner, the
+  header, fonts); before, a late banner left the rim drawn over the board.
+
 ## 2026-10-06 — The drop page becomes a court
 
 The drop page is rebuilt around the Figma "Nothing but net" design (v3 in the

@@ -184,28 +184,7 @@ function collideRim(b) {
   b.vz *= 0.88;
   b.spin += vn * 140 * (Math.random() < 0.5 ? 1 : -1);
   b.touches++;
-  // A soft, friendly rim for verified files: outward speed off the iron is
-  // mostly turned back in, so a rattle rolls in instead of out.
-  if (b.guide) {
-    const vr = (b.vx * b.x + b.vz * b.z) / r;
-    if (vr > 0) {
-      b.vx -= (b.x / r) * vr * 1.6;
-      b.vz -= (b.z / r) * vr * 1.6;
-    }
-    // A steep drop onto the iron should not skid across and out the far side.
-    const hs = Math.hypot(b.vx, b.vz);
-    if (hs > 2) {
-      b.vx *= 2 / hs;
-      b.vz *= 2 / hs;
-    }
-    // Caught on the outer lip: pop up and over, the way a soft rim lets a
-    // ball with inward roll climb in rather than slide off the outside.
-    if (r > 1 && b.y < 0.2) {
-      b.vy = Math.min(b.vy, -2.4);
-      b.vx -= (b.x / r) * 1.4;
-      b.vz -= (b.z / r) * 1.4;
-    }
-  }
+  if (b.guide) softRim(b, r);
   // Roll-around: the first touch sends it circling the iron (after the cap,
   // so the soft rim does not cancel it).
   if (b.swirl) {
@@ -226,6 +205,29 @@ function collideBoard(b) {
   b.spin *= -0.6;
   b.touches++;
   return speed;
+}
+
+// A soft, friendly rim for verified files: outward speed off the iron is
+// mostly turned back in, so a rattle rolls in instead of out.
+function softRim(b, r) {
+  const vr = (b.vx * b.x + b.vz * b.z) / r;
+  if (vr > 0) {
+    b.vx -= (b.x / r) * vr * 1.6;
+    b.vz -= (b.z / r) * vr * 1.6;
+  }
+  // A steep drop onto the iron should not skid across and out the far side.
+  const hs = Math.hypot(b.vx, b.vz);
+  if (hs > 2) {
+    b.vx *= 2 / hs;
+    b.vz *= 2 / hs;
+  }
+  // Caught on the outer lip: pop up and over, the way a soft rim lets a ball
+  // with inward roll climb in rather than slide off the outside.
+  if (r > 1 && b.y < 0.2) {
+    b.vy = Math.min(b.vy, -2.4);
+    b.vx -= (b.x / r) * 1.4;
+    b.vz -= (b.z / r) * 1.4;
+  }
 }
 
 // Inside the net the cords funnel the ball toward the middle and slow it.
