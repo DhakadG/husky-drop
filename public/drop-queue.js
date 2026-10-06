@@ -89,7 +89,13 @@ export function setState(item, next) {
       schedulePaint();
     }, 1400);
   }
-  st.onState?.(item, prev, next);
+  // The court hooks in here to animate; a bug there must never turn a
+  // finished upload into a failed one, so it is fenced off.
+  try {
+    st.onState?.(item, prev, next);
+  } catch (err) {
+    reportError("court", err, item.file.name);
+  }
   schedulePaint();
 }
 

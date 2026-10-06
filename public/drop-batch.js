@@ -1,5 +1,5 @@
 import { $ } from "./drop-state.js";
-import { FAMILY, REDUCED_MOTION, fileExt, fileFamily } from "./drop-utils.js";
+import { FAMILY, REDUCED_MOTION, fileExt, fileFamily, h, icon } from "./drop-utils.js";
 import { springStep } from "./drop-court-physics.js";
 
 // The batch: the whole page is the court, so files dropped anywhere count.
@@ -34,14 +34,11 @@ export function installBatch({ boardEl, onFilesDropped }) {
   board = boardEl;
   boardTitle = $("board-title");
   onFiles = onFilesDropped;
-  el = document.createElement("div");
-  el.className = "ball";
-  el.setAttribute("aria-hidden", "true");
-  el.innerHTML = `${'<div class="ball-card"><span class="ball-ext"></span></div>'.repeat(CARDS)}<span class="ball-badge"></span><div class="ball-chip"><b></b><span class="ball-tally"></span></div>`;
+  cards = Array.from({ length: CARDS }, () => h("div", { class: "ball-card" }, h("span", { class: "ball-ext" })));
+  badge = h("span", { class: "ball-badge" });
+  chip = h("div", { class: "ball-chip" }, h("b"), h("span", { class: "ball-tally" }));
+  el = h("div", { class: "ball", "aria-hidden": "true" }, ...cards, badge, chip);
   document.body.appendChild(el);
-  cards = [...el.querySelectorAll(".ball-card")];
-  badge = el.querySelector(".ball-badge");
-  chip = el.querySelector(".ball-chip");
   springs = [...cards, chip].map(() => ({ x: 0, y: 0, vx: 0, vy: 0, rot: 0 }));
 
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
@@ -66,8 +63,16 @@ export function installBatch({ boardEl, onFilesDropped }) {
     e.preventDefault();
     setHover(false);
     pointer = { x: e.clientX, y: e.clientY };
-    const collected = await collectDropped(e.dataTransfer);
-    if (!onFiles(collected)) hide();
+    // The flat list must be read now: the DataTransfer empties once the
+    // handler yields. It is the fallback if walking the folders fails.
+    const flat = [...e.dataTransfer.files];
+    let collected;
+    try {
+      collected = await collectDropped(e.dataTransfer);
+    } catch {
+      collected = flat;
+    }
+    if (!collected.length || !onFiles(collected)) hide();
   });
 }
 
@@ -145,7 +150,7 @@ function paintCard(card, family, ext) {
   const fam = FAMILY[family] || FAMILY.file;
   card.style.setProperty("--from", fam.from);
   card.style.setProperty("--to", fam.to);
-  if (!card.querySelector("canvas")) card.innerHTML = `<span class="ball-ext"></span>${uiIcon(fam.icon, "ball-glyph")}`;
+  if (!card.querySelector("canvas")) card.replaceChildren(h("span", { class: "ball-ext" }), icon(fam.icon, "ball-glyph"));
   const label = card.querySelector(".ball-ext");
   if (label) label.textContent = (ext || "").toUpperCase().slice(0, 4);
 }
@@ -259,8 +264,10 @@ async function collectDropped(dt) {
   if (!entries.length) return [...dt.files];
   const out = [];
   const CAP = 20000;
-  const entryFile = (entry) => new Promise((resolve) => entry.file(resolve, () => resolve(null)));
-  const readBatch = (reader) => new Promise((resolve) => reader.readEntries(resolve, () => resolve([])));
+  // Errors reject, so the drop handler falls back to the flat file list
+  // instead of silently losing files.
+  const entryFile = (entry) => new Promise((resolve, reject) => entry.file(resolve, reject));
+  const readBatch = (reader) => new Promise((resolve, reject) => reader.readEntries(resolve, reject));
   // readEntries hands a directory over in batches and must be drained in
   // order; sibling subtrees are independent, so they are walked in parallel
   // and the result is put back in natural path order (IMG_2 before IMG_10).
