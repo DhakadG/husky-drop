@@ -89,6 +89,9 @@ export const st = {
   speedAt: 0,
   speedSent: 0,
   speedHist: [], // last ~24 s of throughput, for the scoreboard sparkline
+  etaWin: [], // drop-eta.js samples
+  eta: null, // seconds left as of etaAt
+  etaAt: 0,
   startedAt: 0,
   finishedAt: 0,
   onState: null, // (item, prev, next) => void; the bench shoots verified files from it

@@ -237,6 +237,7 @@
       "public/drop-court-ball.js",
       "public/drop-court-shots.js",
       "public/drop-walk.js",
+      "public/drop-eta.js",
       "public/drop-state.js",
       "public/drop-resume.js",
       "public/drop-live.js",
