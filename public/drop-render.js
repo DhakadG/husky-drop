@@ -10,7 +10,7 @@ import {
 } from "./drop-state.js";
 import { pump } from "./drop-queue.js";
 import { sendLive } from "./drop-live.js";
-import { toast } from "./drop-utils.js";
+import { h, icon, toast } from "./drop-utils.js";
 import { renderBench } from "./drop-bench.js";
 import { pendingShots } from "./drop-court.js";
 
@@ -85,17 +85,14 @@ export function renderVisible() {
 }
 
 export function makeRow(item) {
-  const row = document.createElement("div");
-  row.className = "file-row";
-  row.innerHTML = `
-    <i class="file-dot" aria-hidden="true"></i>
-    <div class="file-name"></div>
-    <div class="file-stat"></div>
-    <div class="file-actions">
-      <button class="row-btn" data-act="retry" type="button">retry</button>
-      <button class="row-btn danger" data-act="cancel" type="button">cancel</button>
-    </div>`;
-  row.querySelector(".file-name").textContent = item.relativePath || item.file.name;
+  const row = h(
+    "div",
+    { class: "file-row" },
+    h("i", { class: "file-dot", "aria-hidden": "true" }),
+    h("div", { class: "file-name" }, item.relativePath || item.file.name),
+    h("div", { class: "file-stat" }),
+    h("div", { class: "file-actions" }, h("button", { class: "row-btn", "data-act": "retry", type: "button" }, "retry"), h("button", { class: "row-btn danger", "data-act": "cancel", type: "button" }, "cancel")),
+  );
   row._item = item;
   row._stat = row.querySelector(".file-stat");
   row._retry = row.querySelector("[data-act='retry']");
@@ -152,7 +149,7 @@ export function renderSummary() {
   $("cancel-all").classList.toggle("hidden", !(totals.queued + totals.uploading));
   const failed = totals.error + totals.warning + totals.canceled;
   $("retry-all").classList.toggle("hidden", failed === 0);
-  $("retry-all").innerHTML = `${uiIcon("refresh-cw")}Retry ${failed} failed`;
+  $("retry-all").replaceChildren(icon("refresh-cw"), `Retry ${failed} failed`);
 
   renderScoreboard(phase, landed);
 

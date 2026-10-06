@@ -234,6 +234,7 @@
       "public/drop-batch.js",
       "public/drop-court.js",
       "public/drop-court-physics.js",
+      "public/drop-walk.js",
       "public/drop-state.js",
       "public/drop-resume.js",
       "public/drop-live.js",

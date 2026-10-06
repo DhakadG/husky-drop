@@ -27,6 +27,30 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
 
+// Building the drop page's DOM without innerHTML. icon() takes a name from
+// the sprite catalog; uiIcon() validates it and throws on an unknown one.
+const SVG_NS = "http://www.w3.org/2000/svg";
+export function icon(name, cls = "") {
+  uiIcon(name);
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", cls ? `ico ${cls}` : "ico");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(SVG_NS, "use");
+  use.setAttribute("href", `/icons.svg#${name}`);
+  svg.append(use);
+  return svg;
+}
+
+export function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") el.className = v;
+    else el.setAttribute(k, v);
+  }
+  el.append(...children);
+  return el;
+}
+
 // Format cards: a file reads as photo, RAW, video or other by its extension
 // first (Windows hands HEIC and RAW over with an empty MIME type).
 const FAMILY_EXT = {

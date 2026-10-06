@@ -120,6 +120,11 @@ assert.match(dropHtml, /href="\/drop\.css"/, "the drop page loads its court styl
 assert.match(dropJs, /st\.onState\?\.\(item, prev, next\)/, "verified files are handed to the bench to be shot");
 assert.match(dropJs, /pendingShots\(\)/, "MADE ticks when the shot lands, not when it is thrown");
 assert.match(dropJs, /MAX_ACTIVE; i\+\+/, "the bench has one seat per possible parallel upload");
+for (const n of ["drop-bench", "drop-batch", "drop-court", "drop-render"]) {
+  assert.doesNotMatch(await read(`public/${n}.js`), /\.innerHTML\s*=/, `${n}.js builds its DOM without innerHTML`);
+}
+assert.match(dropJs, /try \{\s*st\.onState\?\.\(item, prev, next\);\s*\} catch/, "a court bug cannot turn a finished upload into a failed one");
+assert.match(dropJs, /await filesFromDrop\(e\.dataTransfer\)/, "drops go through filesFromDrop (its fallback is exercised in drop-walk-test)");
 assert.match(dropHtml, /id="budget-notice"/, "plan 08 provides the real budget-stop notice");
 assert.match(dropHtml, /id="done-card"/, "plan 08 provides the delivered-files recap");
 assert.match(dropHtml, /class="[^"]*trust-strip[^"]*"/, "plan 08 provides uploader trust guidance");
