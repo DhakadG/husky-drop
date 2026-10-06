@@ -27,6 +27,9 @@ import { crumb, installErrorReporting, reportProblem } from "./drop-report.js";
 import { schedulePaint } from "./drop-render.js";
 import { connectLive, acquireWakeLock, startCountdown } from "./drop-live.js";
 import { toast, clamp } from "./drop-utils.js";
+import { installCourt } from "./drop-court.js";
+import { buildBench, benchOnState, seatItem } from "./drop-bench.js";
+import { installBatch, throwBatch } from "./drop-batch.js";
 import { identify } from "./identity.js";
 
 // Drop page: boot, the pre-upload gate, main-page setup, pickers and the
@@ -271,19 +274,18 @@ export function showMain() {
   zone.addEventListener("keydown", (e) => {
     if ((e.key === "Enter" || e.key === " ") && pickerGate()) picker.click();
   });
-  zone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    zone.classList.add("drag");
-  });
-  zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
-  zone.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    zone.classList.remove("drag");
-    if (!pickerGate()) return;
-    // Traverse dropped directories with the FileSystem API so folder trees
-    // keep their relative paths (dataTransfer.files flattens them).
-    const collected = await collectDropped(e.dataTransfer);
-    addFiles(collected);
+  // The court: rim and net under the glass, the bench of upload lanes, and
+  // drops accepted anywhere on the page.
+  buildBench();
+  st.onState = benchOnState;
+  installCourt({ board: zone, tray: $("tray"), slot: $("tray-slot"), onLand: schedulePaint });
+  installBatch({
+    boardEl: zone,
+    onFilesDropped: (files) => {
+      if (!pickerGate()) return false;
+      addFiles(files);
+      return true;
+    },
   });
   picker.addEventListener("change", () => {
     addFiles(picker.files);
@@ -312,6 +314,10 @@ export function showMain() {
 
   $("report-btn")?.addEventListener("click", reportProblem);
 
+  $("seats").addEventListener("click", (e) => {
+    const item = e.target.closest("[data-act='cancel']") && seatItem(e.target);
+    if (item) cancelItem(item);
+  });
   $("list").addEventListener("click", (e) => {
     const row = e.target.closest(".file-row");
     if (!row || !row._item) return;
@@ -378,36 +384,6 @@ export function pickerGate() {
   return true;
 }
 
-// chip() lives in public.js (shared with admin.js/share.js).
-
-// Recursively walk dropped FileSystemEntry trees, capturing each file's
-// relative path ("Trip/Day 1/IMG.jpg") so the Drive folder tree can be
-// mirrored server-side. Falls back to the flat file list on old browsers.
-async function collectDropped(dt) {
-  const entries = [...(dt.items || [])].map((it) => it.webkitGetAsEntry?.()).filter(Boolean);
-  if (!entries.length) return [...dt.files];
-  const out = [];
-  const CAP = 20000;
-  const entryFile = (entry) => new Promise((resolve) => entry.file(resolve, () => resolve(null)));
-  const readBatch = (reader) => new Promise((resolve) => reader.readEntries(resolve, () => resolve([])));
-  async function walk(entry, path) {
-    if (out.length >= CAP) return;
-    if (entry.isFile) {
-      const file = await entryFile(entry);
-      if (file) out.push({ file, rel: path ? `${path}${file.name}` : "" });
-    } else if (entry.isDirectory) {
-      const reader = entry.createReader();
-      for (;;) {
-        const batch = await readBatch(reader);
-        if (!batch.length) break;
-        for (const child of batch) await walk(child, `${path}${entry.name}/`);
-      }
-    }
-  }
-  for (const entry of entries) await walk(entry, "");
-  return out;
-}
-
 export function addFiles(files) {
   crumb(`addFiles: ${(files || []).length} file(s)`);
   const incoming = [...files].map((f) =>
@@ -465,7 +441,8 @@ export function addFiles(files) {
   let w = 0;
   for (let i = 0; i < queue.length; i++) if (queue[i].state === "queued") queue[i] = waiting[w++];
   st.lastQueueNotice = "";
-  $("transfer-panel").classList.remove("hidden");
+  if (!st.startedAt || !queue.some((q) => q.state === "uploading" || q.state === "queued")) st.startedAt = Date.now();
+  throwBatch(fresh.map((item) => item.file));
   connectLive();
   schedulePaint();
   // Upload spec §1.2: one batched preflight before a byte leaves. Files the

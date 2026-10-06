@@ -4,6 +4,54 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-10-06 — The drop page becomes a court
+
+The drop page is rebuilt around the Figma "Nothing but net" design (v3 in the
+Dumpyard file). The upload engine is untouched; this is the layer a sender
+sees.
+
+- **The backboard is the dropzone.** A frosted glass board (backdrop blur and
+  saturation over arena lights, a painted rim highlight, a green tempered-glass
+  cast) takes clicks and drops. The whole page accepts drops, not just the box.
+- **Rim and net are drawn on one fixed, click-through canvas** placed from
+  the board's box each frame, so scroll, resize and phones need no special
+  cases. The net is rope cloth (`drop-court-physics.js`): 14 cords by 7 rings,
+  diamond mesh, verlet integration, cords that resist stretch but not
+  slack, and contact friction - friction, not the push, is what lets a card
+  stretch a real net (about 1.25x) before it springs back.
+  `scripts/drop-court-physics-test.mjs` fails if the net collapses at rest,
+  stops stretching, snags the card, or the shot misses its apex.
+- **The bench is the parallel uploads.** One seat per lane, `MAX_ACTIVE` of
+  them (12 desktop, 8 phone); idle seats show how many lanes the adaptive
+  controller has open. Seats are format cards (type, extension, name,
+  progress), deliberately without image previews: decoding a dozen originals
+  at once costs the sender more than it is worth.
+- **A file is shot only after `/api/complete` confirms it.** `setState`
+  now calls `st.onState`, the bench launches the card from its own seat, it
+  flies a gravity arc, kisses the rim on off-centre shots, falls through the
+  net and drops behind the Drive tray into its slot. MADE on the scoreboard
+  subtracts cards still in the air, so it ticks when the file lands, never
+  before Drive has it.
+- **The batch.** While files are dragged in, a stack hangs off the pointer on
+  a spring chain, leans with drag speed and swings when the hand stops; the
+  board lights up with "Release to add N files". Browsers reveal only the
+  count and MIME types mid-drag, so names, the extension tally and previews
+  of the first three files (the only previews the page makes) appear on the
+  catch right after the drop, before the stack is pulled into the glass.
+- **One home per fact.** The scoreboard owns every total (made, bytes, time
+  left with a finish time, speed sparkline, lanes, a per-file shot chart);
+  the bench owns what is uploading; the log owns what needs a look (retry,
+  upload anyway) and what landed; the tray owns where files go and the
+  sender's name. The old progress ring, detail line, add-more bar and
+  keep-open banner repeated these and are gone; the topbar pill hides once a
+  transfer starts.
+- Kept from the old page: gates, name and folder alias, files and folders,
+  the collector's note (now a collapsible line), offline and budget states
+  (now on the scoreboard), resume, pause, retry, cancel, show all, the done
+  recap, the trust strip and report-a-problem.
+- Reduced motion turns off flights, the net and the drag stack; every state
+  still renders.
+
 ## 2026-09-23 — Review follow-ups (CodeRabbit on #136, #153, #161)
 
 - Image jobs are idempotent per job on the store side, not only in the

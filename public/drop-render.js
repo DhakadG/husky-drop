@@ -1,20 +1,25 @@
 import {
   $,
   ATTENTION_STATES,
-  MAX_VISIBLE,
+  MAX_ACTIVE,
   attention,
   doneRecent,
-  leaving,
   queue,
   st,
   totals,
-  uploadingList,
 } from "./drop-state.js";
 import { pump } from "./drop-queue.js";
 import { sendLive } from "./drop-live.js";
 import { toast } from "./drop-utils.js";
+import { renderBench } from "./drop-bench.js";
+import { pendingShots } from "./drop-court.js";
 
-// Rendering: file rows, summary, phase, human error copy.
+// Rendering. Every fact has one home: the scoreboard owns the totals, the
+// bench owns the files uploading right now, the log owns what needs a look
+// (failed, skipped) and what already landed.
+const LOG_DONE = 6; // finished rows shown before "Show all"
+const SEGMENTS = 48; // one chart segment per file up to this many, then a stacked bar
+
 export function schedulePaint() {
   if (st.paintScheduled) return;
   st.paintScheduled = true;
@@ -40,6 +45,10 @@ export function updateSpeed() {
   if (dt < 1) return;
   const inst = Math.max(0, (totals.sent - st.speedSent) / dt);
   st.speedBps = st.speedBps ? st.speedBps * 0.6 + inst * 0.4 : inst;
+  if (st.active > 0) {
+    st.speedHist.push(st.speedBps);
+    if (st.speedHist.length > 24) st.speedHist.shift();
+  }
   if (st.adaptiveController) {
     const nextLimit = st.adaptiveController.observe({
       bps: st.speedBps,
@@ -56,53 +65,38 @@ export function updateSpeed() {
   st.speedSent = totals.sent;
 }
 
+// The log: what needs a look first, then what landed, newest first. Files on
+// the bench are not repeated here; "Show all" lists everything in queue order.
 export function visibleItems() {
-  const att = attention.length > 50 ? attention.slice(-50) : attention;
-  const pinned = uploadingList.length + att.length + doneRecent.length;
-  const room = Math.max(0, MAX_VISIBLE - pinned);
-  const queued = [];
   if (st.showAllFiles) return queue;
-  if (room > 0 && totals.queued > 0) {
-    for (const it of queue) {
-      if (it.state !== "queued") continue;
-      queued.push(it);
-      if (queued.length >= room) break;
-    }
-  }
-  return [...uploadingList, ...leaving, ...att, ...queued, ...doneRecent.filter((it) => !leaving.includes(it))];
+  const att = attention.length > 50 ? attention.slice(-50) : attention;
+  return [...att, ...doneRecent.slice(-LOG_DONE).reverse()];
 }
 
 export function renderVisible() {
-  const list = $("list");
+  renderBench(Math.min(st.concurrency, MAX_ACTIVE));
   const vis = visibleItems();
-  reconcile(list, vis, (item) => item, makeRow, updateRow);
-
+  reconcile($("list"), vis, (item) => item, makeRow, updateRow);
+  $("log").classList.toggle("hidden", !vis.length);
   const hidden = totals.count - vis.length;
-  if (st.tailNote) {
-    st.tailNote.remove();
-    st.tailNote = null;
-  }
   const showButton = $("show-all-files");
   showButton.classList.toggle("hidden", hidden <= 0 && !st.showAllFiles);
-  showButton.textContent = st.showAllFiles ? "Show active and recent only" : `Show all ${totals.count} files`;
+  showButton.textContent = st.showAllFiles ? "Show what needs a look" : `Show all ${totals.count} files`;
 }
 
 export function makeRow(item) {
   const row = document.createElement("div");
   row.className = "file-row";
   row.innerHTML = `
-    <div class="file-top">
-      <div class="file-name"></div>
-      <div class="file-stat"></div>
-      <div class="file-actions">
-        <button class="row-btn" data-act="retry" type="button">retry</button>
-        <button class="row-btn danger" data-act="cancel" type="button">cancel</button>
-      </div>
-    </div>
-    <div class="trail"><i></i></div>`;
+    <i class="file-dot" aria-hidden="true"></i>
+    <div class="file-name"></div>
+    <div class="file-stat"></div>
+    <div class="file-actions">
+      <button class="row-btn" data-act="retry" type="button">retry</button>
+      <button class="row-btn danger" data-act="cancel" type="button">cancel</button>
+    </div>`;
   row.querySelector(".file-name").textContent = item.relativePath || item.file.name;
   row._item = item;
-  row._bar = row.querySelector(".trail > i");
   row._stat = row.querySelector(".file-stat");
   row._retry = row.querySelector("[data-act='retry']");
   row._cancel = row.querySelector("[data-act='cancel']");
@@ -110,26 +104,25 @@ export function makeRow(item) {
 }
 
 export function updateRow(el, item) {
-  const pct = item.file.size ? Math.min(100, (item.sent / item.file.size) * 100) : 100;
-  el._bar.style.width = `${pct}%`;
   el._stat.textContent = rowStat(item);
   el._stat.className = `file-stat ${statClass(item.state)}`;
   el._stat.title = item.state === "error" && item.errorDetail ? `${item.errorCode || "E_UNKNOWN"} · ${item.errorDetail}` : "";
-  el.className = `file-row ${item.state}${leaving.includes(item) ? " leaving" : ""}`;
+  el.className = `file-row ${item.state}`;
   const canRetry = ATTENTION_STATES.has(item.state);
   const canCancel = item.state === "queued" || item.state === "uploading";
+  el._retry.textContent = item.state === "skipped" ? "upload anyway" : "retry";
   el._retry.classList.toggle("hidden", !canRetry);
   el._cancel.classList.toggle("hidden", !canCancel);
   el.classList.toggle("has-actions", canRetry || canCancel);
 }
 
 export function rowStat(item) {
+  if (item.state === "done") return `${fmtBytes(item.file.size)} · in Drive`;
   if (item.stat) return item.stat;
   if (item.state === "checking") return "checking";
-  if (item.state === "skipped") return "already in Drive - skipped";
-  if (item.state === "error" && item.errorCode) return `${item.errorCode} · ${item.stat || "failed"}`;
+  if (item.state === "skipped") return "already in Drive, skipped";
+  if (item.state === "error" && item.errorCode) return `${item.errorCode} · failed`;
   if (item.state === "uploading") return `${fmtBytes(item.sent)} / ${fmtBytes(item.file.size)}`;
-  if (item.state === "done") return `${fmtBytes(item.file.size)} done`;
   if (item.state === "warning") return "Drive saved - log delayed";
   if (item.state === "canceled") return "canceled";
   return item.state;
@@ -144,43 +137,145 @@ export function statClass(state) {
 
 export function renderSummary() {
   // Skipped files (already in Drive) never send bytes: count them as landed,
-  // not as missing progress, or the bar can never reach 100 %.
+  // not as missing progress.
   const landed = totals.done + totals.warning + totals.skipped;
   const inFlight = totals.queued + totals.checking + totals.uploading;
   const settled = totals.count > 0 && !inFlight;
-  const pct = settled && !totals.error && !totals.canceled ? 100 : totals.bytes ? Math.min(100, Math.floor((totals.sent / totals.bytes) * 100)) : 0;
-  $("pct").textContent = pct;
-  $("totalbar").style.width = `${pct}%`;
-  $("progress-ring-value").style.strokeDashoffset = String(163.36 * (1 - pct / 100));
-  $("detail").textContent = st.queuePaused ? `Paused · ${detailText()}` : detailText();
-  // "warning" files are in Drive too (only the dashboard record lagged), so
-  // the queue is finished once nothing is queued or uploading.
-  $("queue-title").textContent = settled ? `Delivered ${landed} of ${totals.count} files` : totals.checking && !totals.uploading ? `Checking ${totals.checking} file${totals.checking === 1 ? "" : "s"}…` : st.queuePaused ? `Paused — ${landed} of ${totals.count} files delivered` : `Uploading — ${landed} of ${totals.count} files`;
   const completed = settled && landed === totals.count;
-  document.body.dataset.phase = !totals.count ? "ready" : completed ? "done" : st.networkPaused ? "offline" : st.queuePaused ? "paused" : totals.error ? "attention" : "uploading";
-  $("add-more-bar").classList.toggle("hidden", !totals.count || completed);
-  // Nothing left to protect once everything landed: drop the "keep this page
-  // open" banner and the pause button instead of nagging under a green tick.
-  document.querySelector(".keep-open")?.classList.toggle("hidden", !inFlight);
+  const phase = phaseOf(completed);
+  document.body.dataset.phase = phase;
+  if (completed && !st.finishedAt) st.finishedAt = Date.now();
+  if (!completed) st.finishedAt = 0;
+
+  $("bench").classList.toggle("hidden", !inFlight);
   $("pause-all").classList.toggle("hidden", !inFlight);
+  $("cancel-all").classList.toggle("hidden", !(totals.queued + totals.uploading));
+  const failed = totals.error + totals.warning + totals.canceled;
+  $("retry-all").classList.toggle("hidden", failed === 0);
+  $("retry-all").innerHTML = `${uiIcon("refresh-cw")}Retry ${failed} failed`;
+
+  renderScoreboard(phase, landed);
+
   $("done-card").classList.toggle("hidden", !completed);
   if (completed) {
-    $("done-title").textContent = totals.done === 1 ? "Your file is delivered" : `All ${totals.done} files delivered`;
-    const videos = doneRecent.filter((it) => /^video\//.test(it.file.type || "")).length;
-    $("done-recap").textContent = `${fmtBytes(totals.bytes)} saved to the collector’s Drive.${videos ? " Videos get a streaming copy overnight so they play instantly when shared." : ""}`;
+    const owner = st.link.ownerName;
+    $("done-title").textContent = owner ? `In ${owner}'s Drive` : "In the collector's Drive";
+    const videos = doneRecent.some((it) => /^video\//.test(it.file.type || ""));
+    $("done-recap").textContent = `${videos ? "Videos get a streaming copy overnight so they play instantly when shared. " : ""}You can close this page now.`;
   }
-
-  const failed = totals.error + totals.warning + totals.canceled;
-  const pending = totals.queued + totals.uploading;
-  const retryBtn = $("retry-all");
-  const cancelBtn = $("cancel-all");
-  if (retryBtn) {
-    retryBtn.classList.toggle("hidden", failed === 0);
-    retryBtn.innerHTML = `${uiIcon("refresh-cw")}${failed ? `Retry ${failed} failed` : "Retry failed"}`;
-  }
-  if (cancelBtn) cancelBtn.classList.toggle("hidden", pending === 0);
-
   maybeQueueNotice();
+}
+
+function phaseOf(completed) {
+  if (!totals.count) return "ready";
+  if (completed) return "done";
+  if (st.networkPaused) return "offline";
+  if (!$("budget-notice").classList.contains("hidden")) return "budget";
+  if (st.queuePaused) return "paused";
+  return totals.error ? "attention" : "uploading";
+}
+
+const TAGS = { ready: "ready", uploading: "live", attention: "live", paused: "paused", offline: "offline", budget: "budget", done: "final" };
+
+function renderScoreboard(phase, landed) {
+  const sb = $("scoreboard");
+  sb.classList.toggle("idle", !totals.count);
+  if (!totals.count) return;
+  sb.dataset.phase = phase;
+  $("sb-tag").textContent = TAGS[phase] || "live";
+
+  // MADE counts files Drive confirmed, minus cards still in the air: it ticks
+  // when the file lands in the tray, not when it is thrown.
+  tickMade(sb, Math.max(0, totals.done + totals.warning - pendingShots()));
+  $("sb-of").textContent = `/${totals.count}`;
+  const pct = totals.bytes ? Math.min(100, Math.floor((totals.sent / totals.bytes) * 100)) : 0;
+  $("sb-sent").textContent = fmtBytes(totals.sent);
+  $("sb-sent-sub").textContent = `of ${fmtBytes(totals.bytes)} · ${phase === "done" ? 100 : pct}%`;
+
+  renderClock(phase, landed);
+  renderChart($("sb-chart"));
+  const hist = st.speedHist;
+  const max = Math.max(1, ...hist);
+  $("sb-spark").setAttribute("points", hist.map((v, i) => `${(i * 72) / 23},${(19 - (v / max) * 17).toFixed(1)}`).join(" "));
+  $("sb-speed").textContent = st.active && st.speedBps ? `${fmtBytes(st.speedBps)}/s` : phase === "done" ? `${totals.done} delivered` : "";
+  $("sb-lanes").textContent = `${Math.min(st.concurrency, MAX_ACTIVE)} of ${MAX_ACTIVE} lanes`;
+}
+
+function tickMade(sb, made) {
+  const el = $("sb-made");
+  if (el.textContent === String(made)) return;
+  const up = made > Number(el.textContent || 0);
+  el.textContent = String(made);
+  if (!up) return;
+  for (const node of [el, sb]) {
+    node.classList.remove("tick");
+    void node.offsetWidth;
+    node.classList.add("tick");
+  }
+}
+
+// CLOCK: time left and the time it will be done; total time once FINAL.
+function renderClock(phase, landed) {
+  const clock = $("sb-clock");
+  const sub = $("sb-clock-sub");
+  if (phase === "done") {
+    clock.textContent = st.startedAt ? clockText((st.finishedAt - st.startedAt) / 1000) : "0:00";
+    sub.textContent = "total time";
+  } else if (phase === "paused" || phase === "offline" || phase === "budget") {
+    clock.textContent = "--:--";
+    sub.textContent = phase === "offline" ? "waiting for the connection" : "paused";
+  } else if (st.speedBps > 0 && totals.bytes > totals.sent) {
+    const eta = (totals.bytes - totals.sent) / st.speedBps;
+    clock.textContent = clockText(eta);
+    sub.textContent = `in by ${new Date(Date.now() + eta * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  } else {
+    clock.textContent = "--:--";
+    sub.textContent = landed === totals.count ? "finishing" : "estimating";
+  }
+}
+
+const clockText = (sec) => {
+  const s = Math.max(0, Math.round(sec));
+  const pad = (n) => String(n).padStart(2, "0");
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+};
+
+function segKind(it) {
+  if (it.state === "done" || it.state === "warning") return "made";
+  if (it.state === "uploading") return it.stat === "verifying" ? "verify" : "fly";
+  if (it.state === "skipped") return "skip";
+  if (it.state === "error" || it.state === "canceled") return "miss";
+  return "q";
+}
+
+// One segment per file (the shot chart); past SEGMENTS files it becomes one
+// stacked bar, because 300 two-pixel segments read as noise.
+function renderChart(el) {
+  const n = queue.length;
+  const stacked = n > SEGMENTS;
+  el.classList.toggle("stacked", stacked);
+  const want = stacked ? 5 : n;
+  while (el.children.length < want) el.appendChild(document.createElement("i"));
+  while (el.children.length > want) el.lastChild.remove();
+  if (stacked) {
+    const counts = { made: 0, fly: 0, verify: 0, skip: 0, miss: 0, q: 0 };
+    for (const it of queue) counts[segKind(it)]++;
+    counts.fly += counts.verify;
+    ["made", "fly", "skip", "miss", "q"].forEach((k, i) => {
+      const c = el.children[i];
+      c.className = k;
+      c.style.flexGrow = String(counts[k]);
+    });
+    return;
+  }
+  queue.forEach((it, i) => {
+    const c = el.children[i];
+    const k = segKind(it);
+    if (c.className !== k) c.className = k;
+    if (k === "fly") c.style.setProperty("--p", `${it.file.size ? Math.min(100, (it.sent / it.file.size) * 100) : 0}%`);
+  });
 }
 
 // The row shows what the uploader can act on, never a stack-trace fragment;
@@ -215,22 +310,6 @@ export function humanError(err) {
   if (status >= 500 || /is not defined|TypeError|internal error|KV/i.test(message)) return "Server hiccup - tap retry";
   if (/too large/i.test(message)) return "File too large for this link";
   return message && message.length < 60 && !/[{}<>]/.test(message) ? message : "Couldn't upload - tap retry";
-}
-
-export function detailText() {
-  const { done, error, warning, canceled, count, sent, bytes, skipped, checking } = totals;
-  if (checking && st.active === 0) return `checking ${checking} file${checking === 1 ? "" : "s"} against what is already in Drive`;
-  if (st.active > 0) {
-    const remaining = Math.max(0, bytes - sent);
-    const eta = st.speedBps > 0 ? ` - ~${fmtTime(remaining / st.speedBps)} left` : "";
-    const rate = st.speedBps > 0 ? ` - ${fmtBytes(st.speedBps)}/s` : "";
-    return `${done}/${count} files - ${fmtBytes(sent)} of ${fmtBytes(bytes)}${rate}${eta}`;
-  }
-  const need = error + warning + canceled;
-  const skippedNote = skipped ? ` - ${skipped} already in Drive, skipped` : "";
-  if (need) return `${done} done - ${need} need attention, tap retry${skippedNote}`;
-  if (count && done + skipped === count) return skipped ? `${done} uploaded${skippedNote}` : `all ${done} files are in Drive`;
-  return "waiting";
 }
 
 export function maybeQueueNotice() {
