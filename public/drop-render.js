@@ -142,8 +142,7 @@ export function renderSummary() {
   const inFlight = totals.queued + totals.checking + totals.uploading;
   const settled = totals.count > 0 && !inFlight;
   const completed = settled && landed === totals.count;
-  const budget = !$("budget-notice").classList.contains("hidden");
-  const phase = !totals.count ? "ready" : completed ? "done" : st.networkPaused ? "offline" : budget ? "budget" : st.queuePaused ? "paused" : totals.error ? "attention" : "uploading";
+  const phase = phaseOf(completed);
   document.body.dataset.phase = phase;
   if (completed && !st.finishedAt) st.finishedAt = Date.now();
   if (!completed) st.finishedAt = 0;
@@ -167,6 +166,15 @@ export function renderSummary() {
   maybeQueueNotice();
 }
 
+function phaseOf(completed) {
+  if (!totals.count) return "ready";
+  if (completed) return "done";
+  if (st.networkPaused) return "offline";
+  if (!$("budget-notice").classList.contains("hidden")) return "budget";
+  if (st.queuePaused) return "paused";
+  return totals.error ? "attention" : "uploading";
+}
+
 const TAGS = { ready: "ready", uploading: "live", attention: "live", paused: "paused", offline: "offline", budget: "budget", done: "final" };
 
 function renderScoreboard(phase, landed) {
@@ -178,24 +186,36 @@ function renderScoreboard(phase, landed) {
 
   // MADE counts files Drive confirmed, minus cards still in the air: it ticks
   // when the file lands in the tray, not when it is thrown.
-  const made = Math.max(0, totals.done + totals.warning - pendingShots());
-  const madeEl = $("sb-made");
-  if (madeEl.textContent !== String(made)) {
-    const up = made > Number(madeEl.textContent || 0);
-    madeEl.textContent = String(made);
-    if (up) {
-      for (const el of [madeEl, sb]) {
-        el.classList.remove("tick");
-        void el.offsetWidth;
-        el.classList.add("tick");
-      }
-    }
-  }
+  tickMade(sb, Math.max(0, totals.done + totals.warning - pendingShots()));
   $("sb-of").textContent = `/${totals.count}`;
   const pct = totals.bytes ? Math.min(100, Math.floor((totals.sent / totals.bytes) * 100)) : 0;
   $("sb-sent").textContent = fmtBytes(totals.sent);
   $("sb-sent-sub").textContent = `of ${fmtBytes(totals.bytes)} · ${phase === "done" ? 100 : pct}%`;
 
+  renderClock(phase, landed);
+  renderChart($("sb-chart"));
+  const hist = st.speedHist;
+  const max = Math.max(1, ...hist);
+  $("sb-spark").setAttribute("points", hist.map((v, i) => `${(i * 72) / 23},${(19 - (v / max) * 17).toFixed(1)}`).join(" "));
+  $("sb-speed").textContent = st.active && st.speedBps ? `${fmtBytes(st.speedBps)}/s` : phase === "done" ? `${totals.done} delivered` : "";
+  $("sb-lanes").textContent = `${Math.min(st.concurrency, MAX_ACTIVE)} of ${MAX_ACTIVE} lanes`;
+}
+
+function tickMade(sb, made) {
+  const el = $("sb-made");
+  if (el.textContent === String(made)) return;
+  const up = made > Number(el.textContent || 0);
+  el.textContent = String(made);
+  if (!up) return;
+  for (const node of [el, sb]) {
+    node.classList.remove("tick");
+    void node.offsetWidth;
+    node.classList.add("tick");
+  }
+}
+
+// CLOCK: time left and the time it will be done; total time once FINAL.
+function renderClock(phase, landed) {
   const clock = $("sb-clock");
   const sub = $("sb-clock-sub");
   if (phase === "done") {
@@ -212,13 +232,6 @@ function renderScoreboard(phase, landed) {
     clock.textContent = "--:--";
     sub.textContent = landed === totals.count ? "finishing" : "estimating";
   }
-
-  renderChart($("sb-chart"));
-  const hist = st.speedHist;
-  const max = Math.max(1, ...hist);
-  $("sb-spark").setAttribute("points", hist.map((v, i) => `${(i * 72) / 23},${(19 - (v / max) * 17).toFixed(1)}`).join(" "));
-  $("sb-speed").textContent = st.active && st.speedBps ? `${fmtBytes(st.speedBps)}/s` : phase === "done" ? `${totals.done} delivered` : "";
-  $("sb-lanes").textContent = `${Math.min(st.concurrency, MAX_ACTIVE)} of ${MAX_ACTIVE} lanes`;
 }
 
 const clockText = (sec) => {

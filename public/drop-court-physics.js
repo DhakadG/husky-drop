@@ -55,7 +55,6 @@ function dist(a, b) {
 // largest movement, so callers can let the net sleep once it settles.
 export function stepNet(net, dt, colliders = [], iterations = 8) {
   const g = GRAVITY * dt * dt;
-  let moved = 0;
   for (const p of net.pts) {
     if (p.pin) continue;
     const vx = (p.x - p.ox) * DAMPING;
@@ -69,46 +68,52 @@ export function stepNet(net, dt, colliders = [], iterations = 8) {
     p.z += vz + (p.rz - p.z) * MEMORY;
   }
   for (let n = 0; n < iterations; n++) {
-    // Cords are rope: they resist stretching, never compression.
-    for (const [ia, ib, len] of net.links) {
-      const a = net.pts[ia];
-      const b = net.pts[ib];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dz = b.z - a.z;
-      const d = Math.hypot(dx, dy, dz) || 1e-9;
-      const max = len * SLACK;
-      if (d <= max) continue;
-      const f = (d - max) / d;
-      const wa = a.pin ? 0 : b.pin ? 1 : 0.5;
-      const wb = b.pin ? 0 : a.pin ? 1 : 0.5;
-      a.x += dx * f * wa;
-      a.y += dy * f * wa;
-      a.z += dz * f * wa;
-      b.x -= dx * f * wb;
-      b.y -= dy * f * wb;
-      b.z -= dz * f * wb;
-    }
-    for (const c of colliders) {
-      for (const p of net.pts) {
-        if (p.pin) continue;
-        const dx = p.x - c.x;
-        const dy = p.y - c.y;
-        const dz = p.z - c.z;
-        const d = Math.hypot(dx, dy, dz);
-        if (d >= c.r || d === 0) continue;
-        const f = (c.r - d) / d;
-        p.x += dx * f;
-        p.y += dy * f;
-        p.z += dz * f;
-        // Friction: a knot the card is rubbing past gets dragged along with
-        // it. This, not the push, is what stretches a real net.
-        if (n === 0) p.y += (c.dy || 0) * FRICTION;
-      }
-    }
+    relaxCords(net);
+    for (const c of colliders) collide(net, c, n === 0);
   }
+  let moved = 0;
   for (const p of net.pts) moved = Math.max(moved, Math.abs(p.x - p.ox), Math.abs(p.y - p.oy), Math.abs(p.z - p.oz));
   return moved;
+}
+
+// Cords are rope: they resist stretching, never compression.
+function relaxCords(net) {
+  for (const [ia, ib, len] of net.links) {
+    const a = net.pts[ia];
+    const b = net.pts[ib];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dz = b.z - a.z;
+    const d = Math.hypot(dx, dy, dz) || 1e-9;
+    const max = len * SLACK;
+    if (d <= max) continue;
+    const f = (d - max) / d;
+    const wa = a.pin ? 0 : b.pin ? 1 : 0.5;
+    const wb = b.pin ? 0 : a.pin ? 1 : 0.5;
+    a.x += dx * f * wa;
+    a.y += dy * f * wa;
+    a.z += dz * f * wa;
+    b.x -= dx * f * wb;
+    b.y -= dy * f * wb;
+    b.z -= dz * f * wb;
+  }
+}
+
+// Push knots out of the card. With `drag` (once per step) a touching knot
+// also follows the card down: friction, not the push, stretches a real net.
+function collide(net, c, drag) {
+  for (const p of net.pts) {
+    if (p.pin) continue;
+    const dx = p.x - c.x;
+    const dy = p.y - c.y;
+    const dz = p.z - c.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (d >= c.r || d === 0) continue;
+    const f = (c.r - d) / d;
+    p.x += dx * f;
+    p.y += dy * f + (drag ? (c.dy || 0) * FRICTION : 0);
+    p.z += dz * f;
+  }
 }
 
 // Lowest point of the net right now (the stretch, in rim radii).
@@ -141,7 +146,7 @@ function minY(y0, y1, k) {
 }
 
 // Damped spring toward a target (the batch cards hang on these).
-export function springStep(s, tx, ty, dt, k = 420, c = 26) {
+export function springStep(s, tx, ty, dt, { k = 420, c = 26 } = {}) {
   s.vx += (k * (tx - s.x) - c * s.vx) * dt;
   s.vy += (k * (ty - s.y) - c * s.vy) * dt;
   s.x += s.vx * dt;

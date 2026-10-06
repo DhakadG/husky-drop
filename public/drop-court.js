@@ -134,16 +134,17 @@ function tick(g, dt) {
   }
 }
 
-function advance(s, g, dt) {
-  s.t += dt;
-  const cardH = g.rx * 0.56;
-  if (s.phase === "lift") {
+// One function per phase of a shot: lift off the seat, the thrown arc, an
+// optional kiss off the rim, through the net, and the drop into the tray.
+const PHASES = {
+  lift(s, g) {
     const e = easeOut(Math.min(1, s.t / 0.16));
     s.x = s.fx;
     s.y = s.fy - 24 * e;
     s.scale = s.seatScale * (1 + 0.05 * e);
     s.rot = -6 * e;
     if (s.t < 0.16) return;
+    const cardH = g.rx * 0.56;
     s.phase = "air";
     s.t = 0;
     s.ax = s.x;
@@ -152,7 +153,8 @@ function advance(s, g, dt) {
     s.ty = g.cy - g.ry - cardH * 0.35;
     s.path = shotPath({ x: s.ax, y: s.ay }, { x: s.tx, y: s.ty }, Math.min(s.ay, s.ty) - Math.max(120, g.rx * 1.5));
     s.dur = 0.62 + Math.min(0.3, Math.hypot(s.tx - s.ax, s.ty - s.ay) / 2400);
-  } else if (s.phase === "air") {
+  },
+  air(s, g) {
     const u = Math.min(1, s.t / s.dur);
     const p = s.path(u);
     s.x = p.x;
@@ -160,21 +162,22 @@ function advance(s, g, dt) {
     s.rot = -6 - 194 * u;
     s.scale = lerp(s.seatScale * 1.05, 0.72, u);
     if (u < 1) return;
-    if (s.kiss) {
-      s.phase = "kiss";
-      s.t = 0;
-      s.kx = s.x;
-      s.ky = s.y;
-      jolt(g);
-    } else enterNet(s, g);
-  } else if (s.phase === "kiss") {
-    // Off the far iron: up a little, then over into the middle.
+    if (!s.kiss) return enterNet(s, g);
+    s.phase = "kiss";
+    s.t = 0;
+    s.kx = s.x;
+    s.ky = s.y;
+    jolt(g);
+  },
+  // Off the far iron: up a little, then over into the middle.
+  kiss(s, g, dt) {
     const k = Math.min(1, s.t / 0.2);
     s.x = lerp(s.kx, g.cx, easeInOut(k));
     s.y = s.ky - 30 * g.s * Math.sin(Math.PI * k);
     s.rot -= 90 * dt;
     if (k >= 1) enterNet(s, g);
-  } else if (s.phase === "net") {
+  },
+  net(s, g, dt) {
     s.vy = Math.min(s.vy + 9 * dt, 3.2);
     if (s.uy > 0.1 && s.uy < NET_BOTTOM + 0.3) s.vy *= 0.985; // the cords take some speed off
     const dy = s.vy * dt;
@@ -185,17 +188,22 @@ function advance(s, g, dt) {
     s.y = g.cy + s.uy * g.rx;
     s.rot += (-180 - s.rot) * 0.08;
     s.scale += (0.58 - s.scale) * 0.06;
-    if (s.uy > NET_BOTTOM + 0.75) {
-      s.phase = "fall";
-      s.vpx = s.vy * g.rx;
-    }
-  } else if (s.phase === "fall") {
+    if (s.uy <= NET_BOTTOM + 0.2) return;
+    s.phase = "fall";
+    s.vpx = s.vy * g.rx;
+  },
+  fall(s, g, dt) {
     s.vpx += 2400 * g.s * dt;
     s.y += s.vpx * dt;
     s.x = g.cx;
     s.scale += (0.3 - s.scale) * 0.08;
-    if (s.y - (cardH * s.scale) / 2 > tray.getBoundingClientRect().top) land(s);
-  }
+    if (s.y - (g.rx * 0.56 * s.scale) / 2 > tray.getBoundingClientRect().top) land(s);
+  },
+};
+
+function advance(s, g, dt) {
+  s.t += dt;
+  PHASES[s.phase](s, g, dt);
 }
 
 function enterNet(s, g) {
@@ -232,21 +240,22 @@ function draw(g) {
   if (hoopVisible) {
     drawBracket(g);
     drawRim(g, Math.PI, 2 * Math.PI);
-    drawNet(g, false);
-    for (const s of shots) if (s.phase === "net") drawCard(s, g);
-    drawNet(g, true);
-    drawRim(g, 0, Math.PI);
+    // Cards inside or below the net never draw past the tray's top edge: the
+    // file drops behind the tray, into its slot.
     const top = tray.getBoundingClientRect().top;
-    for (const s of shots) {
-      if (s.phase !== "fall") continue;
-      // The file drops behind the tray, into its slot.
+    const clipped = (phase) => {
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, W, top);
       ctx.clip();
-      drawCard(s, g);
+      for (const s of shots) if (s.phase === phase) drawCard(s, g);
       ctx.restore();
-    }
+    };
+    drawNet(g, false);
+    clipped("net");
+    drawNet(g, true);
+    drawRim(g, 0, Math.PI);
+    clipped("fall");
   }
   for (const s of shots) if (s.phase === "lift" || s.phase === "air" || s.phase === "kiss") drawCard(s, g);
   for (const p of pops) drawPop(p, g);

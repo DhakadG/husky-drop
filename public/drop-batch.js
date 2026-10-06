@@ -169,16 +169,7 @@ function frame(now) {
   // Spring chain: pointer -> card 1 -> card 2 -> card 3 -> name chip.
   let lead = pull ? { x: pull.x, y: pull.y } : { x: pointer.x - 74, y: pointer.y - 18 };
   springs.forEach((s, i) => {
-    const fan = FAN[i] || { x: -4, y: 132, r: 0 };
-    const tx = i < CARDS ? lead.x + fan.x : springs[0].x;
-    const ty = i < CARDS ? lead.y + fan.y : springs[0].y + fan.y;
-    const k = i === 0 ? 900 : 420;
-    const c = i === 0 ? 55 : 26;
-    for (let n = 0; n < 2; n++) springStep(s, tx, ty, dt / 2, k, c);
-    // Lean against the drag, capped, and settle back to the fan angle.
-    const lean = Math.max(-16, Math.min(16, -s.vx * 0.035));
-    s.rot += (fan.r + lean - s.rot) * Math.min(1, dt * 14);
-    if (i < CARDS) lead = { x: s.x - fan.x, y: s.y - fan.y };
+    lead = follow(s, i, lead, dt);
   });
   let scale = 1;
   if (pull) {
@@ -187,13 +178,32 @@ function frame(now) {
     el.style.opacity = String(Math.max(0, 1 - pull.t / 0.3));
     if (pull.t > 0.3) hide();
   }
-  springs.forEach((s, i) => {
-    const node = i < CARDS ? cards[i] : chip;
-    node.style.transform = `translate3d(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px, 0) rotate(${(i < CARDS ? s.rot : s.rot * 0.4).toFixed(2)}deg) scale(${scale})`;
-  });
-  badge.style.transform = `translate3d(${(springs[0].x + 126).toFixed(1)}px, ${(springs[0].y - 20).toFixed(1)}px, 0) scale(${scale})`;
+  paint(scale);
   if (visible) raf = requestAnimationFrame(frame);
   else last = 0;
+}
+
+// One link of the chain: the lead card is stiff, the rest lag. Each card
+// leans against the drag (capped) and settles back to its fan angle.
+function follow(s, i, lead, dt) {
+  const card = i < CARDS;
+  const fan = FAN[i] || { x: -4, y: 132, r: 0 };
+  const tx = card ? lead.x + fan.x : springs[0].x;
+  const ty = card ? lead.y + fan.y : springs[0].y + fan.y;
+  const opts = i === 0 ? { k: 900, c: 55 } : { k: 420, c: 26 };
+  for (let n = 0; n < 2; n++) springStep(s, tx, ty, dt / 2, opts);
+  const lean = Math.max(-16, Math.min(16, -s.vx * 0.035));
+  s.rot += (fan.r + lean - s.rot) * Math.min(1, dt * 14);
+  return card ? { x: s.x - fan.x, y: s.y - fan.y } : lead;
+}
+
+function paint(scale) {
+  springs.forEach((s, i) => {
+    const node = i < CARDS ? cards[i] : chip;
+    const rot = i < CARDS ? s.rot : s.rot * 0.4;
+    node.style.transform = `translate3d(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px, 0) rotate(${rot.toFixed(2)}deg) scale(${scale})`;
+  });
+  badge.style.transform = `translate3d(${(springs[0].x + 126).toFixed(1)}px, ${(springs[0].y - 20).toFixed(1)}px, 0) scale(${scale})`;
 }
 
 // A 300 px preview of one file, or null. Images decode off the main thread
@@ -251,20 +261,25 @@ async function collectDropped(dt) {
   const CAP = 20000;
   const entryFile = (entry) => new Promise((resolve) => entry.file(resolve, () => resolve(null)));
   const readBatch = (reader) => new Promise((resolve) => reader.readEntries(resolve, () => resolve([])));
+  // readEntries hands a directory over in batches and must be drained in
+  // order; sibling subtrees are independent, so they are walked in parallel
+  // and the result is put back in natural path order (IMG_2 before IMG_10).
+  const readAll = async (reader) => {
+    const batch = await readBatch(reader);
+    return batch.length ? [...batch, ...(await readAll(reader))] : [];
+  };
   async function walk(entry, path) {
     if (out.length >= CAP) return;
     if (entry.isFile) {
       const file = await entryFile(entry);
       if (file) out.push({ file, rel: path ? `${path}${file.name}` : "" });
-    } else if (entry.isDirectory) {
-      const reader = entry.createReader();
-      for (;;) {
-        const batch = await readBatch(reader);
-        if (!batch.length) break;
-        for (const child of batch) await walk(child, `${path}${entry.name}/`);
-      }
+      return;
     }
+    if (!entry.isDirectory) return;
+    const children = await readAll(entry.createReader());
+    await Promise.all(children.map((child) => walk(child, `${path}${entry.name}/`)));
   }
-  for (const entry of entries) await walk(entry, "");
-  return out;
+  await Promise.all(entries.map((entry) => walk(entry, "")));
+  const key = (x) => x.rel || x.file.name;
+  return out.sort((x, y) => key(x).localeCompare(key(y), undefined, { numeric: true, sensitivity: "base" }));
 }
