@@ -4,6 +4,21 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-10-07 — A clock that holds still
+
+Uploading 2,171 screenshots on production, the scoreboard clock jumped
+between 5 and 54 minutes. It divided bytes left by a byte rate smoothed over
+about two seconds, but small files are bound by the round trip each one costs,
+not by bytes, and completions arrive in bursts.
+
+- `drop-eta.js` estimates from the last 30 s: bytes left over the byte rate,
+  and, once 20 or more files finished in that window, files left over the
+  completion rate. The slower of the two wins, so a few big videos are timed
+  by bytes and a pile of screenshots by completions.
+- The shown value counts down in real time and drifts toward each new
+  estimate over about 8 s instead of jumping to it.
+- `drop-eta-test.mjs` covers both regimes, the window, and the smoothing.
+
 ## 2026-10-07 — Real shots, bursts, and a basket that collects
 
 The first court scripted every shot the same way (fixed arc, a coin-flip
@@ -11,7 +26,7 @@ rim kiss, a straight drop) and threw one card per finished file. With a
 thousand small screenshots finishing together that is a thousand identical
 flights. This round makes the court behave like a basket and scale.
 
-- **Shots are physics.** \`drop-court-ball.js\` flies each file as a ball in
+- **Shots are physics.** `drop-court-ball.js` flies each file as a ball in
   3D with gravity; the rim is a torus with restitution, the backboard a
   plane, and the net funnels and slows the ball while the ball stretches the
   net (two-way coupling with the existing cloth). An 18-entry shot book
@@ -22,10 +37,10 @@ flights. This round makes the court behave like a basket and scale.
   in: a soft rim turns outward bounces back in and lets a ball on the outer
   lip climb over, and arcs are raised until they clear the front of the
   rim. A file that failed for good is thrown as a brick and stays out.
-  \`drop-court-ball-test.mjs\` plays 1000 shots of the real mix plus 150 of
+  `drop-court-ball-test.mjs` plays 1000 shots of the real mix plus 150 of
   each type and checks every one goes in, each type plays like its name, and
   nothing tunnels through the iron or gets stuck.
-- **Bursts.** Completions queue in \`drop-court-shots.js\`: at most four in
+- **Bursts.** Completions queue in `drop-court-shots.js`: at most four in
   the air, launches spaced with jitter, a backlog merged into bundles (a
   fanned stack with a ×N badge, up to 40 files), and more than 300 waiting
   are counted without a flight. MADE counts up in strides instead of

@@ -13,6 +13,7 @@ import { sendLive } from "./drop-live.js";
 import { h, icon, toast } from "./drop-utils.js";
 import { renderBench } from "./drop-bench.js";
 import { pendingShots, setDrive } from "./drop-court.js";
+import { sampleEta, smoothEta } from "./drop-eta.js";
 
 // Rendering. Every fact has one home: the scoreboard owns the totals, the
 // bench owns the files uploading right now, the log owns what needs a look
@@ -61,6 +62,9 @@ export function updateSpeed() {
       pump();
     }
   }
+  const est = sampleEta(st.etaWin, { t: now, sent: totals.sent, files: totals.done + totals.warning }, { bytes: totals.bytes - totals.sent, files: totals.queued + totals.checking + totals.uploading });
+  st.eta = smoothEta(st.eta, est, dt);
+  st.etaAt = now;
   st.speedAt = now;
   st.speedSent = totals.sent;
 }
@@ -279,8 +283,8 @@ function renderClock(phase, landed) {
   } else if (phase === "paused" || phase === "offline" || phase === "budget") {
     clock.textContent = "--:--";
     sub.textContent = phase === "offline" ? "waiting for the connection" : "paused";
-  } else if (st.speedBps > 0 && totals.bytes > totals.sent) {
-    const eta = (totals.bytes - totals.sent) / st.speedBps;
+  } else if (st.eta != null && totals.bytes > totals.sent) {
+    const eta = Math.max(0, st.eta - (Date.now() - st.etaAt) / 1000);
     clock.textContent = clockText(eta);
     sub.textContent = `in by ${new Date(Date.now() + eta * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
   } else {
