@@ -1,6 +1,7 @@
 import { $ } from "./drop-state.js";
 import { FAMILY, REDUCED_MOTION, fileExt, fileFamily, h, icon } from "./drop-utils.js";
 import { springStep } from "./drop-court-physics.js";
+import { filesFromDrop } from "./drop-walk.js";
 
 // The batch: the whole page is the court, so files dropped anywhere count.
 // While files are dragged in, a small stack hangs off the pointer on springs -
@@ -63,15 +64,9 @@ export function installBatch({ boardEl, onFilesDropped }) {
     e.preventDefault();
     setHover(false);
     pointer = { x: e.clientX, y: e.clientY };
-    // The flat list must be read now: the DataTransfer empties once the
-    // handler yields. It is the fallback if walking the folders fails.
-    const flat = [...e.dataTransfer.files];
-    let collected;
-    try {
-      collected = await collectDropped(e.dataTransfer);
-    } catch {
-      collected = flat;
-    }
+    // filesFromDrop reads the DataTransfer before yielding and falls back to
+    // the flat list if walking the folders fails.
+    const collected = await filesFromDrop(e.dataTransfer);
     if (!collected.length || !onFiles(collected)) hide();
   });
 }
@@ -255,38 +250,3 @@ async function preview(file) {
 }
 
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
-
-// Recursively walk dropped FileSystemEntry trees, capturing each file's
-// relative path ("Trip/Day 1/IMG.jpg") so the Drive folder tree can be
-// mirrored server-side. Falls back to the flat file list on old browsers.
-async function collectDropped(dt) {
-  const entries = [...(dt.items || [])].map((it) => it.webkitGetAsEntry?.()).filter(Boolean);
-  if (!entries.length) return [...dt.files];
-  const out = [];
-  const CAP = 20000;
-  // Errors reject, so the drop handler falls back to the flat file list
-  // instead of silently losing files.
-  const entryFile = (entry) => new Promise((resolve, reject) => entry.file(resolve, reject));
-  const readBatch = (reader) => new Promise((resolve, reject) => reader.readEntries(resolve, reject));
-  // readEntries hands a directory over in batches and must be drained in
-  // order; sibling subtrees are independent, so they are walked in parallel
-  // and the result is put back in natural path order (IMG_2 before IMG_10).
-  const readAll = async (reader) => {
-    const batch = await readBatch(reader);
-    return batch.length ? [...batch, ...(await readAll(reader))] : [];
-  };
-  async function walk(entry, path) {
-    if (out.length >= CAP) return;
-    if (entry.isFile) {
-      const file = await entryFile(entry);
-      if (file) out.push({ file, rel: path ? `${path}${file.name}` : "" });
-      return;
-    }
-    if (!entry.isDirectory) return;
-    const children = await readAll(entry.createReader());
-    await Promise.all(children.map((child) => walk(child, `${path}${entry.name}/`)));
-  }
-  await Promise.all(entries.map((entry) => walk(entry, "")));
-  const key = (x) => x.rel || x.file.name;
-  return out.sort((x, y) => key(x).localeCompare(key(y), undefined, { numeric: true, sensitivity: "base" }));
-}

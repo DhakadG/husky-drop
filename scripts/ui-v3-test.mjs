@@ -124,7 +124,7 @@ for (const n of ["drop-bench", "drop-batch", "drop-court", "drop-render"]) {
   assert.doesNotMatch(await read(`public/${n}.js`), /\.innerHTML\s*=/, `${n}.js builds its DOM without innerHTML`);
 }
 assert.match(dropJs, /try \{\s*st\.onState\?\.\(item, prev, next\);\s*\} catch/, "a court bug cannot turn a finished upload into a failed one");
-assert.match(dropJs, /const flat = \[\.\.\.e\.dataTransfer\.files\];/, "a failed folder walk falls back to the flat file list");
+assert.match(dropJs, /await filesFromDrop\(e\.dataTransfer\)/, "drops go through filesFromDrop (its fallback is exercised in drop-walk-test)");
 assert.match(dropHtml, /id="budget-notice"/, "plan 08 provides the real budget-stop notice");
 assert.match(dropHtml, /id="done-card"/, "plan 08 provides the delivered-files recap");
 assert.match(dropHtml, /class="[^"]*trust-strip[^"]*"/, "plan 08 provides uploader trust guidance");
