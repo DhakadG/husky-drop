@@ -24,6 +24,9 @@ export const SECURITY_HEADERS = {
     "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://api.resend.com https://cloudflareinsights.com https://*.clarity.ms https://fpjscdn.net https://*.fpjs.io",
     "img-src 'self' data: blob: https:",
     "worker-src 'self' blob:",
+    // blob: lets the drop page read a frame from the sender's own video for
+    // the batch preview; without it media falls back to default-src 'self'.
+    "media-src 'self' blob:",
     "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
     "base-uri 'none'",
     "form-action 'none'",

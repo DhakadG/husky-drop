@@ -133,5 +133,6 @@ assert.match(dropCss, /\.scoreboard\s*\{/, "the court styles the scoreboard");
 assert.match(dropCss, /\.seats\s*\{/, "the court styles the bench seats");
 assert.match(dropCss, /backdrop-filter:\s*blur\(14px\) saturate\(160%\)/, "the backboard is real glass, not a flat panel");
 assert.match(dropCss, /@media \(prefers-reduced-motion: reduce\)/, "the court honours reduced motion");
+assert.match(await read("src/util.js"), /"media-src 'self' blob:"/, "the CSP lets the batch read a frame from a local video (blob:)");
 
 console.log("UI v3 structure tests passed");
