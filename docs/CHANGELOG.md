@@ -51,6 +51,11 @@ sees.
   recap, the trust strip and report-a-problem.
 - Reduced motion turns off flights, the net and the drag stack; every state
   still renders.
+- The CSP gains `media-src 'self' blob:`. Without it, media fell back to
+  `default-src 'self'` and the batch's video preview (a frame read from the
+  sender's own file through a `blob:` URL) was blocked in production, so video
+  cards silently stayed as format cards. Found by probing prod headers after
+  the merge.
 
 ## 2026-09-23 — Review follow-ups (CodeRabbit on #136, #153, #161)
 
