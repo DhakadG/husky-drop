@@ -17,20 +17,20 @@ const NET_DRAG = 3.2; // the net takes the pace off a ball passing through
 const GUIDE = 4.5; // verified files are steered into the cylinder; bricks are not
 
 // Launch from `start` so the ball passes `target` (above the rim) on its
-// way down, peaking `apex` radii above the rim.
+// way down, peaking `apex` radii above the rim. A shot from close in on a
+// flat arc would clip the front of the rim from underneath on its way up, so
+// the arc is raised, as a player would, until it clears the iron.
 export function launch(start, target, apex, { miss = false, spin = 0, swirl = 0 } = {}) {
-  const top = Math.min(start.y, target.y) - Math.max(0.2, apex);
-  const vy = -Math.sqrt(2 * GRAVITY * (start.y - top));
-  const tUp = -vy / GRAVITY;
-  const tDown = Math.sqrt((2 * Math.max(0.01, target.y - top)) / GRAVITY);
-  const t = tUp + tDown;
+  let a = Math.max(0.2, apex);
+  let v = arc(start, target, a);
+  for (let n = 0; n < 12 && !clearsFront(start, v); n++) v = arc(start, target, (a += 0.3));
   return {
     x: start.x,
     y: start.y,
     z: start.z,
-    vx: (target.x - start.x) / t,
-    vy,
-    vz: (target.z - start.z) / t,
+    vx: v.vx,
+    vy: v.vy,
+    vz: v.vz,
     rot: 0,
     spin,
     swirl,
@@ -41,6 +41,25 @@ export function launch(start, target, apex, { miss = false, spin = 0, swirl = 0 
     risen: false,
     age: 0,
   };
+}
+
+function arc(start, target, apex) {
+  const top = Math.min(start.y, target.y) - apex;
+  const vy = -Math.sqrt(2 * GRAVITY * (start.y - top));
+  const t = -vy / GRAVITY + Math.sqrt((2 * Math.max(0.01, target.y - top)) / GRAVITY);
+  return { vx: (target.x - start.x) / t, vy, vz: (target.z - start.z) / t };
+}
+
+// Where the ball crosses the front of the rim (z = 1 + reach), its bottom
+// must be above the iron. Shots that never cross the front (already over
+// the rim, or coming from behind) clear trivially.
+function clearsFront(start, v) {
+  const plane = 1 + BALL_R + RIM_TUBE;
+  if (start.z <= plane || v.vz >= 0) return true;
+  const t = (plane - start.z) / v.vz;
+  const y = start.y + v.vy * t + 0.5 * GRAVITY * t * t;
+  const x = start.x + v.vx * t;
+  return Math.abs(x) > 1 + BALL_R || y < -(BALL_R + RIM_TUBE + 0.1);
 }
 
 // The shot book. Each entry is only an aim, an arc and a spin; how it plays
@@ -214,7 +233,7 @@ function throughNet(b, dt) {
   const r = Math.hypot(b.x, b.z);
   b.inNet = b.y > 0 && b.y < NET_BOTTOM + 0.3 && r < 1.05;
   if (!b.inNet) return;
-  if (b.y > NET_BOTTOM * 0.35) b.made = true;
+  if (b.risen && b.y > NET_BOTTOM * 0.35) b.made = true; // only from above
   const drag = Math.max(0, 1 - NET_DRAG * dt);
   b.vx *= drag;
   b.vz *= drag;
