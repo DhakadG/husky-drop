@@ -1,5 +1,5 @@
 import { $, MAX_ACTIVE, uploadingList } from "./drop-state.js";
-import { FAMILY, REDUCED_MOTION, fileExt, fileFamily, midTrunc } from "./drop-utils.js";
+import { FAMILY, REDUCED_MOTION, fileExt, fileFamily, h, icon, midTrunc } from "./drop-utils.js";
 import { shoot } from "./drop-court.js";
 
 // The bench: one seat per parallel upload lane (MAX_ACTIVE: 12 on desktop, 8
@@ -16,9 +16,8 @@ export function buildBench() {
   const host = $("seats");
   if (!host || seats.length) return;
   for (let i = 0; i < MAX_ACTIVE; i++) {
-    const el = document.createElement("div");
-    el.className = "seat vacant";
-    el.innerHTML = `<div class="seat-fly"><div class="fmt"><span class="fmt-glyph"></span><span class="fmt-ext"></span><i class="fmt-bar"><b></b></i><button class="seat-x" type="button" data-act="cancel" aria-label="Cancel this upload">${uiIcon("x")}</button></div></div><div class="seat-name"></div><div class="seat-stat"></div>`;
+    const fmt = h("div", { class: "fmt" }, h("span", { class: "fmt-glyph" }), h("span", { class: "fmt-ext" }), h("i", { class: "fmt-bar" }, h("b")), h("button", { class: "seat-x", type: "button", "data-act": "cancel", "aria-label": "Cancel this upload" }, icon("x")));
+    const el = h("div", { class: "seat vacant" }, h("div", { class: "seat-fly" }, fmt), h("div", { class: "seat-name" }), h("div", { class: "seat-stat" }));
     host.appendChild(el);
     seats.push({
       el,
@@ -97,7 +96,7 @@ function paintSeat(s, open) {
     const fam = FAMILY[fileFamily(name, it.file.type)];
     s.fmt.style.setProperty("--from", fam.from);
     s.fmt.style.setProperty("--to", fam.to);
-    s.glyph.innerHTML = uiIcon(fam.icon);
+    s.glyph.replaceChildren(icon(fam.icon));
     s.ext.textContent = (fileExt(name) || "file").toUpperCase().slice(0, 4);
     s.name.textContent = midTrunc(name);
     s.name.title = it.relativePath || name;

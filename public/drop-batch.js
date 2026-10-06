@@ -1,6 +1,7 @@
 import { $ } from "./drop-state.js";
-import { FAMILY, REDUCED_MOTION, fileExt, fileFamily } from "./drop-utils.js";
+import { FAMILY, REDUCED_MOTION, fileExt, fileFamily, h, icon } from "./drop-utils.js";
 import { springStep } from "./drop-court-physics.js";
+import { filesFromDrop } from "./drop-walk.js";
 
 // The batch: the whole page is the court, so files dropped anywhere count.
 // While files are dragged in, a small stack hangs off the pointer on springs -
@@ -34,14 +35,11 @@ export function installBatch({ boardEl, onFilesDropped }) {
   board = boardEl;
   boardTitle = $("board-title");
   onFiles = onFilesDropped;
-  el = document.createElement("div");
-  el.className = "ball";
-  el.setAttribute("aria-hidden", "true");
-  el.innerHTML = `${'<div class="ball-card"><span class="ball-ext"></span></div>'.repeat(CARDS)}<span class="ball-badge"></span><div class="ball-chip"><b></b><span class="ball-tally"></span></div>`;
+  cards = Array.from({ length: CARDS }, () => h("div", { class: "ball-card" }, h("span", { class: "ball-ext" })));
+  badge = h("span", { class: "ball-badge" });
+  chip = h("div", { class: "ball-chip" }, h("b"), h("span", { class: "ball-tally" }));
+  el = h("div", { class: "ball", "aria-hidden": "true" }, ...cards, badge, chip);
   document.body.appendChild(el);
-  cards = [...el.querySelectorAll(".ball-card")];
-  badge = el.querySelector(".ball-badge");
-  chip = el.querySelector(".ball-chip");
   springs = [...cards, chip].map(() => ({ x: 0, y: 0, vx: 0, vy: 0, rot: 0 }));
 
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
@@ -66,8 +64,10 @@ export function installBatch({ boardEl, onFilesDropped }) {
     e.preventDefault();
     setHover(false);
     pointer = { x: e.clientX, y: e.clientY };
-    const collected = await collectDropped(e.dataTransfer);
-    if (!onFiles(collected)) hide();
+    // filesFromDrop reads the DataTransfer before yielding and falls back to
+    // the flat list if walking the folders fails.
+    const collected = await filesFromDrop(e.dataTransfer);
+    if (!collected.length || !onFiles(collected)) hide();
   });
 }
 
@@ -145,7 +145,7 @@ function paintCard(card, family, ext) {
   const fam = FAMILY[family] || FAMILY.file;
   card.style.setProperty("--from", fam.from);
   card.style.setProperty("--to", fam.to);
-  if (!card.querySelector("canvas")) card.innerHTML = `<span class="ball-ext"></span>${uiIcon(fam.icon, "ball-glyph")}`;
+  if (!card.querySelector("canvas")) card.replaceChildren(h("span", { class: "ball-ext" }), icon(fam.icon, "ball-glyph"));
   const label = card.querySelector(".ball-ext");
   if (label) label.textContent = (ext || "").toUpperCase().slice(0, 4);
 }
@@ -250,36 +250,3 @@ async function preview(file) {
 }
 
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
-
-// Recursively walk dropped FileSystemEntry trees, capturing each file's
-// relative path ("Trip/Day 1/IMG.jpg") so the Drive folder tree can be
-// mirrored server-side. Falls back to the flat file list on old browsers.
-async function collectDropped(dt) {
-  const entries = [...(dt.items || [])].map((it) => it.webkitGetAsEntry?.()).filter(Boolean);
-  if (!entries.length) return [...dt.files];
-  const out = [];
-  const CAP = 20000;
-  const entryFile = (entry) => new Promise((resolve) => entry.file(resolve, () => resolve(null)));
-  const readBatch = (reader) => new Promise((resolve) => reader.readEntries(resolve, () => resolve([])));
-  // readEntries hands a directory over in batches and must be drained in
-  // order; sibling subtrees are independent, so they are walked in parallel
-  // and the result is put back in natural path order (IMG_2 before IMG_10).
-  const readAll = async (reader) => {
-    const batch = await readBatch(reader);
-    return batch.length ? [...batch, ...(await readAll(reader))] : [];
-  };
-  async function walk(entry, path) {
-    if (out.length >= CAP) return;
-    if (entry.isFile) {
-      const file = await entryFile(entry);
-      if (file) out.push({ file, rel: path ? `${path}${file.name}` : "" });
-      return;
-    }
-    if (!entry.isDirectory) return;
-    const children = await readAll(entry.createReader());
-    await Promise.all(children.map((child) => walk(child, `${path}${entry.name}/`)));
-  }
-  await Promise.all(entries.map((entry) => walk(entry, "")));
-  const key = (x) => x.rel || x.file.name;
-  return out.sort((x, y) => key(x).localeCompare(key(y), undefined, { numeric: true, sensitivity: "base" }));
-}
