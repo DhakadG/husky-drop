@@ -4,6 +4,32 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-10-07 — One `_share_previews` folder, not eleven
+
+Drive had eleven `_share_previews` folders. The preview migration uploaded
+twelve WebPs with `Promise.all`; each upload asked for the folder id, found
+nothing cached in KV and nothing in Drive's search (which lags a fresh
+create by seconds), and created its own folder. The previews still worked,
+because the index stores file ids, but they were scattered across all
+eleven. Every other find-or-create in the Worker (`_previews`, the image
+archive's `_archive` / `_compressed` mirrors, per-uploader and folder-upload
+subfolders) had the same shape.
+
+- **`driveEnsureFolder` in `drive.js`** is now the only find-or-create. One
+  isolate shares one in-flight lookup per name and parent, lookups return the
+  oldest same-named folder so every caller converges, and a fresh create
+  re-checks and trashes itself if an older copy appeared meanwhile. The drop
+  side's uploader folders were already serialized through the Durable
+  Object; they go through the same helper now as a second line.
+- **`POST /api/admin/drive/merge-folders`** cleans up what already exists:
+  it moves every duplicate's files into the oldest copy and trashes the
+  empty duplicates. Moving keeps Drive ids, so nothing stored needs
+  rewriting.
+- A failed KV write of the cached folder id no longer fails the upload that
+  triggered it.
+- `scripts/drive-folder-race-test.mjs` runs twelve concurrent lookups against
+  a fake Drive whose search lags, and checks the merge.
+
 ## 2026-10-07 — The court fits one screen (#170)
 
 On a laptop the drop page was a column: a header (eyebrow, a 56 px title,

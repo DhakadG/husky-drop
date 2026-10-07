@@ -66,6 +66,7 @@ import {
 import {
   browseAdminDriveFolders,
   createAdminDriveFolder,
+  mergeAdminDriveFolders,
   listLinks,
   createLink,
   patchLink,
@@ -377,6 +378,7 @@ async function api(request, env, url, ctx) {
     }
     if (m === "GET" && p === "/api/admin/drive/folders") return browseAdminDriveFolders(env, url);
     if (m === "POST" && p === "/api/admin/drive/folders") return createAdminDriveFolder(request, env);
+    if (m === "POST" && p === "/api/admin/drive/merge-folders") return mergeAdminDriveFolders(request, env);
   }
   return json({ error: "not found" }, 404);
 }

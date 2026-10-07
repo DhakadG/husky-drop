@@ -19,7 +19,7 @@ import {
   sanitizeFolderName,
   slugify,
 } from "./util.js";
-import { driveBrowseFolders, driveCreateFolder, driveFileMeta, driveQuota, driveTrashFile, quotaFree } from "./drive.js";
+import { driveBrowseFolders, driveCreateFolder, driveFileMeta, driveMergeFolders, driveQuota, driveTrashFile, quotaFree } from "./drive.js";
 import { forgetPreview } from "./previews.js";
 import {
   getUploads,
@@ -50,6 +50,26 @@ export async function createAdminDriveFolder(request, env) {
   if (!name) return json({ error: "folder name is required" }, 400);
   try {
     return json({ folder: await driveCreateFolder(env, name, parentId) }, 201);
+  } catch (error) {
+    return json({ error: error.message }, 502);
+  }
+}
+
+// The app's own system folders and the KV key caching each one's id. Only
+// these can be merged: they hold app output, never user files.
+const SYSTEM_FOLDERS = { _share_previews: "share-previews:folder", _previews: "previews:folder" };
+
+export async function mergeAdminDriveFolders(request, env) {
+  if (!env.GOOGLE_CLIENT_ID) return json({ error: "Google Drive is not configured" }, 503);
+  const body = await request.json().catch(() => ({}));
+  const name = String(body.name || "");
+  if (!Object.hasOwn(SYSTEM_FOLDERS, name)) return json({ error: `name must be one of: ${Object.keys(SYSTEM_FOLDERS).join(", ")}` }, 400);
+  const dryRun = body.dryRun !== false;
+  const limit = Math.max(1, Math.min(500, Number(body.limit) || 200));
+  try {
+    const out = await driveMergeFolders(env, name, env.DRIVE_PARENT_ID || undefined, { dryRun, limit });
+    if (!dryRun && out.keeper) await env.KV.put(SYSTEM_FOLDERS[name], out.keeper);
+    return json({ name, dryRun, ...out });
   } catch (error) {
     return json({ error: error.message }, 502);
   }
