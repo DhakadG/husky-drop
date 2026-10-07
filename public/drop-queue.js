@@ -63,6 +63,7 @@ export function setNetworkPaused(offline) {
   } else {
     setConnection(st.liveSocket && st.liveSocket.readyState === 1 ? "live" : "secure");
     toast("Back online", "Resuming where you left off.", "ok");
+    for (const q of queue) if (q.state === "queued") q.retryAt = 0;
     retryAll();
     pump();
   }
@@ -134,8 +135,9 @@ export function pump() {
   // Parallelism is a file count (the adaptive controller tunes it). The old
   // byte window was concurrency x chunk, so once chunks grew to 128 MB only
   // two files could run at once and a gigabit link sat half idle.
+  const now = Date.now();
   while (st.active < Math.min(st.concurrency, MAX_ACTIVE)) {
-    const next = queue.find((q) => q.state === "queued");
+    const next = queue.find((q) => q.state === "queued" && !(q.retryAt > now));
     if (!next) break;
     const w = Math.min(next.file.size, next.chunk || st.chunkSize);
     if (st.active > 0 && activeWeight() + w > MEM_WINDOW) break;
@@ -148,6 +150,41 @@ export function pump() {
     });
   }
   if (st.active > 0) acquireWakeLock();
+  armRetry(now);
+}
+
+// A file whose chunk or session failed waits out its backoff in the queue,
+// not in its lane: a file that keeps failing must never hold a lane the rest
+// of the queue could use (it once held both of the two lanes left after the
+// controller cut back, and 21 good files sat waiting behind it).
+export function backoffMs(retries) {
+  return Math.min(30000, 1000 * 2 ** retries);
+}
+
+function park(item, err) {
+  const wait = backoffMs(item.retries);
+  item.retryAt = Date.now() + wait;
+  item.reprobe = !!item.uri;
+  item.stat = `${humanError(err).replace(/ - tap retry$/, "")} · retrying in ${Math.round(wait / 1000)}s`;
+  window.dropTrekker?.track("upload_retry", item.file.name, { retry: item.retries, status: err.status || 0, chunk: item.chunk, uploadSessionId: sessionId });
+  setState(item, "queued");
+}
+
+let retryTimer = 0;
+function armRetry(now) {
+  let due = Infinity;
+  for (const q of queue) if (q.state === "queued" && q.retryAt > now) due = Math.min(due, q.retryAt);
+  clearTimeout(retryTimer);
+  if (due < Infinity) retryTimer = setTimeout(pump, due - now + 25);
+}
+
+// Worth another go: anything a chunk PUT throws (Drive answers rate limits
+// with 403 as well as 429/5xx), and session or network failures that are not
+// the server saying no (4xx).
+export function isTransient(err) {
+  if (err.chunk) return true;
+  const status = Number(err.status) || 0;
+  return !status || status === 408 || status === 429 || status >= 500;
 }
 
 async function uploadFile(item) {
@@ -179,6 +216,20 @@ async function uploadFile(item) {
         await ensureSession(item);
       }
       item.resumedUri = false;
+    } else if (item.reprobe) {
+      // Back from a backoff: ask Drive how much it kept. A dead session starts
+      // over; anything else (still offline) goes back to waiting.
+      item.reprobe = false;
+      try {
+        offset = await probeOffset(item);
+        setSent(item, offset);
+      } catch (err) {
+        if (!err.dead) throw Object.assign(err, { chunk: true });
+        item.uri = null;
+        setSent(item, 0);
+        offset = 0;
+        await ensureSession(item);
+      }
     }
 
     while (offset < item.file.size) {
@@ -192,6 +243,7 @@ async function uploadFile(item) {
           window.dropTrekker?.track("upload_progress", item.file.name, { percent: milestone, sent: offset, size: item.file.size, chunk: item.chunk, uploadSessionId: sessionId });
         }
         item.retries = 0;
+        st.adaptiveOk++;
         const took = Date.now() - chunkStarted;
         if (took < FAST_CHUNK_MS && item.chunk < MAX_CHUNK) {
           // Grow, but never let all active chunks together outrun the memory window.
@@ -200,7 +252,9 @@ async function uploadFile(item) {
       } catch (err) {
         if (item.canceled) return;
         st.adaptiveErrors++;
-        if (err.dead) {
+        // A session Drive no longer knows starts over, a few times at most:
+        // a link that keeps answering 404 must not spin without a pause.
+        if (err.dead && (item.restarts = (item.restarts || 0) + 1) <= 3) {
           item.uri = null;
           setSent(item, 0);
           offset = 0;
@@ -208,15 +262,8 @@ async function uploadFile(item) {
           continue;
         }
         if (item.chunk > MIN_CHUNK) item.chunk = Math.max(MIN_CHUNK, item.chunk / 2);
-        if (++item.retries > MAX_RETRIES) throw err;
-        window.dropTrekker?.track("upload_retry", item.file.name, { retry: item.retries, status: err.status || 0, chunk: item.chunk, uploadSessionId: sessionId });
-        const wait = Math.min(30000, 1000 * 2 ** item.retries);
-        item.stat = `${humanError(err).replace(/ - tap retry$/, "")} · retrying in ${Math.round(wait / 1000)}s`;
-        schedulePaint();
-        await sleep(wait);
-        if (item.canceled) return;
-        offset = await probeOffset(item).catch(() => offset);
-        setSent(item, offset);
+        err.chunk = true;
+        throw err;
       }
     }
 
@@ -229,6 +276,7 @@ async function uploadFile(item) {
     await finalizeComplete(item);
   } catch (err) {
     if (item.canceled) return;
+    if (err.status !== 413 && isTransient(err) && ++item.retries <= MAX_RETRIES) return park(item, err);
     if (err.status === 413) {
       st.queuePaused = true;
       $("pause-all").innerHTML = `${uiIcon("play")}Resume`;
@@ -273,7 +321,7 @@ export async function ensureSession(item) {
     body: sessionBody(item),
   });
   const d = await r.json().catch(() => ({}));
-  if (r.status === 429) throw new Error(`locked for ${d.retryAfter || 60}s`);
+  if (r.status === 429) throw Object.assign(new Error(`locked for ${d.retryAfter || 60}s`), { status: 429 });
   if (!r.ok) {
     const error = new Error(d.error || `session HTTP ${r.status}`);
     error.status = r.status;
@@ -348,8 +396,10 @@ async function finalizeComplete(item, attempt = 0) {
   // 4xx means the record itself is wrong (size mismatch, wrong link); only
   // network failures and 5xx are worth another go.
   if ((!r || r.status >= 500) && attempt < 4) {
-    await sleep(1000 * 2 ** attempt);
-    return finalizeComplete(item, attempt + 1);
+    // The bytes are in; nothing left needs bandwidth, so the lane goes back
+    // to the queue while this retries.
+    sleep(1000 * 2 ** attempt).then(() => finalizeComplete(item, attempt + 1));
+    return;
   }
   item.stat = "Drive saved - log delayed";
   setState(item, "warning");
@@ -359,6 +409,8 @@ export function retryItem(item) {
   if (!ATTENTION_STATES.has(item.state)) return;
   item.canceled = false;
   item.retries = 0;
+  item.restarts = 0;
+  item.retryAt = 0;
   if (item.state === "skipped") {
     // "Upload anyway" for a preflight duplicate.
     item.duplicateOf = "";
@@ -481,7 +533,7 @@ export function probeOffset(item) {
           item.fileId = item.fileId || JSON.parse(xhr.responseText).id;
         } catch {}
         resolve(item.file.size);
-      } else reject(new Error(`probe HTTP ${xhr.status}`));
+      } else reject(Object.assign(new Error(`probe HTTP ${xhr.status}`), { status: xhr.status, dead: xhr.status === 404 || xhr.status === 410 }));
     };
     xhr.onerror = () => reject(new Error("probe network"));
     xhr.send();

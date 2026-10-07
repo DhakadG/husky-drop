@@ -147,6 +147,14 @@ assert.match(dropCss, /\.sb-cells \{[^}]*repeat\(2, minmax\(0, 1fr\)\)/, "scoreb
 assert.doesNotMatch(dropCss, /@keyframes sb\w+ \{[^}]*scale\(/, "a make lights the scoreboard up instead of resizing it");
 assert.match(dropHtml, /id="log-filters"/, "the log filters by status");
 assert.match(dropJs, /const LOG_VIEWS = \[/, "the log has one view per status");
+const queueJs = await read("public/drop-queue.js");
+const uploadFileSrc = queueJs.slice(queueJs.indexOf("async function uploadFile"), queueJs.indexOf("export function sessionBody"));
+assert.doesNotMatch(uploadFileSrc, /await sleep\(/, "a backoff never sleeps inside a lane");
+assert.match(uploadFileSrc, /isTransient\(err\) && \+\+item\.retries <= MAX_RETRIES\) return park\(item, err\)/, "a transient failure parks the file and frees its lane");
+assert.match(queueJs, /q\.state === "queued" && !\(q\.retryAt > now\)/, "pump skips files still waiting out a backoff");
+assert.match(queueJs, /armRetry\(now\)/, "a parked file wakes the queue when its backoff ends");
+assert.match(uploadFileSrc, /item\.restarts = \(item\.restarts \|\| 0\) \+ 1\) <= 3/, "a session Drive keeps forgetting cannot loop without a pause");
+assert.match(dropJs, /dupes \+= \(await preflightBatch\(batch\)\) \|\| 0;\s*for \(const item of batch\) if \(item\.state === "checking"\) setState\(item, "queued"\);\s*pump\(\);/, "each preflight batch starts uploading as soon as it is checked");
 assert.match(dropCss, /\.seats\s*\{/, "the court styles the bench seats");
 assert.match(dropCss, /backdrop-filter:\s*blur\(14px\) saturate\(160%\)/, "the backboard is real glass, not a flat panel");
 assert.match(dropCss, /@media \(prefers-reduced-motion: reduce\)/, "the court honours reduced motion");
