@@ -46,6 +46,20 @@ export function makeNet() {
   return { pts, links };
 }
 
+// The net as it really hangs: under its own weight, at rest. Built in its
+// woven shape and only simulated once touched, it used to sag and swing as a
+// whole on the first touch; settled up front, a touch moves only what it
+// touches, and with nothing touching it the net is still.
+export function settleNet(net, dt = 1 / 120) {
+  for (let n = 0; n < 4000; n++) if (stepNet(net, dt) < 2e-6) break;
+  for (const p of net.pts) {
+    p.ox = p.x;
+    p.oy = p.y;
+    p.oz = p.z;
+  }
+  return net;
+}
+
 function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }

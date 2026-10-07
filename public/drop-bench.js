@@ -1,6 +1,6 @@
 import { $, MAX_ACTIVE, uploadingList } from "./drop-state.js";
 import { FAMILY, REDUCED_MOTION, fileExt, fileFamily, h, icon, midTrunc } from "./drop-utils.js";
-import { enqueueShot, kickNet, netMouth } from "./drop-court.js";
+import { enqueueShot, netMouth } from "./drop-court.js";
 
 // The bench: one seat per parallel upload lane (MAX_ACTIVE: 12 on desktop, 8
 // on phones). An uploading file sits in a seat as a format card - type,
@@ -115,7 +115,6 @@ function paintSeat(s, open) {
 // can fill seats faster than a fall takes, so past a few at once the rest
 // just settle in place.
 let dealing = 0;
-let lastKick = 0;
 const MAX_DEALS = 6;
 
 function dealIn(s, n) {
@@ -134,13 +133,9 @@ function dealIn(s, n) {
   const delay = n * (70 + Math.random() * 50);
   const duration = 560 + Math.random() * 200 + Math.min(240, Math.abs(dy) * 0.15);
   const spin = (Math.random() - 0.5) * 70;
+  // The net is not touched: a deal starts just under its mouth. Only a ball,
+  // the rim taking a hit, or a ball brushing the cords moves the net.
   dealing++;
-  setTimeout(() => {
-    if (Date.now() - lastKick > 120) {
-      lastKick = Date.now();
-      kickNet();
-    }
-  }, delay);
   s.fly.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }], { duration, delay, easing: "cubic-bezier(.15,.75,.35,1)", fill: "backwards" });
   const fall = s.fmt.animate(
     [
