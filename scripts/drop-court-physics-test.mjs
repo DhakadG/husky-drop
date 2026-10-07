@@ -2,7 +2,7 @@
 // card falling through stretches it and it springs back, the shot actually
 // peaks where it was told to, and the drag springs settle on the pointer.
 import assert from "node:assert/strict";
-import { makeNet, stepNet, netDepth, shotPath, springStep, NET_BOTTOM, NET_RINGS, NET_CORDS } from "../public/drop-court-physics.js";
+import { makeNet, settleNet, stepNet, netDepth, shotPath, springStep, NET_BOTTOM, NET_RINGS, NET_CORDS } from "../public/drop-court-physics.js";
 
 const dt = 1 / 120;
 
@@ -41,6 +41,13 @@ assert.ok(Math.abs(top - 400) < 1, `apex lands on target (${top.toFixed(2)})`);
 assert.ok(path(0.999).y > path(0.99).y, "the shot is falling as it reaches the rim");
 
 // The drag spring settles on its target without blowing up.
+// A settled net is already hanging at rest: with nothing touching it, it
+// does not move (the court only animates the net when something touches it).
+const hung = settleNet(makeNet());
+let idle = 0;
+for (let i = 0; i < 240; i++) idle = Math.max(idle, stepNet(hung, dt));
+assert.ok(idle < 1e-4, `a settled net left alone stays still (moved ${idle})`);
+assert.ok(Math.abs(netDepth(hung) - NET_BOTTOM) < 0.02, "settling only lets the net hang, it does not stretch it");
 const s = { x: 0, y: 0, vx: 0, vy: 0 };
 for (let i = 0; i < 240; i++) springStep(s, 200, -80, dt);
 assert.ok(Math.abs(s.x - 200) < 0.5 && Math.abs(s.y + 80) < 0.5, "drag spring settles on the pointer");

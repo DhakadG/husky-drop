@@ -4,6 +4,25 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-10-07 — The net moves only when something touches it
+
+The net twitched while nothing touched it. Each file dealt to a bench seat
+called `kickNet()`, which shook the net as if the file had come out of it,
+several times a second with small files. The net was also built in its woven
+shape and only simulated once touched, so the first real touch let the whole
+net sag and swing under gravity.
+
+- Deals no longer touch the net; they start just under its mouth
+  (`netMouth()` now uses the net's real depth). `kickNet()` is gone.
+- `settleNet()` in `drop-court-physics.js` lets the net hang at rest before
+  it is first drawn (about 15 ms, once), so a touch moves only what it
+  touches.
+- Only a ball in the net, the rim taking a hit, or a ball brushing the cords
+  moves the net. Screenshots of the net taken 200 ms apart during bench
+  deals with no shots: all six differed before, five of six identical
+  after. `drop-court-physics-test` checks that a settled net left alone stays
+  still.
+
 ## 2026-10-07 — A failing file never blocks the queue
 
 Testing the court, two files that kept failing (HTTP 503) stopped the

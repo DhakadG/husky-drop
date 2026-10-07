@@ -1,4 +1,4 @@
-import { makeNet, stepNet, NET_BOTTOM } from "./drop-court-physics.js";
+import { makeNet, netDepth, settleNet, stepNet, NET_BOTTOM } from "./drop-court-physics.js";
 import { REDUCED_MOTION } from "./drop-utils.js";
 import { tickShots, setShotHooks, enqueue, flushInstant, openDrive, busy, shots, pile, pops, pileExtraCount, pendingShots } from "./drop-court-shots.js";
 
@@ -19,7 +19,7 @@ let tray;
 let W = 0;
 let H = 0;
 let dpr = 1;
-const net = makeNet();
+const net = settleNet(makeNet());
 let netAwake = false;
 let rimDy = 0;
 let rimV = 0;
@@ -110,13 +110,8 @@ export function setDrive(open) {
 export function netMouth() {
   if (!canvas) return null;
   const g = geom();
-  const y = g.cy + NET_BOTTOM * g.rx + g.ry * 0.6;
+  const y = g.cy + netDepth(net) * g.rx + g.ry * 0.6;
   return y > -40 && y < H + 40 ? { x: g.cx, y } : null;
-}
-
-// A file falling out of the net onto the bench tugs the cords down.
-export function kickNet() {
-  shake(0.05, 4);
 }
 
 function shake(amount, fromRing = 1) {
