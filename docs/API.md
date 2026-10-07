@@ -487,6 +487,17 @@ transcode workflows with per-shard jobs for the active ones.
 
 Returns Drive file preview metadata for admin-side preview/open actions.
 
+### `POST /api/admin/drive/merge-folders`
+
+`{name, dryRun?, limit?}` folds duplicate copies of one of the app's own
+system folders (`name` is `_share_previews` or `_previews`) into the oldest
+copy: each duplicate's children are moved (Drive ids are unchanged, so every
+stored reference stays valid) and the emptied duplicate is trashed. `dryRun`
+defaults to `true` and only counts. At most `limit` (default 200, max 500)
+files move per call; repeat until `remaining` is 0. Also re-points the cached
+folder id in KV at the keeper. Returns
+`{name, dryRun, keeper, duplicates, moved, trashed, failed, remaining}`.
+
 ## Environment
 
 Secrets:

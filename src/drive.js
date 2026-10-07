@@ -119,6 +119,9 @@ export async function driveFindFolder(env, name, parentId) {
     new URLSearchParams({
       q: parts.join(" and "),
       fields: "files(id,name)",
+      // Oldest first, so every caller converges on the same folder even when
+      // duplicates exist.
+      orderBy: "createdTime",
       pageSize: "1",
       supportsAllDrives: "true",
       includeItemsFromAllDrives: "true",
@@ -127,6 +130,75 @@ export async function driveFindFolder(env, name, parentId) {
   if (!r.ok) throw new Error("Drive folder lookup failed: " + (await r.text()).slice(0, 300));
   const d = await r.json();
   return d.files && d.files[0] ? d.files[0] : null;
+}
+
+// Find-or-create that converges. Concurrent callers (eight runner shards,
+// parallel uploads) each missed the KV cache and Drive's lagging search index
+// and created their own copy: prod grew eleven `_share_previews` folders. Now
+// one isolate shares one in-flight lookup, the oldest same-named folder always
+// wins, and a fresh create re-checks and trashes itself if it lost the race.
+// ponytail: a racer whose re-check also misses the winner (search lag) can
+// still leave a duplicate; driveMergeFolders cleans those up.
+const ensuring = new Map();
+export function driveEnsureFolder(env, name, parentId) {
+  const key = `${parentId || ""}/${name}`;
+  if (!ensuring.has(key)) ensuring.set(key, ensureFolder(env, name, parentId).finally(() => ensuring.delete(key)));
+  return ensuring.get(key);
+}
+async function ensureFolder(env, name, parentId) {
+  const found = await driveFindFolder(env, name, parentId);
+  if (found) return found;
+  const created = await driveCreateFolder(env, name, parentId);
+  const oldest = await driveFindFolder(env, name, parentId).catch(() => null);
+  if (oldest && oldest.id !== created.id) {
+    await driveTrashFile(env, created.id).catch(() => false);
+    return oldest;
+  }
+  return created;
+}
+
+// Folds every same-named sibling folder into the oldest one: children are
+// moved (ids are kept, so stored references stay valid), then the emptied
+// duplicate is trashed. Bounded per call; call again while `remaining` > 0.
+export async function driveMergeFolders(env, name, parentId, { dryRun = true, limit = 200 } = {}) {
+  const tok = await accessToken(env);
+  const q = [
+    "mimeType='application/vnd.google-apps.folder'",
+    "trashed=false",
+    `name='${driveQueryEscape(name)}'`,
+    parentId ? `'${driveQueryEscape(parentId)}' in parents` : "'root' in parents",
+  ].join(" and ");
+  const list = async (query, extra = {}) => {
+    const params = new URLSearchParams({ q: query, fields: "nextPageToken,files(id,name,createdTime)", pageSize: "1000", supportsAllDrives: "true", includeItemsFromAllDrives: "true", ...extra });
+    const r = await fetch("https://www.googleapis.com/drive/v3/files?" + params, { headers: { authorization: `Bearer ${tok}` } });
+    if (!r.ok) throw new Error("Drive list failed: " + (await r.text()).slice(0, 200));
+    return r.json();
+  };
+  const folders = (await list(q, { orderBy: "createdTime" })).files || [];
+  const [keeper, ...dupes] = folders;
+  const out = { keeper: keeper?.id || null, duplicates: dupes.length, moved: 0, trashed: 0, failed: 0, remaining: 0 };
+  const pages = await Promise.all(dupes.map((dupe) => list(`'${driveQueryEscape(dupe.id)}' in parents and trashed=false`)));
+  let budget = dryRun ? 0 : limit;
+  const moveOne = (child, dupe) =>
+    fetch(`https://www.googleapis.com/drive/v3/files/${child.id}?addParents=${keeper.id}&removeParents=${dupe.id}&supportsAllDrives=true`, {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" },
+      body: "{}",
+    }).then((r) => r.ok, () => false);
+  await Promise.all(
+    dupes.map(async (dupe, i) => {
+      const children = pages[i].files || [];
+      const batch = children.slice(0, Math.max(0, budget));
+      budget -= batch.length;
+      const moved = (await Promise.all(batch.map((child) => moveOne(child, dupe)))).filter(Boolean).length;
+      out.moved += moved;
+      out.failed += batch.length - moved;
+      out.remaining += children.length - moved;
+      // A listing cut at one page may hide more files; only an emptied folder is trashed.
+      if (!dryRun && !pages[i].nextPageToken && moved === children.length && (await driveTrashFile(env, dupe.id))) out.trashed += 1;
+    }),
+  );
+  return out;
 }
 
 // Child folders of a parent (default: Drive root), for the admin folder picker.
@@ -367,8 +439,7 @@ export async function resolveUploaderFolderDirect(env, link, uploader) {
   const cacheKey = `folder:${link.slug}:${await sha256(safeName.toLowerCase())}`;
   const cached = await env.KV.get(cacheKey, "json");
   if (cached?.id) return cached.id;
-  const found = await driveFindFolder(env, safeName, link.folderId);
-  const folder = found || (await driveCreateFolder(env, safeName, link.folderId));
+  const folder = await driveEnsureFolder(env, safeName, link.folderId);
   await cachePut(env, cacheKey, JSON.stringify(folder), { expirationTtl: 180 * 86400 });
   return folder.id;
 }
@@ -389,8 +460,7 @@ export async function resolvePathFolderDirect(env, link, uploader, segments) {
       parentId = cached.id;
       continue;
     }
-    const found = await driveFindFolder(env, name, parentId);
-    const folder = found || (await driveCreateFolder(env, name, parentId));
+    const folder = await driveEnsureFolder(env, name, parentId);
     await cachePut(env, cacheKey, JSON.stringify({ id: folder.id }), { expirationTtl: 180 * 86400 });
     parentId = folder.id;
   }

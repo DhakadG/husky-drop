@@ -10,7 +10,7 @@
 //   copy    - original untouched; the new file goes to _compressed/<root>/<sub>/.
 // Copy and archive jobs can be undone from the admin; replace cannot.
 
-import { accessToken, driveCreateFolder, driveFindFolder, driveTrashFile } from "./drive.js";
+import { accessToken, driveEnsureFolder, driveTrashFile } from "./drive.js";
 import { json, cleanText, escapeHtml } from "./util.js";
 import { loadJobs, publicJob, saveJobs } from "./images.js";
 import { appLog } from "./applog.js";
@@ -118,7 +118,7 @@ export const imageMirrorPath = (env, base, relativePath) => mirrorPath(env, base
 export const imageMoveFile = (env, tok, fileId, fromId, toId) => moveFile(env, tok, fileId, fromId, toId);
 export const imageParentOf = (env, tok, fileId) => archiveFolderOf(env, tok, fileId);
 async function subfolder(env, name, parentId) {
-  return (await driveFindFolder(env, name, parentId)) || driveCreateFolder(env, name, parentId);
+  return driveEnsureFolder(env, name, parentId);
 }
 // _archive/<root>/<sub>/... mirrors the source tree so two folders that
 // share a leaf name never merge. Folder ids memoised per isolate.

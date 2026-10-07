@@ -10,7 +10,7 @@
 import { cleanText, json, shareState } from "./util.js";
 import { typeOf } from "./images.js";
 import { mediaRev, mediaUrl, mediaVariantTier, r2PutBytes } from "./media-cache.js";
-import { accessToken, driveCreateFolder, driveFindFolder, driveFileMetaCached, driveThumbnail, driveTrashFile } from "./drive.js";
+import { accessToken, driveEnsureFolder, driveFileMetaCached, driveThumbnail, driveTrashFile } from "./drive.js";
 import { mediaSig, sigScope } from "./share-token.js";
 import { getAllShares } from "./share-admin.js";
 import { loadFiles } from "./share-index.js";
@@ -146,8 +146,8 @@ async function sharePreviewFolderId(env) {
   const cached = await env.KV.get(PREV_FOLDER_KEY);
   if (cached) return cached;
   const parent = env.DRIVE_PARENT_ID || undefined;
-  const folder = (await driveFindFolder(env, PREV_FOLDER_NAME, parent)) || (await driveCreateFolder(env, PREV_FOLDER_NAME, parent));
-  await env.KV.put(PREV_FOLDER_KEY, folder.id);
+  const folder = await driveEnsureFolder(env, PREV_FOLDER_NAME, parent);
+  await env.KV.put(PREV_FOLDER_KEY, folder.id).catch(() => {});
   return folder.id;
 }
 export async function driveUploadWebp(env, name, bytes, appProperties) {

@@ -10,7 +10,7 @@
 // PUT does not touch KV; the Action reports in batches and the worker merges
 // each report with a single write. Overview scans live in isolate memory.
 
-import { accessToken, driveCreateFolder, driveFindFolder, driveListFolder, driveTrashFile } from "./drive.js";
+import { accessToken, driveEnsureFolder, driveListFolder, driveTrashFile } from "./drive.js";
 import { json, shareState, cleanText } from "./util.js";
 import { mediaSig, sigScope } from "./share-token.js";
 import { MEDIA_TTL, TIER_VARIANT, mediaUrl } from "./media-cache.js";
@@ -92,8 +92,8 @@ async function previewFolderId(env) {
   const cached = await env.KV.get(FOLDER_KEY);
   if (cached) return cached;
   const parent = env.DRIVE_PARENT_ID || undefined;
-  const folder = (await driveFindFolder(env, FOLDER_NAME, parent)) || (await driveCreateFolder(env, FOLDER_NAME, parent));
-  await env.KV.put(FOLDER_KEY, folder.id);
+  const folder = await driveEnsureFolder(env, FOLDER_NAME, parent);
+  await env.KV.put(FOLDER_KEY, folder.id).catch(() => {});
   return folder.id;
 }
 
