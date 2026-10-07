@@ -72,6 +72,7 @@ export const st = {
   chunkSize: 32 * 1024 * 1024,
   adaptiveController: null,
   adaptiveErrors: 0,
+  adaptiveOk: 0, // chunks that landed since the last controller sample
   active: 0,
   wakeLock: null,
   liveSocket: null,

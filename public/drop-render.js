@@ -52,9 +52,11 @@ export function updateSpeed() {
     const nextLimit = st.adaptiveController.observe({
       bps: st.speedBps,
       errors: st.adaptiveErrors,
+      ok: st.adaptiveOk,
       saturated: st.active > 0 && queue.some((item) => item.state === "queued"),
     });
     st.adaptiveErrors = 0;
+    st.adaptiveOk = 0;
     if (nextLimit !== st.concurrency) {
       st.concurrency = nextLimit;
       pump();

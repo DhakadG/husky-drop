@@ -450,7 +450,7 @@ export function addFiles(files) {
   schedulePaint();
   // Upload spec §1.2: one batched preflight before a byte leaves. Files the
   // drop already holds are marked skipped (and say so); the rest queue.
-  preflight(fresh).finally(() => {
+  preflight(fresh).catch(() => {
     for (const item of fresh) if (item.state === "checking") setState(item, "queued");
     pump();
   });
@@ -468,10 +468,16 @@ export function addFiles(files) {
 }
 
 // The server answers for at most 500 files per call; a dropped folder can be
-// thousands, so ask in batches and apply each answer as it arrives.
+// thousands, so ask in batches, and each batch starts uploading as soon as
+// its answer is in instead of waiting for the whole folder to be checked.
 async function preflight(items) {
   let dupes = 0;
-  for (let i = 0; i < items.length; i += 500) dupes += (await preflightBatch(items.slice(i, i + 500))) || 0;
+  for (let i = 0; i < items.length; i += 500) {
+    const batch = items.slice(i, i + 500);
+    dupes += (await preflightBatch(batch)) || 0;
+    for (const item of batch) if (item.state === "checking") setState(item, "queued");
+    pump();
+  }
   if (dupes) toast(`${dupes} file${dupes === 1 ? "" : "s"} already in Drive`, "Skipped - tap retry on a row to upload it anyway.", "warn");
 }
 
