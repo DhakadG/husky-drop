@@ -177,24 +177,27 @@ export async function driveMergeFolders(env, name, parentId, { dryRun = true, li
   const folders = (await list(q, { orderBy: "createdTime" })).files || [];
   const [keeper, ...dupes] = folders;
   const out = { keeper: keeper?.id || null, duplicates: dupes.length, moved: 0, trashed: 0, failed: 0, remaining: 0 };
+  const pages = await Promise.all(dupes.map((dupe) => list(`'${driveQueryEscape(dupe.id)}' in parents and trashed=false`)));
   let budget = dryRun ? 0 : limit;
-  for (const dupe of dupes) {
-    const children = (await list(`'${driveQueryEscape(dupe.id)}' in parents and trashed=false`)).files || [];
-    let moved = 0;
-    for (const child of children.slice(0, budget)) {
-      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${child.id}?addParents=${keeper.id}&removeParents=${dupe.id}&supportsAllDrives=true`, {
-        method: "PATCH",
-        headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" },
-        body: "{}",
-      });
-      if (r.ok) moved += 1;
-      else out.failed += 1;
-      budget -= 1;
-    }
-    out.moved += moved;
-    out.remaining += children.length - moved;
-    if (!dryRun && moved === children.length && (await driveTrashFile(env, dupe.id))) out.trashed += 1;
-  }
+  const moveOne = (child, dupe) =>
+    fetch(`https://www.googleapis.com/drive/v3/files/${child.id}?addParents=${keeper.id}&removeParents=${dupe.id}&supportsAllDrives=true`, {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" },
+      body: "{}",
+    }).then((r) => r.ok, () => false);
+  await Promise.all(
+    dupes.map(async (dupe, i) => {
+      const children = pages[i].files || [];
+      const batch = children.slice(0, Math.max(0, budget));
+      budget -= batch.length;
+      const moved = (await Promise.all(batch.map((child) => moveOne(child, dupe)))).filter(Boolean).length;
+      out.moved += moved;
+      out.failed += batch.length - moved;
+      out.remaining += children.length - moved;
+      // A listing cut at one page may hide more files; only an emptied folder is trashed.
+      if (!dryRun && !pages[i].nextPageToken && moved === children.length && (await driveTrashFile(env, dupe.id))) out.trashed += 1;
+    }),
+  );
   return out;
 }
 

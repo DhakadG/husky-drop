@@ -33,7 +33,8 @@ globalThis.fetch = async (input, init = {}) => {
   const hits = files
     .filter((f) => f.visible && !f.trashed && (!name || f.name === name) && (!q.includes("folder'") || isFolder(f)) && (!parent || f.parents.includes(parent)))
     .sort((a, b) => a.t - b.t);
-  return Response.json({ files: hits.slice(0, Number(url.searchParams.get("pageSize")) || 100) });
+  const size = Number(url.searchParams.get("pageSize")) || 100;
+  return Response.json({ files: hits.slice(0, size), ...(hits.length > size ? { nextPageToken: "more" } : {}) });
 };
 
 // Twelve concurrent callers in one isolate, search index lagging: one folder.
@@ -69,4 +70,10 @@ const done = await driveMergeFolders(env, "_share_previews", undefined, { dryRun
 assert.deepEqual([done.duplicates, done.remaining], [1, 0]);
 assert.ok(files.filter((f) => f.mimeType === "image/webp").every((f) => f.parents[0] === "a"), "every file lives in the keeper");
 assert.ok(files.filter((f) => f.id !== "a" && isFolder(f)).every((f) => f.trashed), "duplicates are trashed");
+// A duplicate holding more than one listing page is never trashed with files inside.
+files = [folder("a", 1), folder("big", 2), ...Array.from({ length: 1001 }, (_, i) => file(`x${i}`, "big"))];
+const first = await driveMergeFolders(env, "_share_previews", undefined, { dryRun: false, limit: 1000 });
+assert.deepEqual([first.moved, first.trashed], [1000, 0], "a folder with an unlisted page is kept");
+const last = await driveMergeFolders(env, "_share_previews", undefined, { dryRun: false });
+assert.deepEqual([last.moved, last.trashed, last.remaining], [1, 1, 0]);
 console.log("drive-folder-race-test: ok");
