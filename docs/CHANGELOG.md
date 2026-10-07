@@ -30,6 +30,47 @@ subfolders) had the same shape.
 - `scripts/drive-folder-race-test.mjs` runs twelve concurrent lookups against
   a fake Drive whose search lags, and checks the merge.
 
+## 2026-10-07 — A failing file never blocks the queue
+
+Testing the court, two files that kept failing (HTTP 503) stopped the
+whole batch: 0 of 34 files made it in 60 s. Two things compounded.
+
+1. A failed chunk slept out its backoff (up to 30 s, eight times) **inside
+   its lane**, so a file that kept failing held a lane for minutes.
+2. The adaptive controller halved the lane count on **any** error in a
+   sample, so one failing file pinned lanes at the minimum of two, both held
+   by the failing files.
+
+Fixes, all in `drop-queue.js` unless named:
+
+- A transient failure (any chunk error, a network error, 408, 429, 5xx)
+  **parks** the file: it goes back to the queue with a `retryAt`, frees its
+  lane, and `pump()` skips it until the backoff ends (a timer wakes the
+  queue). When it comes back, a probe asks Drive how much it kept, so the
+  upload continues from there; a session Drive no longer knows starts over.
+- A 404/410 session restarts at most three times per file, then counts as a
+  failure with backoff. Before, the restart loop had no cap and no pause.
+- Session creation failures (500, 429, network) are retried the same way.
+  Before, one failed `/api/session` call failed the file outright.
+- Retries of `/api/complete` run off the lane, since the bytes are already
+  in Drive.
+- `adaptive-concurrency.js` cuts lanes only when errors outnumber chunks
+  that landed in the sample.
+- Each 500-file preflight batch starts uploading as soon as its answer is
+  in, instead of the whole folder waiting for every batch.
+
+A fault-injecting mock (failures chosen by file name) ran every path in the
+browser: 30 good files beside 4 failing ones finished in 9 s (0 in 60 s
+before). Flaky 503s, cut connections (including mid-way through 20 MB
+videos), a stalled chunk, session 500s and completion 500s all recovered,
+with no offset mismatch. 400 and 413 fail fast with a reason. Pause and
+resume, offline and back, duplicates in one pick, empty files and unicode
+names all behave. With 600 files, 30 of them flaky, plus one always-503 and
+one always-404 file, the 600 landed in 43 s, and the two bad files ended as
+failed with a retry button after their retries ran out.
+`admin-workflow-test` and `ui-v3-test` pin the controller rule and the
+no-sleep-in-lane shape.
+
 ## 2026-10-07 — The court fits one screen (#170)
 
 On a laptop the drop page was a column: a header (eyebrow, a 56 px title,

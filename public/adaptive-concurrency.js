@@ -25,9 +25,12 @@
       observe(sample = {}) {
         const bps = Math.max(0, Number(sample.bps) || 0);
         const errors = Math.max(0, Number(sample.errors) || 0);
+        const ok = Math.max(0, Number(sample.ok) || 0);
         const previous = smoothedBps;
         smoothedBps = previous ? previous * 0.65 + bps * 0.35 : bps;
-        if (errors) {
+        // Cut back only when failures outnumber chunks that landed: one file
+        // that keeps failing must not throttle every healthy upload with it.
+        if (errors && errors >= Math.max(1, ok)) {
           limit = Math.max(min, Math.ceil(limit / 2));
           healthySamples = 0;
           weakSamples = 0;

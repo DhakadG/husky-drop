@@ -55,6 +55,12 @@ controller.observe({ bps: 11_000_000, saturated: true });
 assert.equal(controller.limit, 4, "healthy saturated uploads ramp up parallelism");
 controller.observe({ bps: 9_000_000, saturated: true, errors: 1 });
 assert.equal(controller.limit, 2, "network errors promptly reduce parallelism");
+const steady = createAdaptiveConcurrency({ min: 2, max: 12, initial: 8 });
+for (let i = 0; i < 5; i++) steady.observe({ bps: 9_000_000, saturated: true, errors: 1, ok: 20 });
+assert.ok(steady.limit >= 8, "one file that keeps failing beside healthy uploads does not throttle them");
+const before = steady.limit;
+steady.observe({ bps: 0, saturated: true, errors: 6, ok: 2 });
+assert.equal(steady.limit, Math.ceil(before / 2), "failures outnumbering successes still cut back");
 assert.equal(controller.seed({ effectiveType: "2g", downlink: 0.4 }), 2, "slow connections start conservatively");
 
 console.log("admin workflow tests passed");
