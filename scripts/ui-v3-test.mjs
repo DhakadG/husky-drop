@@ -110,7 +110,7 @@ assert.match(css, /\.share-mode-card\s*\{/, "plan 07 styles the Share Link mode 
 
 const dropHtml = await read("public/drop.html");
 const dropJs = (await Promise.all(["drop", "drop-state", "drop-queue", "drop-render", "drop-live", "drop-resume", "drop-report", "drop-utils", "drop-bench", "drop-batch", "drop-court"].map((n) => read(`public/${n}.js`)))).join("\n");
-const dropCss = await read("public/drop.css");
+const dropCss = (await Promise.all(["drop-side", "drop"].map((n) => read(`public/${n}.css`)))).join("\n");
 assert.match(dropHtml, /id="collector-name"/, "plan 08 displays the real collector name");
 assert.match(dropHtml, /id="scoreboard"/, "the court keeps every transfer total on one scoreboard");
 assert.match(dropHtml, /id="seats"/, "the court seats each parallel upload on the bench");
@@ -138,6 +138,15 @@ assert.match(dropJs, /budgetHit/, "plan 08 handles real backend budget limits");
 assert.match(dropJs, /fileId: item\.fileId \|\| "",\s*sessionId,/, "completion logging includes the upload session id");
 assert.match(dropJs, /setState\(item, "done"\);\s*\n\s*sendLive\(true\)/, "final Drive verification forces a terminal live update");
 assert.match(dropCss, /\.scoreboard\s*\{/, "the court styles the scoreboard");
+assert.match(dropHtml, /class="court-side">[\s\S]*?id="scoreboard"[\s\S]*?id="log"[\s\S]*?class="court-stage">[\s\S]*?id="zone"[\s\S]*?id="tray"[\s\S]*?id="bench"/, "the side holds who, totals and log; the stage holds board, Drive box and bench");
+assert.match(dropCss, /@media \(min-width: 960px\)[\s\S]*?\.court-side\s*\{[^}]*position:\s*sticky/, "from 960 px the side column stays in view");
+assert.match(dropCss, /--bw:\s*min\([^;]*100svh/, "the board is sized to the viewport height so the court fits in one view");
+assert.match(dropCss, /\.court-side, \.court-stage \{ display: contents; \}[\s\S]*?\.court \{ order: 2; \}[\s\S]*?\.scoreboard \{ order: 5; \}/, "one column puts the hoop before the totals");
+assert.match(dropCss, /\.scoreboard \{[^}]*font-variant-numeric:\s*tabular-nums/, "scoreboard figures keep their width as they change");
+assert.match(dropCss, /\.sb-cells \{[^}]*repeat\(2, minmax\(0, 1fr\)\)/, "scoreboard cells are a fixed grid");
+assert.doesNotMatch(dropCss, /@keyframes sb\w+ \{[^}]*scale\(/, "a make lights the scoreboard up instead of resizing it");
+assert.match(dropHtml, /id="log-filters"/, "the log filters by status");
+assert.match(dropJs, /const LOG_VIEWS = \[/, "the log has one view per status");
 assert.match(dropCss, /\.seats\s*\{/, "the court styles the bench seats");
 assert.match(dropCss, /backdrop-filter:\s*blur\(14px\) saturate\(160%\)/, "the backboard is real glass, not a flat panel");
 assert.match(dropCss, /@media \(prefers-reduced-motion: reduce\)/, "the court honours reduced motion");

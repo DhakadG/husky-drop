@@ -2,7 +2,6 @@ import {
   $,
   ATTENTION_STATES,
   MAX_ACTIVE,
-  attention,
   doneRecent,
   queue,
   st,
@@ -16,8 +15,7 @@ import { pendingShots, setDrive } from "./drop-court.js";
 import { sampleEta, smoothEta } from "./drop-eta.js";
 
 // Rendering. Every fact has one home: the scoreboard owns the totals, the
-// bench owns the files uploading right now, the log owns what needs a look
-// (failed, skipped) and what already landed.
+// bench owns the files uploading right now, the log lists files by status.
 const DRIVE_OPENS_AT = 3; // makes before the Drive box rises to collect them
 const SEGMENTS = 48; // one chart segment per file up to this many, then a stacked bar
 
@@ -69,23 +67,62 @@ export function updateSpeed() {
   st.speedSent = totals.sent;
 }
 
-// The log is only what needs a look (failed, skipped, canceled). Files on the
-// bench are not repeated, and what landed is listed in the Drive box; "Show
-// all" lists everything in queue order.
-export function visibleItems() {
-  if (st.showAllFiles) return queue;
-  return attention.length > 50 ? attention.slice(-50) : attention;
+// The log: one chip per status with its count (a chip only shows once it has
+// files), and the files with that status, newest first. Until the sender
+// picks one it shows what most needs a look. Files on the bench are not
+// listed; the bench already shows them.
+const LOG_VIEWS = [
+  { key: "failed", label: "failed", count: () => totals.error + totals.canceled + totals.warning, has: (it) => it.state === "error" || it.state === "canceled" || it.state === "warning" },
+  { key: "skipped", label: "skipped", count: () => totals.skipped, has: (it) => it.state === "skipped" },
+  { key: "drive", label: "in Drive", count: () => totals.done, has: (it) => it.state === "done" },
+  { key: "waiting", label: "waiting", count: () => totals.queued + totals.checking, has: (it) => it.state === "queued" || it.state === "checking", oldestFirst: true },
+  { key: "all", label: "all", count: () => totals.count, has: () => true, oldestFirst: true },
+];
+const LOG_ROWS = 150; // a list longer than this is a scroll no one reads
+
+function logView() {
+  const picked = LOG_VIEWS.find((v) => v.key === st.logFilter && v.count() > 0);
+  return picked || LOG_VIEWS.slice(0, 3).find((v) => v.count() > 0) || null;
+}
+
+export function visibleItems(view = logView()) {
+  if (!view) return [];
+  const out = [];
+  if (view.oldestFirst) {
+    for (const it of queue) if (view.has(it) && out.push(it) >= LOG_ROWS) break;
+  } else {
+    for (let i = queue.length - 1; i >= 0; i--) if (view.has(queue[i]) && out.push(queue[i]) >= LOG_ROWS) break;
+  }
+  return out;
 }
 
 export function renderVisible() {
   renderBench(Math.min(st.concurrency, MAX_ACTIVE));
-  const vis = visibleItems();
+  const view = logView();
+  $("log").classList.toggle("hidden", !view);
+  if (!view) return;
+  renderLogFilters(view);
+  const vis = visibleItems(view);
   reconcile($("list"), vis, (item) => item, makeRow, updateRow);
-  $("log").classList.toggle("hidden", !vis.length);
-  const hidden = totals.count - vis.length;
-  const showButton = $("show-all-files");
-  showButton.classList.toggle("hidden", hidden <= 0 && !st.showAllFiles);
-  showButton.textContent = st.showAllFiles ? "Show what needs a look" : `Show all ${totals.count} files`;
+  const total = view.count();
+  const more = $("log-more");
+  more.classList.toggle("hidden", total <= vis.length);
+  more.textContent = `${view.oldestFirst ? "first" : "latest"} ${vis.length} of ${total}`;
+}
+
+function renderLogFilters(view) {
+  const host = $("log-filters");
+  if (!host.children.length) {
+    for (const v of LOG_VIEWS) host.append(h("button", { class: `log-chip chip-${v.key}`, type: "button", "data-filter": v.key }, h("i", { "aria-hidden": "true" }), h("span", {}, v.label), h("b", {})));
+  }
+  LOG_VIEWS.forEach((v, i) => {
+    const chip = host.children[i];
+    const n = v.count();
+    chip.hidden = n === 0;
+    chip.lastChild.textContent = String(n);
+    chip.classList.toggle("on", v === view);
+    chip.setAttribute("aria-pressed", String(v === view));
+  });
 }
 
 export function makeRow(item) {
@@ -93,7 +130,7 @@ export function makeRow(item) {
     "div",
     { class: "file-row" },
     h("i", { class: "file-dot", "aria-hidden": "true" }),
-    h("div", { class: "file-name" }, item.relativePath || item.file.name),
+    h("div", { class: "file-name", title: item.relativePath || item.file.name }, item.relativePath || item.file.name),
     h("div", { class: "file-stat" }),
     h("div", { class: "file-actions" }, h("button", { class: "row-btn", "data-act": "retry", type: "button" }, "retry"), h("button", { class: "row-btn danger", "data-act": "cancel", type: "button" }, "cancel")),
   );
@@ -202,8 +239,8 @@ function renderScoreboard(phase, landed) {
   const hist = st.speedHist;
   const max = Math.max(1, ...hist);
   $("sb-spark").setAttribute("points", hist.map((v, i) => `${(i * 72) / 23},${(19 - (v / max) * 17).toFixed(1)}`).join(" "));
-  $("sb-speed").textContent = st.active && st.speedBps ? `${fmtBytes(st.speedBps)}/s` : phase === "done" ? `${totals.done} delivered` : "";
-  $("sb-lanes").textContent = `${Math.min(st.concurrency, MAX_ACTIVE)} of ${MAX_ACTIVE} lanes`;
+  $("sb-speed").textContent = st.active && st.speedBps ? `${fmtBytes(st.speedBps)}/s` : "";
+  $("sb-lanes").textContent = phase === "done" ? `${totals.done} delivered` : `${Math.min(st.concurrency, MAX_ACTIVE)}/${MAX_ACTIVE} lanes`;
 }
 
 // MADE counts toward its target instead of jumping: one at a time for a few
@@ -249,7 +286,7 @@ function openDriveBox() {
 
 // The Drive box's arrivals: the latest few by name, newest first, with
 // "+N more" for what a burst carried in beyond them.
-const ARRIVALS = 4;
+const ARRIVALS = 3;
 let arrivedExtra = 0;
 
 export function trayArrivals(metas, extra = 0) {
