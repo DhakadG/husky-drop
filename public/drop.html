@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://www.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/drop-side.css" />
 <link rel="stylesheet" href="/drop.css" />
 </head>
 <body class="drop-page">
@@ -35,104 +36,111 @@
     </div>
   </section>
 
-  <!-- The court. Every fact lives in one place: the header says who and what,
-       the scoreboard owns the totals, the board takes files, the tray says
-       where they go and as whom, the bench holds what is uploading now, the
-       log holds what needs a look and what landed. -->
+  <!-- The court. Every fact lives in one place: the side says who and what,
+       the scoreboard owns the totals, the log lists files by status; the stage
+       holds the board that takes files, the Drive box that catches them and
+       the bench of uploads in flight. From 960 px the side is a sticky column
+       and the board is sized to the viewport height, so the board, the Drive
+       box and the bench fit in one view; narrower screens get one column
+       ordered by CSS: header, court, bench, scoreboard, log. -->
   <section id="main" class="hidden court-page">
-    <header class="court-head">
-      <div class="court-intro">
-        <img id="link-logo" class="link-logo hidden" alt="" />
-        <!-- While files are moving, everything but the title and the sender
-             folds away (body[data-phase]) to give the court the height. -->
-        <div class="court-more"><div>
-          <p class="eyebrow" id="collector-name">Your files are being collected</p>
-        </div></div>
-        <h1 id="label">Trip drop</h1>
-        <div class="court-more"><div>
-          <p id="welcome" class="court-welcome">Send original photos and videos here.</p>
-          <p class="court-facts" id="meta"></p>
-          <details class="court-note hidden" id="promo">
-            <summary><i aria-hidden="true"></i><span id="promo-title"></span><small>open</small></summary>
-            <p id="promo-text"></p>
-            <div id="promo-video" class="promo-video hidden"></div>
-            <a id="promo-cta" class="btn ghost hidden" target="_blank" rel="noreferrer">Open</a>
-          </details>
-        </div></div>
-        <div class="court-sender" id="sender">
-          <label for="who">Sending as</label>
-          <input id="who" type="text" autocomplete="name" placeholder="your name" maxlength="60" />
-          <span class="hidden" id="alias-wrap"><label for="alias">folder</label><input id="alias" type="text" placeholder="optional" maxlength="40" /></span>
-          <small id="who-hint">so the collector knows who sent what</small>
+    <div class="court-side">
+      <header class="court-head">
+        <div class="court-intro">
+          <img id="link-logo" class="link-logo hidden" alt="" />
+          <!-- While files are moving, everything but the title and the sender
+               folds away (body[data-phase]) to give the court the height. -->
+          <div class="court-more"><div>
+            <p class="eyebrow" id="collector-name">Your files are being collected</p>
+          </div></div>
+          <h1 id="label">Trip drop</h1>
+          <div class="court-more"><div>
+            <p id="welcome" class="court-welcome">Send original photos and videos here.</p>
+            <p class="court-facts" id="meta"></p>
+            <details class="court-note hidden" id="promo">
+              <summary><i aria-hidden="true"></i><span id="promo-title"></span><small>open</small></summary>
+              <p id="promo-text"></p>
+              <div id="promo-video" class="promo-video hidden"></div>
+              <a id="promo-cta" class="btn ghost hidden" target="_blank" rel="noreferrer">Open</a>
+            </details>
+          </div></div>
+          <div class="court-sender" id="sender">
+            <label for="who">Sending as</label>
+            <input id="who" type="text" autocomplete="name" placeholder="your name" maxlength="60" />
+            <span class="hidden" id="alias-wrap"><label for="alias">folder</label><input id="alias" type="text" placeholder="optional" maxlength="40" /></span>
+            <small id="who-hint">so the collector knows who sent what</small>
+          </div>
         </div>
-      </div>
+      </header>
 
       <section class="scoreboard idle" id="scoreboard" aria-label="Upload progress">
-        <div class="sb-top"><i class="sb-dot" aria-hidden="true"></i><span id="sb-tag">live</span></div>
+        <div class="sb-top"><i class="sb-dot" aria-hidden="true"></i><span id="sb-tag">live</span><span id="sb-lanes"></span></div>
         <div class="sb-cells">
           <div class="sb-cell"><small>made</small><b class="sb-made"><span class="sb-roll" id="sb-made">0</span><em id="sb-of">/0</em></b><span>in Drive</span></div>
-          <div class="sb-cell"><small>sent</small><b id="sb-sent">0 B</b><span id="sb-sent-sub">of 0 B</span></div>
           <div class="sb-cell"><small>clock</small><b class="sb-clock" id="sb-clock">--:--</b><span id="sb-clock-sub">estimating</span></div>
         </div>
         <div class="sb-chart" id="sb-chart" aria-hidden="true"></div>
-        <div class="sb-foot"><svg class="chart-svg" viewBox="0 0 72 20" aria-hidden="true"><polyline id="sb-spark" points="" /></svg><span id="sb-speed"></span><span id="sb-lanes"></span></div>
+        <div class="sb-foot"><svg class="chart-svg" viewBox="0 0 72 20" aria-hidden="true"><polyline id="sb-spark" points="" /></svg><span class="sb-sent"><b id="sb-sent">0 B</b> <span id="sb-sent-sub">of 0 B</span></span><span id="sb-speed"></span></div>
         <p class="sb-note hidden" id="offline-notice" role="status"><b>Paused, not lost.</b> Uploads continue on their own when the connection is back.</p>
         <p class="sb-note hidden" id="budget-notice" role="status"><b>Link paused at its limit.</b> Protecting the collector's Drive; files already delivered are safe.</p>
       </section>
-    </header>
 
-    <div id="resume-banner" class="court-banner hidden"><svg class="ico" aria-hidden="true"><use href="/icons.svg#rotate-ccw"></use></svg><span><b>Coming back to finish?</b><small>Re-select the same files. Those already in Drive are skipped and the rest continue.</small></span></div>
+      <section class="log panel hidden" id="log" aria-label="Files by status">
+        <div class="log-head"><h2>Log</h2><button class="mini danger hidden" id="retry-all" type="button"></button></div>
+        <div class="log-filters" id="log-filters" role="group" aria-label="Show files that are"></div>
+        <div class="filelist" id="list" aria-live="polite"></div>
+        <p class="log-more hidden" id="log-more"></p>
+      </section>
+    </div>
 
-    <section class="court" aria-label="Add files">
-      <div class="arena" aria-hidden="true"><i></i><i></i><i></i><i></i><span></span></div>
-      <div class="board" id="zone" role="button" tabindex="0" aria-label="Add photos and videos">
-        <span class="board-sheen" aria-hidden="true"></span>
-        <svg class="ico board-arrow" aria-hidden="true"><use href="/icons.svg#cloud-upload"></use></svg>
-        <div class="board-title" id="board-title">Drop anywhere</div>
-        <div class="board-hint">or tap the board to pick files</div>
-        <div class="shooter">
-          <button class="mini" type="button" id="pick-files"><svg class="ico" aria-hidden="true"><use href="/icons.svg#image"></use></svg>Choose files</button>
-          <button class="mini hidden" id="folder-btn" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#folder-plus"></use></svg>Choose a folder</button>
+    <div class="court-stage">
+      <div id="resume-banner" class="court-banner hidden"><svg class="ico" aria-hidden="true"><use href="/icons.svg#rotate-ccw"></use></svg><span><b>Coming back to finish?</b><small>Re-select the same files. Those already in Drive are skipped and the rest continue.</small></span></div>
+
+      <section class="court" aria-label="Add files">
+        <div class="arena" aria-hidden="true"><i></i><i></i><i></i><i></i><span></span></div>
+        <div class="board" id="zone" role="button" tabindex="0" aria-label="Add photos and videos">
+          <span class="board-sheen" aria-hidden="true"></span>
+          <svg class="ico board-arrow" aria-hidden="true"><use href="/icons.svg#cloud-upload"></use></svg>
+          <div class="board-title" id="board-title">Drop anywhere</div>
+          <div class="board-hint">or tap the board to pick files</div>
+          <div class="shooter">
+            <button class="mini" type="button" id="pick-files"><svg class="ico" aria-hidden="true"><use href="/icons.svg#image"></use></svg>Choose files</button>
+            <button class="mini hidden" id="folder-btn" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#folder-plus"></use></svg>Choose a folder</button>
+          </div>
         </div>
-      </div>
-      <div class="hoop-space" aria-hidden="true"></div>
-      <!-- The Drive box stays out of the way until enough has gone through the
-           hoop; then it rises, swallows what is lying on the floor, and
-           catches everything after. It holds the latest arrivals by name. -->
-      <div class="tray" id="tray" aria-live="polite">
-        <span class="tray-slot" id="tray-slot" aria-hidden="true"></span>
-        <svg class="tray-mark" viewBox="0 0 44 40" aria-hidden="true"><path d="M15 0h14l15 26H30z" fill="#FBBC04" /><path d="M15 0 0 26l7 12 15-26z" fill="#0F9D58" /><path d="M7 38h30l7-12H14z" fill="#4285F4" /></svg>
-        <div class="tray-copy">
-          <b>In Drive</b>
-          <span class="tray-path" id="tray-path"></span>
-          <ol class="tray-arrivals" id="tray-arrivals" aria-label="Latest arrivals"></ol>
+        <div class="hoop-space" aria-hidden="true"></div>
+        <!-- The Drive box stays out of the way until enough has gone through the
+             hoop; then it rises, swallows what is lying on the floor, and
+             catches everything after. It holds the latest arrivals by name. -->
+        <div class="tray" id="tray" aria-live="polite">
+          <span class="tray-slot" id="tray-slot" aria-hidden="true"></span>
+          <svg class="tray-mark" viewBox="0 0 44 40" aria-hidden="true"><path d="M15 0h14l15 26H30z" fill="#FBBC04" /><path d="M15 0 0 26l7 12 15-26z" fill="#0F9D58" /><path d="M7 38h30l7-12H14z" fill="#4285F4" /></svg>
+          <div class="tray-copy">
+            <b>In Drive</b>
+            <span class="tray-path" id="tray-path"></span>
+            <ol class="tray-arrivals" id="tray-arrivals" aria-label="Latest arrivals"></ol>
+          </div>
         </div>
-      </div>
-    </section>
-    <input id="picker" type="file" multiple class="hidden" aria-label="Choose files" /><input id="folderpicker" type="file" webkitdirectory multiple class="hidden" aria-label="Choose a folder" />
+      </section>
+      <input id="picker" type="file" multiple class="hidden" aria-label="Choose files" /><input id="folderpicker" type="file" webkitdirectory multiple class="hidden" aria-label="Choose a folder" />
 
-    <section class="bench panel hidden" id="bench" aria-label="Uploading now">
-      <div class="bench-head">
-        <h2>Bench</h2>
-        <button class="link-btn" id="cancel-all" type="button">Cancel all</button>
-        <button class="mini" id="pause-all" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#pause"></use></svg>Pause</button>
-        <button class="mini hidden" id="add-more-folder" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#folder-plus"></use></svg>Folder</button>
-        <button class="mini primary" id="add-more-files" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#plus"></use></svg>Add files</button>
-      </div>
-      <div class="seats" id="seats"></div>
-    </section>
+      <section class="bench panel hidden" id="bench" aria-label="Uploading now">
+        <div class="bench-head">
+          <h2>Bench</h2>
+          <button class="link-btn" id="cancel-all" type="button">Cancel all</button>
+          <button class="mini" id="pause-all" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#pause"></use></svg>Pause</button>
+          <button class="mini hidden" id="add-more-folder" type="button" aria-label="Add a folder"><svg class="ico" aria-hidden="true"><use href="/icons.svg#folder-plus"></use></svg>Folder</button>
+          <button class="mini primary" id="add-more-files" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#plus"></use></svg>Add files</button>
+        </div>
+        <div class="seats" id="seats"></div>
+      </section>
 
-    <section id="done-card" class="done-card panel hidden">
-      <h2 id="done-title">In the collector's Drive</h2>
-      <p id="done-recap" class="muted"></p>
-      <button class="mini primary" id="add-more" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#plus"></use></svg>Add more files</button>
-    </section>
-
-    <section class="log panel hidden" id="log" aria-live="polite" aria-label="Files that need a look, and files delivered">
-      <div class="log-head"><h2>Log</h2><button class="mini danger hidden" id="retry-all" type="button"></button></div>
-      <div class="filelist" id="list"></div>
-      <button class="link-btn show-all-files hidden" id="show-all-files" type="button"></button>
-    </section>
+      <section id="done-card" class="done-card panel hidden">
+        <h2 id="done-title">In the collector's Drive</h2>
+        <p id="done-recap" class="muted"></p>
+        <button class="mini primary" id="add-more" type="button"><svg class="ico" aria-hidden="true"><use href="/icons.svg#plus"></use></svg>Add more files</button>
+      </section>
+    </div>
 
     <footer class="court-footer">
       <ul class="court-trust trust-strip" aria-label="Transfer promises">

@@ -4,6 +4,39 @@ Newest first. Read this before touching the project — it says why things are
 the way they are. Goal-by-goal status for the September round lives in
 [archive/STATUS-2026-09.md](archive/STATUS-2026-09.md); design lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## 2026-10-07 — The court fits one screen (#170)
+
+On a laptop the drop page was a column: a header (eyebrow, a 56 px title,
+welcome, facts, sender) and the scoreboard took the top third, so the Drive
+box and the bench sat below the fold, and the whole animation needed a
+scroll. The scoreboard sized its cells to their contents, so the clock,
+speed and byte counts shifted things every second, and a make scaled the
+whole card. The log only listed what needed a look.
+
+- **Two columns from 960 px.** A sticky side column holds who and what, the
+  scoreboard and the log; the stage holds the board, the Drive box and the
+  bench. The board is sized to the viewport height (between 400 and 600 px
+  wide), so at 1440 × 900 and 1920 × 1080 the board, the hoop, the Drive box
+  and the first row of the bench are all in view. The page still scrolls.
+- **One column below 960 px, hoop first:** header, court, bench, scoreboard,
+  log (the side and the stage use `display: contents`, and CSS `order` sets
+  the sequence).
+- **Scoreboard on a fixed grid.** Two equal cells (made, clock), tabular
+  figures, fixed footer slots (sent, speed) and lanes in the top row. A make
+  makes the card glow instead of scaling it. Over 6 s of a live upload, every
+  scoreboard element moved by 0 px.
+- **The Drive box no longer grows.** It keeps room for three arrivals, so
+  the bench does not move when files land.
+- **Log by status.** Chips with counts (failed, skipped, in Drive, waiting,
+  all) pick the view, and the log opens on what most needs a look. Each file
+  is a two-line row, newest first, capped at 150. Skipped rows show their
+  "upload anyway" button on hover. Skipped files now read "in Drive since
+  <date>".
+- Board buttons stay on one line when the board is small (a container
+  query), and the phone bench header fits one row of controls.
+- The side column's styles moved to `drop-side.css` to keep `drop.css`
+  under the module size limit.
+
 ## 2026-10-07 — A clock that holds still
 
 Uploading 2,171 screenshots on production, the scoreboard clock jumped

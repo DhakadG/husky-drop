@@ -82,7 +82,7 @@ export const st = {
   lastClientError: "",
   errorReports: 0,
   queuePaused: false,
-  showAllFiles: false,
+  logFilter: "", // log view picked by the sender; "" lets the page choose
   tailNote: null,
   paintScheduled: false,
   speedBps: 0,

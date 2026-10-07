@@ -334,8 +334,10 @@ export function showMain() {
   $("retry-all").addEventListener("click", retryAll);
   $("cancel-all").addEventListener("click", cancelAll);
   $("pause-all").addEventListener("click", toggleQueuePause);
-  $("show-all-files").addEventListener("click", () => {
-    st.showAllFiles = !st.showAllFiles;
+  $("log-filters").addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-filter]");
+    if (!chip) return;
+    st.logFilter = chip.dataset.filter;
     schedulePaint();
   });
   $("add-more").addEventListener("click", () => {
@@ -491,7 +493,7 @@ async function preflightBatch(items) {
       const item = items[i];
       if (!item || item.state !== "checking" || res?.status !== "duplicate" || item.resumedUri) return;
       item.duplicateOf = res.fileId || "";
-      item.stat = `already in Drive${res.at ? ` (${new Date(res.at).toLocaleDateString()})` : ""} - skipped`;
+      item.stat = res.at ? `in Drive since ${new Date(res.at).toLocaleDateString()}` : "already in Drive";
       setState(item, "skipped");
       window.dropTrekker?.track("upload_skipped_duplicate", item.file.name, { size: item.file.size, fileId: res.fileId || "", uploadSessionId: sessionId });
       dupes++;
